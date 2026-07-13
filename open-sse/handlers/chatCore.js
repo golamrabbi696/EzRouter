@@ -21,6 +21,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { salvageOrphanedToolResults, fixMissingToolResponses } from "../translator/concerns/toolCall.js";
 import { compressMessages } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -213,6 +214,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   } else if (headroomEnabled) {
     log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
   }
+
+  // Compression may remove a tool call while retaining its result. Restore the invariant before dispatch.
+  salvageOrphanedToolResults(translatedBody);
+  fixMissingToolResponses(translatedBody);
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {

@@ -1,5 +1,5 @@
 import { FORMATS } from "./formats.js";
-import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
+import { ensureToolCallIds, fixMissingToolResponses, salvageOrphanedToolResults } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
 import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
@@ -64,6 +64,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   
   // Fix missing tool responses (insert empty tool_result if needed)
   fixMissingToolResponses(result);
+
+  // Salvage orphaned tool results (tool_result with no matching tool_call).
+  // Folds orphan content into user text instead of deleting — non-lossy across
+  // all formats, preserves Kiro's reconcileOrphanedToolResults salvage semantics.
+  salvageOrphanedToolResults(result);
 
   // Capture thinking intent from the original (pre-translation) body, before any
   // format conversion strips/renames the fields. Applied after translation.
