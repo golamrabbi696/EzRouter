@@ -161,6 +161,15 @@ export const PROVIDER_PRICING = {
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
   },
+  // Meta AI — Muse Spark via the Meta Model API (api.meta.ai, OpenAI-compatible).
+  // Standard tier: $1.25 input / $0.15 cached / $4.25 output per 1M tokens;
+  // reasoning tokens bill at the output rate. Contributor tier is heavily
+  // discounted ($0.10 / $0.002 / $0.20). Sourced from Meta + OpenRouter pricing.
+  meta: {
+    "muse-spark-1.2": { input: 1.25, output: 4.25, cached: 0.15, reasoning: 4.25 },
+    "muse-spark-1.1": { input: 1.25, output: 4.25, cached: 0.15, reasoning: 4.25 },
+    "muse-spark-1.2-contributor": { input: 0.10, output: 0.20, cached: 0.002, reasoning: 0.20 },
+  },
 };
 
 /**

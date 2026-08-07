@@ -74,6 +74,7 @@ import providerKiro from "./kiro.js";
 import providerLinkup from "./linkup.js";
 import providerLlm7 from "./llm7.js";
 import providerLocalDevice from "./local-device.js";
+import providerMeta from "./meta.js";
 import providerMimoFree from "./mimo-free.js";
 import providerMinimaxCn from "./minimax-cn.js";
 import providerMinimax from "./minimax.js";
@@ -201,6 +202,7 @@ export default [
   providerLinkup,
   providerLlm7,
   providerLocalDevice,
+  providerMeta,
   providerMimoFree,
   providerMinimaxCn,
   providerMinimax,
