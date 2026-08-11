@@ -21,6 +21,13 @@ const STRIP_RULES = [
   // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
   // min() with the model ceiling still applies if a variant's own limit is lower.
   { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
+  // Custom OpenAI-compatible providers (Codex App, etc.) reject reasoning_effort /
+  // reasoning — they speak plain OpenAI chat completions without thinking support.
+  // Drop them to avoid HTTP 400 "Unsupported parameter: reasoning_effort". #3008
+  { provider: /openai-compatible|custom/i, drop: ["reasoning_effort", "reasoning"] },
+  // OpenAI gpt-5.x rejects `max_tokens`; it must be `max_completion_tokens`.
+  // Rename to avoid HTTP 400 "Unsupported parameter: 'max_tokens'". #2830
+  { provider: "openai", match: /gpt-5/i, rename: [["max_tokens", "max_completion_tokens"]] },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -35,15 +42,28 @@ function clampNumber(body, key, ceiling) {
   }
 }
 
+function renameParams(body, renames) {
+  for (const [from, to] of renames) {
+    if (body[from] !== undefined && body[to] === undefined) {
+      body[to] = body[from];
+      delete body[from];
+    }
+  }
+}
+
 // Remove unsupported params from body in place; returns body.
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
   for (const rule of STRIP_RULES) {
-    if (rule.provider && rule.provider !== provider) continue;
+    if (rule.provider) {
+      const pOk = rule.provider instanceof RegExp ? rule.provider.test(provider) : rule.provider === provider;
+      if (!pOk) continue;
+    }
     if (!matches(rule, model)) continue;
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }
+    if (rule.rename) renameParams(body, rule.rename);
     // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
     if (rule.flattenContent && Array.isArray(body.messages)) {
       for (const msg of body.messages) {
