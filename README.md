@@ -76,8 +76,12 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 **1. Install globally:**
 
 ```bash
-npm install -g 9router
-9router
+git clone https://github.com/golamrabbi696/EzRouter.git
+cd EzRouter
+cp .env.example .env
+npm install
+npm run build
+PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
 🎉 Dashboard opens at `http://localhost:20128`
