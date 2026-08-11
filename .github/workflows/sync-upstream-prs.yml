@@ -1,0 +1,53 @@
+name: Sync Upstream PRs
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # প্রতি ৬ ঘণ্টা পর পর চেক করবে
+  workflow_dispatch:         # ম্যানুয়ালি চালানোর অপশন
+
+jobs:
+  sync-prs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/decolua/9router.git
+          git fetch upstream master
+
+      - name: Sync master with upstream first
+        run: |
+          git checkout master
+          git merge upstream/master --no-edit || echo "merge conflict on master, skipping auto-merge"
+          git push origin master
+
+      - name: Fetch open upstream PRs (label-filtered) and try merge into staging
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git checkout -B staging master
+          gh pr list -R decolua/9router --state open --json number,title,labels \
+            --jq '.[] | select(.labels[].name == "fix" or .labels[].name == "docs") | .number' > pr_numbers.txt
+
+          while read -r pr; do
+            echo "Trying PR #$pr"
+            git fetch upstream "pull/$pr/head:pr-$pr" || continue
+            git merge "pr-$pr" --no-edit -m "Auto-merge upstream PR #$pr into staging" \
+              && echo "PR #$pr merged cleanly" \
+              || { echo "PR #$pr has conflicts, skipping"; git merge --abort; }
+          done < pr_numbers.txt
+
+          git push origin staging --force
