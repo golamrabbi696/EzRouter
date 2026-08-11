@@ -23,6 +23,7 @@ import { authorizeApiKey } from "../services/keyPolicy.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { getExecutor } from "open-sse/executors/index.js";
 
 /**
  * Handle chat completion request
@@ -265,6 +266,67 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+
+    // Server-side account rotation hook: invoked from inside the empty-stream
+    // guard when same-account empty retries exhaust, BEFORE the error event
+    // surfaces to the client. Only safe because no client-actionable output
+    // has been emitted yet (visible text, tool call, inline data). Each
+    // rotation uses its own credentials/proxy/projectId — Account A metadata
+    // never leaks into Account B's request.
+    const chatCoreCtx = {};
+    const rotationTracker = { benchedInStream: new Set() };
+    const onAccountRotate = async ({ reason, upstreamError }) => {
+      // Account A is already benched by the onUpstreamEmptyExhausted observer;
+      // pick the next eligible one (excluding A and any account we already
+      // tried in this rotation pass).
+      const excludeForNext = new Set([...excludeConnectionIds, ...rotationTracker.benchedInStream]);
+      const next = await getProviderCredentials(provider, excludeForNext, model);
+      if (!next || next.allRateLimited) return null;
+      rotationTracker.benchedInStream.add(next.connectionId);
+
+      // Refresh token + resolve projectId for the new account.
+      const nextRefreshed = await checkAndRefreshToken(provider, next);
+      if ((provider === "antigravity" || provider === "gemini-cli") && !nextRefreshed.projectId) {
+        const pid = await getProjectIdForConnection(next.connectionId, nextRefreshed.accessToken, provider);
+        if (pid) {
+          nextRefreshed.projectId = pid;
+          updateProviderCredentials(next.connectionId, { projectId: pid }).catch(() => { });
+        }
+      }
+
+      // Recompute proxy options from the new credentials — Account A's proxy
+      // config must NOT be reused.
+      const nextProxyOptions = {
+        connectionProxyEnabled: nextRefreshed?.providerSpecificData?.connectionProxyEnabled === true,
+        connectionProxyUrl: nextRefreshed?.providerSpecificData?.connectionProxyUrl || "",
+        connectionNoProxy: nextRefreshed?.providerSpecificData?.connectionNoProxy || "",
+        vercelRelayUrl: nextRefreshed?.providerSpecificData?.vercelRelayUrl || "",
+      };
+
+      log.warn("ROTATE", `⇄ ACC:${refreshedCredentials.connectionName} EMPTY-EXHAUSTED → ACC:${nextRefreshed.connectionName || next.connectionId.slice(0, 8)}`);
+      log.warn("ROTATE", `    reason=${reason?.slice?.(0, 80)} | upstream=${upstreamError?.status || upstreamError?.code || "EMPTY"}`);
+
+      return {
+        reexecute: async () => {
+          const retryResult = await getExecutor(provider).execute({
+            model,
+            body: chatCoreCtx.translatedBody,
+            stream: true,
+            credentials: nextRefreshed,
+            signal: chatCoreCtx.streamControllerSignal,
+            log,
+            proxyOptions: nextProxyOptions,
+          });
+          if (!retryResult.response.ok) {
+            const status = retryResult.response.status;
+            throw new Error(`[${status}] rotation upstream non-2xx`);
+          }
+          if (!retryResult.response.body) throw new Error("rotation upstream returned no body");
+          return retryResult.response.body;
+        },
+      };
+    };
+
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -301,7 +363,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
-      }
+      },
+      // Antigravity empty-stream guard: when every in-stream retry came back
+      // empty (the literal [Empty streaming response] case), bench the account
+      // so the client's automatic retry rotates to the next one. resetsAtMs
+      // comes from the upstream quota-reset parser when available, so the
+      // cooldown is precise instead of the generic exponential backoff.
+      onUpstreamEmptyExhausted: async (reason, resetsAtMs) => {
+        await markAccountUnavailable(credentials.connectionId, HTTP_STATUS.BAD_GATEWAY, reason, provider, model, resetsAtMs);
+      },
+      // Server-side account recovery: rotate to the next eligible account
+      // while no client-actionable output has been emitted yet. See the
+      // safety constraints in src/sse/README and the empty-stream guard docs.
+      onAccountRotate,
+      chatCoreCtx,
     });
 
     if (result.success) return result.response;

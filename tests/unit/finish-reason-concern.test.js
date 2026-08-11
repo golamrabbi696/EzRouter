@@ -9,7 +9,19 @@ describe("toOpenAIFinish - gemini", () => {
     ["RECITATION", "content_filter"],
     ["BLOCKLIST", "content_filter"],
     ["PROHIBITED_CONTENT", "content_filter"],
-    ["OTHER", "stop"],
+    ["SPII", "content_filter"],
+    ["IMAGE_SAFETY", "content_filter"],
+    // Aborted/error-family Gemini reasons must surface as an error finish,
+    // not a clean stop — a clean stop makes the client treat a broken turn
+    // (e.g. MALFORMED_FUNCTION_CALL) as a finished answer. (#2250, #2259)
+    ["MALFORMED_FUNCTION_CALL", "error"],
+    ["UNEXPECTED_TOOL_CALL", "error"],
+    ["FINISH_REASON_UNSPECIFIED", "error"],
+    ["OTHER", "error"],
+    ["LANGUAGE", "error"],
+    ["NO_IMAGE", "error"],
+    // Unknown Gemini reasons stay a clean stop — a future benign value must
+    // not start erroring every Gemini-family provider at once.
     ["UNKNOWN_XYZ", "stop"],
     ["STOP", "stop"],
     ["MAX_TOKENS", "length"],
@@ -69,6 +81,7 @@ describe("enum literals (catch drift)", () => {
     expect(OPENAI_FINISH.LENGTH).toBe("length");
     expect(OPENAI_FINISH.TOOL_CALLS).toBe("tool_calls");
     expect(OPENAI_FINISH.CONTENT_FILTER).toBe("content_filter");
+    expect(OPENAI_FINISH.ERROR).toBe("error");
   });
   it("CLAUDE_STOP literals", () => {
     expect(CLAUDE_STOP.END_TURN).toBe("end_turn");
@@ -79,5 +92,7 @@ describe("enum literals (catch drift)", () => {
     expect(GEMINI_FINISH.STOP).toBe("STOP");
     expect(GEMINI_FINISH.MAX_TOKENS).toBe("MAX_TOKENS");
     expect(GEMINI_FINISH.SAFETY).toBe("SAFETY");
+    expect(GEMINI_FINISH.MALFORMED_FUNCTION_CALL).toBe("MALFORMED_FUNCTION_CALL");
+    expect(GEMINI_FINISH.UNEXPECTED_TOOL_CALL).toBe("UNEXPECTED_TOOL_CALL");
   });
 });

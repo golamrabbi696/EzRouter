@@ -9,6 +9,10 @@ export const OPENAI_BLOCK = {
   AUDIO_URL: "audio_url",
   FILE: "file",
   FUNCTION: "function",
+  // Non-OpenAI-spec field used by Gemini OpenAI-compat endpoints to attach
+  // provider metadata per tool_call (e.g. extra_content.google.thought_signature).
+  // Reference: https://ai.google.dev/gemini-api/docs/openai
+  EXTRA_CONTENT: "extra_content",
 };
 
 // Claude content blocks.

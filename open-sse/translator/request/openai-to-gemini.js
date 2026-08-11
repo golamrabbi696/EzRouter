@@ -2,6 +2,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
+import { readOpenAIToolCallSignature } from "../concerns/thoughtSignature.js";
 function generateUUID() {
   return crypto.randomUUID();
 }
@@ -32,6 +33,19 @@ function sanitizeGeminiFunctionName(name) {
   }
   // Truncate to 64 chars
   return sanitized.substring(0, 64);
+}
+
+// Read a thought_signature from an assistant message's `extra_content.google`
+// envelope — the OpenAI-compat channel for non-text reasoning signatures
+// (some clients surface per-turn reasoning sigs this way).
+function readAssistantExtraContentSignature(msg) {
+  if (!msg || typeof msg !== "object") return null;
+  const extra = msg.extra_content;
+  if (!extra || typeof extra !== "object") return null;
+  const google = extra.google;
+  if (!google || typeof google !== "object") return null;
+  const sig = google.thought_signature;
+  return typeof sig === "string" && sig.length > 0 ? sig : null;
 }
 
 function normalizeGeminiContents(contents) {
@@ -118,8 +132,12 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             thought: true,
             text: msg.reasoning_content
           });
+          // Prefer real signature from assistant.extra_content when the client
+          // round-tripped it (some clients surface reasoning signatures this
+          // way). Fall back to the synthetic default.
+          const realSignature = readAssistantExtraContentSignature(msg);
           parts.push({
-            thoughtSignature: signature,
+            thoughtSignature: realSignature || signature,
             text: ""
           });
         }
@@ -137,8 +155,15 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
+            // Prefer the REAL signature the client carried back from the
+            // previous turn (`tool_calls[i].extra_content.google.thought_signature`).
+            // Google 3 rejects tool_calls without it on the first functionCall
+            // per turn; a synthetic static default only works when the upstream
+            // accepts it as a validator-skip (Antigravity does, Gemini CLI may
+            // not). Real signature wins whenever it exists.
+            const realSignature = readOpenAIToolCallSignature(tc);
             parts.push({
-              thoughtSignature: signature,
+              thoughtSignature: realSignature || signature,
               functionCall: {
                 id: tc.id,
                 name: sanitizeGeminiFunctionName(tc.function.name),
