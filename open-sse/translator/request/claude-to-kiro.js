@@ -27,6 +27,7 @@ import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
 import {
   resolveKiroModel,
+  toKiroWireModelId,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
@@ -388,7 +389,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const temperature = body.temperature;
   const topP = body.top_p;
 
-  const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  const { upstream: rawUpstream, agentic } = resolveKiroModel(model);
+  const upstreamModel = toKiroWireModelId(rawUpstream);
   const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
   const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
   const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
