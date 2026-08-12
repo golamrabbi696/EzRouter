@@ -64,7 +64,18 @@ function openAICompletionToClaudeMessage(responseBody) {
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
-  if (targetFormat === sourceFormat) return responseBody;
+  if (targetFormat === sourceFormat) {
+    if (targetFormat === FORMATS.OPENAI) {
+      for (const choice of responseBody?.choices || []) {
+        const msg = choice?.message;
+        if (msg?.reasoning && typeof msg.reasoning === "string" && !msg.reasoning_content) {
+          msg.reasoning_content = msg.reasoning;
+          delete msg.reasoning;
+        }
+      }
+    }
+    return responseBody;
+  }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
   }
