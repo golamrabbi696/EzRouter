@@ -41,12 +41,6 @@ export default {
   transports: [
     {
       format: "openai",
-      authType: "apikey",
-      baseUrl: "https://api.moonshot.ai/v1/chat/completions",
-      auth: { combined: true, header: "Authorization", scheme: "bearer" },
-    },
-    {
-      format: "openai",
       authType: "oauth",
       baseUrl: "https://api.kimi.com/coding/v1/chat/completions",
       auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["kimiHeaders"] },

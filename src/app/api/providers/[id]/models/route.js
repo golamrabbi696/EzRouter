@@ -3,8 +3,6 @@ import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG, FRONTIER_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, refreshFrontierToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { parseVertexSaJson, refreshVertexToken } from "open-sse/services/tokenRefresh.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -296,6 +294,7 @@ const PROVIDER_MODELS_CONFIG = {
       parseFn: parseOpenAIStyleModels,
       errorLabel: "Failed to fetch Frontier models",
     }),
+  },
   vertex: {
     customResolver: async (connection) => {
       const saJson = parseVertexSaJson(connection.apiKey);

@@ -59,7 +59,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
-  const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model)
     || resolveDynamicTargetFormat(provider, model);
   const transportOverrides = (provider === "kimi" && credentials?.authType === "apikey")

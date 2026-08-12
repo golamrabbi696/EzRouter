@@ -863,6 +863,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      }
       case "vertex":
       case "vertex-partner": {
         const saJson = parseVertexSaJson(connection.apiKey);
