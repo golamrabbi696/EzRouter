@@ -37,7 +37,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, clientRawRequest, connectionId, userAgent, apiKey, apiKeyReservation = 0, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomToken, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, clientRawRequest, connectionId, userAgent, apiKey, apiKeyReservation = 0, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomToken, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, convoy = null }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -254,7 +254,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
 
   const executor = getExecutor(provider);
-  trackPendingRequest(model, provider, connectionId, true);
+  trackPendingRequest(model, provider, connectionId, true, false, convoy);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
   const msgCount = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
@@ -322,6 +322,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       providerRequest: translatedBody || null,
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
       pxpipe: pxpipeSummary,
+      convoy,
       status: "error"
     })).catch(() => { });
 
@@ -371,6 +372,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       providerRequest: finalBody || translatedBody || null,
       response: { error: message, status: statusCode, thinking: null },
       pxpipe: pxpipeSummary,
+      convoy,
       status: "error"
     })).catch(() => { });
 
@@ -383,67 +385,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  // Antigravity empty-stream guard — oh-my-pi parity
-  if (provider === "antigravity" && stream && providerResponse.body) {
-    const reexecute = async () => {
-      const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
-      if (!retryResult.response.ok) {
-        const { statusCode, message } = await parseUpstreamError(retryResult.response, executor);
-        throw new Error(`[${statusCode}] ${message}`);
-      }
-      if (!retryResult.response.body) throw new Error("upstream returned no body");
-      return retryResult.response.body;
-    };
-    providerResponse = new Response(
-      createEmptyRetryStream({
-        body: providerResponse.body,
-        reexecute,
-        signal: streamController.signal,
-        log,
-        onExhausted: (reason, { upstreamError } = {}) => {
-          if (!onUpstreamEmptyExhausted) return;
-          const resetMs = executor.parseRetryFromErrorMessage?.(upstreamError?.message || reason);
-          return onUpstreamEmptyExhausted(
-            formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY),
-            resetMs ? Date.now() + resetMs : undefined
-          );
-        },
-      }),
-      { status: providerResponse.status, headers: providerResponse.headers }
-    );
-  }
-
-  // Antigravity empty-stream guard — oh-my-pi parity
-  if (provider === "antigravity" && stream && providerResponse.body) {
-    const reexecute = async () => {
-      const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
-      if (!retryResult.response.ok) {
-        const { statusCode, message } = await parseUpstreamError(retryResult.response, executor);
-        throw new Error(`[${statusCode}] ${message}`);
-      }
-      if (!retryResult.response.body) throw new Error("upstream returned no body");
-      return retryResult.response.body;
-    };
-    providerResponse = new Response(
-      createEmptyRetryStream({
-        body: providerResponse.body,
-        reexecute,
-        signal: streamController.signal,
-        log,
-        onExhausted: (reason, { upstreamError } = {}) => {
-          if (!onUpstreamEmptyExhausted) return;
-          const resetMs = executor.parseRetryFromErrorMessage?.(upstreamError?.message || reason);
-          return onUpstreamEmptyExhausted(
-            formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY),
-            resetMs ? Date.now() + resetMs : undefined
-          );
-        },
-      }),
-      { status: providerResponse.status, headers: providerResponse.headers }
-    );
-  }
-
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, apiKeyReservation, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, apiKeyReservation, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, convoy, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

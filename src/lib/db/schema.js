@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -82,11 +82,6 @@ export const TABLES = {
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
-      expiresAt: "TEXT",
-      tokenLimit: "INTEGER",
-      tokensUsed: "INTEGER NOT NULL DEFAULT 0",
-      tokensReserved: "INTEGER NOT NULL DEFAULT 0",
-      allowedModels: "TEXT",
       createdAt: "TEXT NOT NULL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
@@ -157,6 +152,26 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  convoyRules: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT NOT NULL",
+      enabled: "INTEGER DEFAULT 1",
+      priority: "INTEGER DEFAULT 0",
+      matchType: "TEXT NOT NULL DEFAULT 'literal'",
+      action: "TEXT NOT NULL DEFAULT 'replace'",
+      pattern: "TEXT NOT NULL",
+      replacement: "TEXT DEFAULT ''",
+      caseSensitive: "INTEGER DEFAULT 1",
+      providerIds: "TEXT DEFAULT '[]'",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_cr_enabled ON convoyRules(enabled)",
+      "CREATE INDEX IF NOT EXISTS idx_cr_priority ON convoyRules(enabled, priority)",
+    ],
+  }
 };
 
 export function buildCreateTableSql(name, def) {
