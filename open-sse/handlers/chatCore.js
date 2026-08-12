@@ -25,7 +25,7 @@ import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { salvageOrphanedToolResults, fixMissingToolResponses } from "../translator/concerns/toolCall.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
-import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
+import { classifyHeadroomDiagnostic, compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
@@ -59,7 +59,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials: rawCredentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, onAccountRotate, chatCoreCtx, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials: rawCredentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, onAccountRotate, chatCoreCtx, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, onTokenSaverEvent, sourceFormatOverride, providerThinking }) {
   const credentials = rawCredentials ? { ...rawCredentials } : rawCredentials;
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
@@ -245,8 +245,15 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
+  if (headroomStats) {
+    const before = headroomStats.tokens_before || 0;
+    const delta = headroomStats.tokens_saved || 0;
+    const pct = before > 0 ? ((delta / before) * 100).toFixed(1) : "0";
+    xf.push(`HEADROOM −${delta}tok(${pct}%)`);
+  }
   if (headroomLine) {
     log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
+  }
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
     }
@@ -285,6 +292,35 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
+
+  const headroomState = headroomStats ? "compressed" : headroomEnabled ? "skipped" : "disabled";
+  const headroomPhantomSavings = isHeadroomPhantomSavings(headroomStats, headroomDiagnostics);
+
+  // Hand the telemetry payload to the caller. The caller decides when to persist
+  // it — chat.js fires exactly once after the final routing attempt so account
+  // fallback retries don't double-count. Fail-open: never break the request path.
+  if (onTokenSaverEvent) {
+    try {
+      onTokenSaverEvent({
+        requestsObserved: 1,
+        rtkRequestsWithHits: rtkStats?.hits?.length ? 1 : 0,
+        rtkHits: rtkStats?.hits?.length || 0,
+        rtkBytesBefore: rtkStats?.bytesBefore || 0,
+        rtkBytesAfter: rtkStats?.bytesAfter || 0,
+        rtkBytesSaved: Math.max(0, (rtkStats?.bytesBefore || 0) - (rtkStats?.bytesAfter || 0)),
+        headroomState,
+        headroomDiagnostic: headroomState === "skipped" ? classifyHeadroomDiagnostic(headroomDiagnostics, null, true) : null,
+        headroomTokensBefore: headroomStats?.tokens_before || 0,
+        headroomTokensAfter: headroomStats?.tokens_after || 0,
+        headroomTokensSaved: headroomStats?.tokens_saved || 0,
+        headroomBodyBytesBefore: headroomDiagnostics.before?.bodyBytes || 0,
+        headroomBodyBytesAfter: headroomDiagnostics.after?.bodyBytes || 0,
+        headroomMessageBytesBefore: headroomDiagnostics.before?.messageBytes || 0,
+        headroomMessageBytesAfter: headroomDiagnostics.after?.messageBytes || 0,
+        headroomPhantomSavings: headroomPhantomSavings ? 1 : 0,
+      });
+    } catch { /* observability must not break requests */ }
+  }
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);

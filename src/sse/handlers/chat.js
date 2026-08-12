@@ -24,6 +24,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { recordTokenSaverEvent } from "@/lib/usageDb";
 
 /**
  * Handle chat completion request
@@ -160,7 +161,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+export async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -226,12 +227,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  // Capture last Token Saver telemetry across fallback attempts;
+  // persist exactly once after the final routing decision.
+  let lastTokenSaverEvent = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (lastTokenSaverEvent) {
+        try { Promise.resolve(recordTokenSaverEvent(lastTokenSaverEvent)).catch(() => {}); } catch { /* observability must not break requests */ }
+        lastTokenSaverEvent = null;
+      }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         // Preserve the upstream class so 4xx still means stop and 5xx still
@@ -377,9 +385,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // safety constraints in src/sse/README and the empty-stream guard docs.
       onAccountRotate,
       chatCoreCtx,
+      onTokenSaverEvent: (evt) => { lastTokenSaverEvent = evt; }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      if (lastTokenSaverEvent) {
+        try { Promise.resolve(recordTokenSaverEvent(lastTokenSaverEvent)).catch(() => {}); } catch { /* observability must not break requests */ }
+        lastTokenSaverEvent = null;
+      }
+      return result.response;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
@@ -392,6 +407,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       continue;
     }
 
+    if (lastTokenSaverEvent) {
+      try { Promise.resolve(recordTokenSaverEvent(lastTokenSaverEvent)).catch(() => {}); } catch { /* observability must not break requests */ }
+      lastTokenSaverEvent = null;
+    }
     return result.response;
   }
 }
