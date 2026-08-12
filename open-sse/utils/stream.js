@@ -1,14 +1,14 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { CLAUDE_BLOCK } from "../translator/schema/index.js";
-import { PROVIDERS } from "../config/providers.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import {
+  createResponsesAccumulator,
+  reduceResponsesEvent
+} from "../translator/concerns/responsesAccumulator.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
-import { createToolCallTraceAccumulator, logToolSemantics } from "./toolSemanticsTrace.js";
-import { createSseDoneTracker } from "./sseDoneTracker.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -53,8 +53,7 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    translatedBody = null,
-    log = null
+    responsesAccumulator = null
   } = options;
 
   let buffer = "";
@@ -78,13 +77,15 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  const openAIResponsesAccumulator = responsesAccumulator ||
+    (targetFormat === FORMATS.OPENAI_RESPONSES
+      ? createResponsesAccumulator({ model })
+      : null);
+  if (state && openAIResponsesAccumulator && targetFormat === FORMATS.OPENAI_RESPONSES) {
+    state.responsesAccumulator = openAIResponsesAccumulator;
+  }
 
-  const passthroughDoneTracker = createSseDoneTracker();
-
-  // Tool semantics trace accumulator — counts and HMAC digests only, never raw content
-  const toolTrace = createToolCallTraceAccumulator();
-
-  return new TransformStream({
+  const transformStream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -111,34 +112,17 @@ export function createSSEStream(options = {}) {
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
-          if (!passthroughDoneTracker.shouldForward(trimmed)) continue;
-          if (passthroughDoneTracker.hasSeenDone()) streamDoneSent = true;
-
           let output;
           let injectedUsage = false;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
-              toolTrace.push(parsed);
-
-              // Some Anthropic-compatible providers omit `signature` from the
-              // thinking block start. Strict Messages clients deserialize that
-              // field before later signature_delta events arrive.
-              let fieldsInjected = false;
-              if (
-                PROVIDERS[provider]?.quirks?.ensureThinkingSignature &&
-                parsed.type === "content_block_start" &&
-                parsed.content_block?.type === CLAUDE_BLOCK.THINKING &&
-                parsed.content_block.signature === undefined
-              ) {
-                parsed.content_block.signature = "";
-                fieldsInjected = true;
-              }
 
               const idFixed = fixInvalidId(parsed);
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
+              let fieldsInjected = false;
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
@@ -233,17 +217,28 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed, targetFormat);
+        let parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
         const keepsOpenAIResponsesFormat = isOpenAIResponsesStream && sourceFormat === FORMATS.OPENAI_RESPONSES;
-        const openAIResponsesEventName = isOpenAIResponsesStream
+        let openAIResponsesEventName = isOpenAIResponsesStream
           ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
           : null;
 
-        if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+        if (keepsOpenAIResponsesFormat && !parsed.done) {
+          const reduced = reduceResponsesEvent(openAIResponsesAccumulator, {
+            event: openAIResponsesEventName,
+            data: parsed
+          });
+          if (!reduced.accepted) continue;
+          parsed = reduced.data;
+          openAIResponsesEventName = reduced.type;
+          if (isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+            openAIResponsesTerminalSeen = true;
+          }
+        } else if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
         }
 
@@ -252,7 +247,7 @@ export function createSSEStream(options = {}) {
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
           // Synthesize response.failed if the Responses stream never sent a terminal event
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
-            const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
+            const failedOutput = formatIncompleteOpenAIResponsesStreamFailure(openAIResponsesAccumulator);
             reqLogger?.appendConvertedChunk?.(failedOutput);
             controller.enqueue(sharedEncoder.encode(failedOutput));
             openAIResponsesTerminalSeen = true;
@@ -263,6 +258,7 @@ export function createSSEStream(options = {}) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+            openAIResponsesAccumulator.doneSent = true;
           }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
@@ -324,7 +320,6 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
-        toolTrace.push(parsed);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -409,12 +404,26 @@ export function createSSEStream(options = {}) {
               thinking: accumulatedThinking
             }, usage, ttftAt);
           }
-          logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "stream-passthrough", requestBody: body, translatedBody, providerBody: null, clientBody: null, providerToolCalls: toolTrace.summary() });
           return;
         }
 
         if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
+          let parsed = parseSSELine(buffer.trim(), targetFormat);
+          if (parsed && !parsed.done) {
+            const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
+            if (keepsOpenAIResponsesFormat) {
+              const eventName = getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed);
+              const reduced = reduceResponsesEvent(openAIResponsesAccumulator, { event: eventName, data: parsed });
+              if (reduced.accepted) {
+                parsed = reduced.data;
+                const output = formatSSE({ event: reduced.type, data: parsed }, sourceFormat);
+                reqLogger?.appendConvertedChunk?.(output);
+                controller.enqueue(sharedEncoder.encode(output));
+                if (isOpenAIResponsesTerminalEvent(reduced.type, parsed)) openAIResponsesTerminalSeen = true;
+              }
+              parsed = null;
+            }
+          }
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
@@ -457,7 +466,7 @@ export function createSSEStream(options = {}) {
         // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
         const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
-          const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
+          const failedOutput = formatIncompleteOpenAIResponsesStreamFailure(openAIResponsesAccumulator);
           reqLogger?.appendConvertedChunk?.(failedOutput);
           controller.enqueue(sharedEncoder.encode(failedOutput));
           openAIResponsesTerminalSeen = true;
@@ -469,6 +478,7 @@ export function createSSEStream(options = {}) {
           controller.enqueue(sharedEncoder.encode(doneOutput));
           openAIResponsesDoneSent = true;
           streamDoneSent = true;
+          openAIResponsesAccumulator.doneSent = true;
         }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
@@ -487,15 +497,27 @@ export function createSSEStream(options = {}) {
             thinking: accumulatedThinking
           }, state?.usage, ttftAt);
         }
-        logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "stream-translate", requestBody: body, translatedBody, providerBody: null, clientBody: null, providerToolCalls: toolTrace.summary() });
       } catch (error) {
         console.log("Error in flush:", error);
       }
     }
   });
+
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat !== FORMATS.OPENAI_RESPONSES) {
+    transformStream.buildAbortedTerminalBytes = () => {
+      const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+      const chunks = Array.isArray(flushed) ? flushed : flushed ? [flushed] : [];
+      const output = chunks.filter(Boolean).map(item => formatSSE(item, sourceFormat)).join("");
+      // Translated streams normally end with their format's final chunk plus EOF;
+      // only same-format Responses streams use the OpenAI `data: [DONE]` sentinel.
+      return output ? sharedEncoder.encode(output) : null;
+    };
+  }
+
+  return transformStream;
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, responsesAccumulator = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -508,8 +530,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    translatedBody: reqLogger?.toolSemanticsContext?.translatedBody,
-    log: reqLogger?.toolSemanticsContext?.log
+    responsesAccumulator
   });
 }
 
@@ -522,10 +543,6 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey,
-    sourceFormat: reqLogger?.toolSemanticsContext?.sourceFormat,
-    targetFormat: reqLogger?.toolSemanticsContext?.targetFormat,
-    translatedBody: reqLogger?.toolSemanticsContext?.translatedBody,
-    log: reqLogger?.toolSemanticsContext?.log
+    apiKey
   });
 }
