@@ -1,27 +1,26 @@
 
 <div align="center">
-  <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
+  <img src="./images/9router.png?1" alt="EzRouter Dashboard" width="800"/>
   
-  # 9Router - 免费 AI 路由器与 Token 节省器
+  # EzRouter - 免费 AI 路由器与 Token 节省器
   
   **编程永不停歇。使用 RTK + 自动切换到免费/低价 AI 模型，节省 20-40% 的 tokens。**
   
   **将所有 AI 编程工具（Claude Code、Cursor、Antigravity、Copilot、Codex、Gemini、OpenCode、Cline、OpenClaw...）连接到 40+ AI 提供商和 100+ 模型。**
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![GitHub stars](https://img.shields.io/github/stars/golamrabbi696/EzRouter?style=flat)](https://github.com/golamrabbi696/EzRouter/stargazers)
+  [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/golamrabbi696/EzRouter/blob/main/LICENSE)
 
-  <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-  
-  [🚀 快速开始](#-快速开始) • [💡 功能特点](#-主要功能) • [📖 设置指南](#-设置指南) • [🌐 网站](https://9router.com)
+> **原始项目：[decolua/9router](https://github.com/decolua/9router)** — 依 MIT 许可证保留上游署名。
+
+  [🚀 快速开始](#-快速开始) • [💡 功能特点](#-主要功能) • [📖 设置指南](#-设置指南)
 
   [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md)
 </div>
 
 ---
 
-## 🤔 为什么选择 9Router？
+## 🤔 为什么选择 EzRouter？
 
 **告别浪费金钱、tokens 和触碰限制的困扰：**
 
@@ -31,7 +30,7 @@
 - ❌ 昂贵的 API（每个提供商 $20-50/月）
 - ❌ 需要手动在提供商之间切换
 
-**9Router 解决这一切：**
+**EzRouter 解决这一切：**
 
 - ✅ **RTK Token 节省器** - 自动压缩 tool_result 内容，每次请求节省 20-40% tokens
 - ✅ **充分利用订阅** - 追踪配额，在重置前用尽每一分额度
@@ -51,7 +50,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│           9Router（智能路由器）              │
+│           EzRouter（智能路由器）             │
 │  • RTK Token 节省器（减少 tool_result tokens）│
 │  • 格式转换（OpenAI ↔ Claude）              │
 │  • 配额追踪                                  │
@@ -71,11 +70,15 @@
 
 ## ⚡ 快速开始
 
-**1. 全局安装：**
+**1. 从源码安装：**
 
 ```bash
-npm install -g 9router
-9router
+git clone https://github.com/golamrabbi696/EzRouter.git
+cd EzRouter
+cp .env.example .env
+npm install
+npm run build
+PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
 🎉 控制面板在 `http://localhost:20128` 打开
@@ -95,21 +98,10 @@ Claude Code/Codex/OpenClaw/Cursor/Cline 设置：
 
 **就这么简单！** 开始使用免费 AI 模型编程。
 
-**替代方案：从源码运行（本仓库）：**
-
-本仓库的包是私有的（`9router-app`），所以源码/Docker 执行是预期的本地开发方式。
+**开发模式（热重载）：**
 
 ```bash
-cp .env.example .env
-npm install
 PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
-```
-
-生产模式：
-
-```bash
-npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
 默认 URL：
@@ -173,13 +165,11 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 </div>
 
-> 🎬 **制作了关于 9Router 的视频？** 提交 [Pull Request](https://github.com/decolua/9router/pulls)，将你的视频添加到此部分 — 我们会合并它！
-
 ---
 
 ## 🛠️ 支持的 CLI 工具
 
-9Router 与所有主流 AI 编程工具无缝协作：
+EzRouter 与所有主流 AI 编程工具无缝协作：
 
 <div align="center">
   <table>
@@ -448,7 +438,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 格式间无缝转换：
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **Cursor** ↔ **Kiro** ↔ **Vertex** ↔ **Antigravity** ↔ **Ollama** ↔ **OpenAI Responses**
-- 你的 CLI 工具发送 OpenAI 格式 → 9Router 转换 → 提供商接收原生格式
+- 你的 CLI 工具发送 OpenAI 格式 → EzRouter 转换 → 提供商接收原生格式
 - 适用于任何支持自定义 OpenAI 端点的工具
 
 ### 👥 多账户支持
@@ -502,11 +492,11 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 > **💡 重要 - 了解控制面板成本：**
 > 
 > 使用分析中显示的"成本"**仅用于追踪和比较目的**。
-> 9Router 本身**永远不会向你收费**。你只直接向提供商付款（如果使用付费服务）。
+> EzRouter 本身**永远不会向你收费**。你只直接向提供商付款（如果使用付费服务）。
 > 
 > **示例：** 如果你的控制面板显示使用 Kiro 免费模型时"总成本 $290"，这代表你如果直接使用付费 API 需要支付的金额。你的实际成本 = **$0**（Kiro 免费等级：约 50 积分/月）。
 > 
-> 把它想象成一个"节省追踪器"，展示你通过使用免费模型或通过 9Router 路由节省了多少钱！
+> 把它想象成一个"节省追踪器"，展示你通过使用免费模型或通过 EzRouter 路由节省了多少钱！
 
 ### 🌐 任意部署
 
@@ -539,15 +529,15 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ---
 
-### 📊 理解 9Router 成本与计费
+### 📊 理解 EzRouter 成本与计费
 
-**9Router 计费真相：**
+**EzRouter 计费真相：**
 
-✅ **9Router 软件 = 永久免费**（开源，绝不收费）  
+✅ **EzRouter 软件 = 永久免费**（开源，绝不收费）  
 ✅ **控制面板"成本" = 仅用于显示/追踪**（不是实际账单）  
 ✅ **你直接向提供商付款**（订阅或 API 费用）  
 ✅ **免费提供商保持免费**（Kiro 约 50 积分/月、OpenCode Free、Vertex $300 额度 = 在免费额度内 $0）— 注意 iFlow/Qwen/Gemini CLI 免费等级已于 2026 年停止
-❌ **9Router 永不发送发票** 或扣款
+❌ **EzRouter 永不发送发票** 或扣款
 
 **成本显示如何工作：**
 
@@ -568,9 +558,9 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 **付款规则：**
 - **订阅提供商**（Claude Code、Codex）：通过他们的网站直接付款
-- **低价提供商**（GLM、MiniMax）：直接付款，9Router 只做路由
+- **低价提供商**（GLM、MiniMax）：直接付款，EzRouter 只做路由
 - **免费提供商**（Kiro、OpenCode Free、Vertex）：真正的免费，在免费额度内无隐藏费用
-- **9Router**：从不收取任何费用，永远不会
+- **EzRouter**：从不收取任何费用，永远不会
 
 ---
 
@@ -645,7 +635,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 <details>
 <summary><b>📊 为什么我的控制面板显示高成本？</b></summary>
 
-控制面板追踪你的 token 使用情况，并显示**估算成本**，如同你直接使用付费 API。这**不是实际计费** — 它是一个参考，展示你通过使用免费模型或通过 9Router 路由现有订阅节省了多少钱。
+控制面板追踪你的 token 使用情况，并显示**估算成本**，如同你直接使用付费 API。这**不是实际计费** — 它是一个参考，展示你通过使用免费模型或通过 EzRouter 路由现有订阅节省了多少钱。
 
 **示例：**
 - **控制面板显示：** "$290 总成本"
@@ -658,16 +648,16 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 </details>
 
 <details>
-<summary><b>💳 9Router 会扣我的钱吗？</b></summary>
+<summary><b>💳 EzRouter 会扣我的钱吗？</b></summary>
 
-**不会。** 9Router 是在你自己的电脑上运行的开源软件。它永远不会向你收取任何费用。
+**不会。** EzRouter 是在你自己的电脑上运行的开源软件。它永远不会向你收取任何费用。
 
 **你只需支付：**
 - ✅ **订阅提供商**（Claude Code $20/月、Codex $20-200/月）→ 在他们的网站上直接付款
-- ✅ **低价提供商**（GLM、MiniMax）→ 直接付款，9Router 只是路由你的请求
-- ❌ **9Router 本身** → **永不收费，永远不会**
+- ✅ **低价提供商**（GLM、MiniMax）→ 直接付款，EzRouter 只是路由你的请求
+- ❌ **EzRouter 本身** → **永不收费，永远不会**
 
-9Router 是一个本地代理/路由器。它没有你的信用卡，不能发送发票，也没有计费系统。它是完全免费的软件。
+EzRouter 是一个本地代理/路由器。它没有你的信用卡，不能发送发票，也没有计费系统。它是完全免费的软件。
 
 </details>
 
@@ -681,7 +671,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 - **OpenCode Free**：无认证直连代理，模型从 `opencode.ai/zen/v1/models` 自动获取。免费模型列表会随时间变化（部分模型仅限时免费）— 可能随时变更。
 - **Vertex AI**：新 Google Cloud 账户可获得 $300 免费额度（90 天）。自 2026 年 3 月起 Gemini API 端点不再消耗这些额度 — 请改用 **Vertex AI Studio** 端点。
 
-9Router 只是路由你的请求到它们 — 没有"陷阱"或未来的计费。它们是真正的免费服务，9Router 让它们易于使用并支持切换。
+EzRouter 只是路由你的请求到它们 — 没有"陷阱"或未来的计费。它们是真正的免费服务，EzRouter 让它们易于使用并支持切换。
 
 **已停止的免费等级（不再推荐）：**
 - ❌ **iFlow**：曾是免费无限量，现在改为付费（2026）
@@ -711,7 +701,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 3. **最后使用订阅提供商：**
    - 仅当你已有订阅时
-   - 9Router 通过配额追踪帮助最大化其价值
+   - EzRouter 通过配额追踪帮助最大化其价值
 
 **结果：** 大多数用户可以仅使用免费等级以 $0/月运行！
 
@@ -720,20 +710,20 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 <details>
 <summary><b>📈 如果我的使用量突然激增怎么办？</b></summary>
 
-9Router 的智能切换可以防止意外费用：
+EzRouter 的智能切换可以防止意外费用：
 
 **场景：** 你正在进行编码冲刺，用尽了配额
 
-**没有 9Router：**
+**没有 EzRouter：**
 - ❌ 达到速率限制 → 工作停止 → 沮丧
 - ❌ 或者：不慎累积大量 API 账单
 
-**有 9Router：**
+**有 EzRouter：**
 - ✅ 订阅达到限制 → 自动切换到低价等级
 - ✅ 低价等级变得昂贵 → 自动切换到免费等级
 - ✅ 编程永不停歇 → 可预测的成本
 
-**你掌控一切：** 在控制面板中设置每个提供商的支出限制，9Router 会遵守它们。
+**你掌控一切：** 在控制面板中设置每个提供商的支出限制，EzRouter 会遵守它们。
 
 </details>
 
@@ -1022,20 +1012,19 @@ Model：cc/claude-opus-4-7
 
 ```bash
 # 克隆并安装
-git clone https://github.com/decolua/9router.git
-cd 9router
+git clone https://github.com/golamrabbi696/EzRouter.git
+cd EzRouter
 npm install
 npm run build
 
 # 配置
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/ezrouter"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -1044,25 +1033,26 @@ npm run start
 
 # 或使用 PM2
 npm install -g pm2
-pm2 start npm --name 9router -- start
+pm2 start npm --name ezrouter -- start
 pm2 save
 pm2 startup
 ```
 
 ### Docker
 
+> **注意：** EzRouter 不提供预构建的 Docker 镜像，请通过下方命令从源码构建。
+
 ```bash
 # 构建镜像（从仓库根目录）
-docker build -t 9router .
+docker build -t ezrouter .
 
 # 运行容器（当前设置使用的命令）
 docker run -d \
-  --name 9router \
+  --name ezrouter \
   -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  -v "$HOME/.ezrouter:/app/data" \
+  -e DATA_DIR=/app/data \
+  ezrouter
 ```
 
 便携命令（如果你已经在仓库根目录）：
@@ -1266,23 +1256,22 @@ Authorization: Bearer your-api-key
 
 ## 📧 支持
 
-- **网站**：[9router.com](https://9router.com)
-- **GitHub**：[github.com/decolua/9router](https://github.com/decolua/9router)
-- **问题**：[github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub**：[github.com/golamrabbi696/EzRouter](https://github.com/golamrabbi696/EzRouter)
+- **问题**：[github.com/golamrabbi696/EzRouter/issues](https://github.com/golamrabbi696/EzRouter/issues)
 
 ---
 
 ## 👥 贡献者
 
-感谢所有帮助改进 9Router 的贡献者！
+感谢所有帮助改进 EzRouter 的贡献者！
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=golamrabbi696/EzRouter&max=150&columns=15&anon=1)](https://github.com/golamrabbi696/EzRouter/graphs/contributors)
 
 ---
 
 ## 📊 Star 图表
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/golamrabbi696/EzRouter.svg?variant=adaptive)](https://starchart.cc/golamrabbi696/EzRouter)
 
 
 
@@ -1297,10 +1286,11 @@ Authorization: Bearer your-api-key
 站在巨人的肩膀上构建：
 
 - **CLIProxyAPI** — 启发了这个 JavaScript 移植的原始 Go 实现。
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — Rust token 节省器。9Router 将其压缩管道移植到 JS → 每次请求 **减少 20-40% 输入 tokens**。
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) by **[@JuliusBrussee](https://github.com/JuliusBrussee)** — 病毒式传播的 *"为什么用很多 token 当少的 token 就能搞定"*。9Router 适配其提示词 → **减少 65% 输出 tokens**。
+- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — Rust token 节省器。EzRouter 将其压缩管道移植到 JS → 每次请求 **减少 20-40% 输入 tokens**。
+- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) by **[@JuliusBrussee](https://github.com/JuliusBrussee)** — 病毒式传播的 *"为什么用很多 token 当少的 token 就能搞定"*。EzRouter 适配其提示词 → **减少 65% 输出 tokens**。
+- **[decolua/9router](https://github.com/decolua/9router)** — 本分支所基于的上游项目。所有核心功能均源于此。
 
-非常感谢这些作者 — 没有他们的工作，9Router 的 token 节省功能就不会存在。在 GitHub 上给他们加星！
+非常感谢这些作者 — 没有他们的工作，EzRouter 的 token 节省功能就不会存在。在 GitHub 上给他们加星！
 
 ---
 

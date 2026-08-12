@@ -1,19 +1,12 @@
 <div align="center">
-  <img src="./images/9router.png?1" alt="داشبورد 9Router" width="800"/>
+  <img src="./images/9router.png?1" alt="داشبورد EzRouter" width="800"/>
   
-  # 9Router - مسیریاب رایگان هوش مصنوعی و ذخیره‌ساز توکن
+  # EzRouter - مسیریاب رایگان هوش مصنوعی و ذخیره‌ساز توکن
   
   **هرگز کدنویسی را متوقف نکنید. با RTK بین ۲۰ تا ۴۰٪ در توکن‌ها صرفه‌جویی کنید + بازگشت خودکار به مدل‌های رایگان و ارزان هوش مصنوعی.**
   
-  **همه ابزارهای کدنویسی مبتنی بر هوش مصنوعی (Claude Code، Cursor، Antigravity، Copilot، Codex، Gemini، OpenCode، Cline، OpenClaw...) را به بیش از ۴۰ ارائه‌دهنده و ۱۰۰+ مدل متصل کنید.**
-  
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
-  [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
-
-<a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+  **همه ابزارهای کدنویسی مبتنی بر هوش مصنوعی (Claude Code، Cursor، Antigravity، Copilot، Codex، Gemini، OpenCode، Cline، OpenClaw...) را به بیش از ۴۰ ارائه‌دهنده و ۱۰۰+ مدل متصل کنید.**  [![GitHub stars](https://img.shields.io/github/stars/golamrabbi696/EzRouter?style=flat)](https://github.com/golamrabbi696/EzRouter/stargazers)
+  [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/golamrabbi696/EzRouter/blob/main/LICENSE)
 
 [🚀 شروع سریع](#-شروع-سریع) • [💡 ویژگی‌ها](#-ویژگی‌های-کلیدی) • [📖 راه‌اندازی](#-راهنمای-راه‌اندازی) • [🌐 وب‌سایت](https://9router.com)
 
@@ -23,7 +16,7 @@
 
 ---
 
-## 🤔 چرا 9Router؟
+## 🤔 چرا EzRouter؟
 
 **هدررفت پول، توکن و برخورد با محدودیت‌ها را متوقف کنید:**
 
@@ -33,7 +26,7 @@
 - ❌ APIهای گران قیمت (۲۰ تا ۵۰ دلار در ماه برای هر ارائه‌دهنده)
 - ❌ جابجایی دستی بین ارائه‌دهندگان
 
-**9Router این مشکلات را حل می‌کند:**
+**EzRouter این مشکلات را حل می‌کند:**
 
 - ✅ **ذخیره‌ساز توکن RTK** - فشرده‌سازی خودکار محتوای tool_result، صرفه‌جویی ۲۰ تا ۴۰٪ توکن در هر درخواست
 - ✅ **حداکثر استفاده از اشتراک‌ها** - پیگیری سهمیه، استفاده از هر ذره قبل از بازنشانی
@@ -53,7 +46,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│           9Router (مسیریاب هوشمند)          │
+│           EzRouter (مسیریاب هوشمند)          │
 │  • ذخیره‌ساز توکن RTK (کاهش توکن‌های tool_result) │
 │  • ترجمه قالب (OpenAI ↔ Claude)             │
 │  • پیگیری سهمیه                             │
@@ -76,8 +69,12 @@
 **۱. نصب سراسری:**
 
 ```bash
-npm install -g 9router
-9router
+git clone https://github.com/golamrabbi696/EzRouter.git
+cd EzRouter
+cp .env.example .env
+npm install
+npm run build
+PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
 🎉 داشبورد در آدرس `http://localhost:20128` باز می‌شود
@@ -129,34 +126,34 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
   <tr>
   <td align="center" width="320">
   <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-    <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="صرفه‌جویی در هزینه LLM با 9Router" width="300"/>
+    <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="صرفه‌جویی در هزینه LLM با EzRouter" width="300"/>
   </a><br/>
   <b>🇻🇳 ویتنامی</b><br/>
-  <sub>صرفه‌جویی در هزینه LLM برای OpenClaw با 9Router<br/>توسط <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
+  <sub>صرفه‌جویی در هزینه LLM برای OpenClaw با EzRouter<br/>توسط <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
 </td>
 <td align="center" width="320">
       <a href="https://youtu.be/VQAw612S27Y">
-        <img src="https://img.youtube.com/vi/VQAw612S27Y/maxresdefault.jpg" alt="راه‌اندازی نامحدود رایگان 9Router + Claude Code" width="300"/>
+        <img src="https://img.youtube.com/vi/VQAw612S27Y/maxresdefault.jpg" alt="راه‌اندازی نامحدود رایگان EzRouter + Claude Code" width="300"/>
       </a><br/>
       <b>🇵🇰 اردو / हिन्दी</b><br/>
-      <sub>راه‌اندازی نامحدود رایگان 9Router + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
+      <sub>راه‌اندازی نامحدود رایگان EzRouter + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="آموزش راه‌اندازی 9Router" width="300"/>
+        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="آموزش راه‌اندازی EzRouter" width="300"/>
       </a><br/>
       <b>🇺🇸 انگلیسی</b><br/>
-      <sub>راه‌اندازی رایگان 9Router + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
+      <sub>راه‌اندازی رایگان EzRouter + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     
   </tr>
   <tr>
   <td align="center" width="320">
       <a href="https://youtu.be/3dF5GIYMrcQ?si=bAyfyiHbARJQAHj_">
-        <img src="https://img.youtube.com/vi/3dF5GIYMrcQ/hqdefault.jpg" alt="آموزش راه‌اندازی 9Router" width="300"/>
+        <img src="https://img.youtube.com/vi/3dF5GIYMrcQ/hqdefault.jpg" alt="آموزش راه‌اندازی EzRouter" width="300"/>
       </a><br/>
       <b>🇺🇸 انگلیسی</b><br/>
-      <sub>راه‌اندازی رایگان 9Router + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
+      <sub>راه‌اندازی رایگان EzRouter + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://www.youtube.com/watch?v=o3qYCyjrFYg">
@@ -170,7 +167,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <img src="https://img.youtube.com/vi/Ttpc26m39Dw/maxresdefault.jpg" alt="راه‌اندازی رایگان Claude CLI" width="300"/>
       </a><br/>
       <b>🇺🇸 انگلیسی</b><br/>
-      <sub>راه‌اندازی رایگان Claude CLI با 9Router 🚀<br/>توسط <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
+      <sub>راه‌اندازی رایگان Claude CLI با EzRouter 🚀<br/>توسط <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
     </td>
     
   </tr>
@@ -180,7 +177,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <img src="https://img.youtube.com/vi/G-5A_D5Pm6Y/maxresdefault.jpg" alt="نصب کامل OpenClaw رایگان" width="300"/>
       </a><br/>
       <b>🇻🇳 ویتنامی</b><br/>
-      <sub>نصب کامل OpenClaw رایگان از صفر تا صد + 9Router<br/>توسط <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
+      <sub>نصب کامل OpenClaw رایگان از صفر تا صد + EzRouter<br/>توسط <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://www.youtube.com/watch?v=JXmg8_gccgE">
@@ -194,7 +191,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <img src="https://img.youtube.com/vi/CkVZZUSTXAI/mqdefault.jpg" alt="راه‌اندازی رایگان Claude CLI" width="300"/>
       </a><br/>
       <b>🇮🇩 اندونزیایی</b><br/>
-      <sub>کدنویسی ۲۴ ساعته بدون محدودیت نرخ! صرفه‌جویی ۶۵٪ توکن هوش مصنوعی | آموزش راه‌اندازی سریع 9Router 🚀<br/>توسط <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
+      <sub>کدنویسی ۲۴ ساعته بدون محدودیت نرخ! صرفه‌جویی ۶۵٪ توکن هوش مصنوعی | آموزش راه‌اندازی سریع EzRouter 🚀<br/>توسط <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
     </td>
     
   </tr>
@@ -202,10 +199,10 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
   <tr>
   <td align="center" width="320">
       <a href="https://www.youtube.com/watch?v=TXGv4eofe1I">
-        <img src="https://img.youtube.com/vi/TXGv4eofe1I/mqdefault.jpg" alt="روش استقرار 9Router در Hugging Face رایگان و همیشه روشن! | جایگزین VPS با ۱۶ گیگابایت رم" width="300"/>
+        <img src="https://img.youtube.com/vi/TXGv4eofe1I/mqdefault.jpg" alt="روش استقرار EzRouter در Hugging Face رایگان و همیشه روشن! | جایگزین VPS با ۱۶ گیگابایت رم" width="300"/>
       </a><br/>
       <b>🇮🇩 اندونزیایی</b><br/>
-      <sub>روش استقرار 9Router در Hugging Face رایگان و همیشه روشن! | جایگزین VPS با ۱۶ گیگابایت رم<br/>توسط <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
+      <sub>روش استقرار EzRouter در Hugging Face رایگان و همیشه روشن! | جایگزین VPS با ۱۶ گیگابایت رم<br/>توسط <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
     </td>
   </tr>
 
@@ -213,13 +210,13 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 </div>
 
-> 🎬 **درباره 9Router ویدیو ساخته‌اید؟** یک [درخواست Pull](https://github.com/decolua/9router/pulls) برای افزودن ویدیوی خود به این بخش ارسال کنید — ما آن را ادغام خواهیم کرد!
+> 🎬 **درباره EzRouter ویدیو ساخته‌اید؟** یک [درخواست Pull](https://github.com/golamrabbi696/EzRouter/pulls) برای افزودن ویدیوی خود به این بخش ارسال کنید — ما آن را ادغام خواهیم کرد!
 
 ---
 
 ## 🛠️ ابزارهای خط فرمان پشتیبانی شده
 
-9Router به‌طور یکپارچه با تمام ابزارهای اصلی کدنویسی هوش مصنوعی کار می‌کند:
+EzRouter به‌طور یکپارچه با تمام ابزارهای اصلی کدنویسی هوش مصنوعی کار می‌کند:
 
 <div align="center">
   <table>
@@ -468,10 +465,10 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ### 🧠 ذخیره‌ساز توکن Headroom
 
-Headroom اختیاری است و به‌طور جداگانه اجرا می‌شود. 9Router نقطه پایانی محلی `/v1/compress` Headroom را فراخوانی کرده، سپس مسیریابی معمولی، بازگشت، احراز هویت و پیگیری مصرف را ادامه می‌دهد:
+Headroom اختیاری است و به‌طور جداگانه اجرا می‌شود. EzRouter نقطه پایانی محلی `/v1/compress` Headroom را فراخوانی کرده، سپس مسیریابی معمولی، بازگشت، احراز هویت و پیگیری مصرف را ادامه می‌دهد:
 
 ```
-کلاینت → 9Router → Headroom /v1/compress → 9Router → ارائه‌دهنده
+کلاینت → EzRouter → Headroom /v1/compress → EzRouter → ارائه‌دهنده
 ```
 
 راه‌اندازی محلی:
@@ -493,7 +490,7 @@ http://headroom:8787
 http://host.docker.internal:8787
 ```
 
-اگر Headroom از کار بیفتد یا خطا برگرداند، 9Router به‌حالت بازگشت باز می‌شود و درخواست اصلی را ارسال می‌کند.
+اگر Headroom از کار بیفتد یا خطا برگرداند، EzRouter به‌حالت بازگشت باز می‌شود و درخواست اصلی را ارسال می‌کند.
 
 ### 🐴 دم‌اسب (توسعه‌دهنده ارشد تنبل)
 
@@ -535,7 +532,7 @@ http://host.docker.internal:8787
 ترجمه یکپارچه بین قالب‌ها:
 
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **Cursor** ↔ **Kiro** ↔ **Vertex** ↔ **Antigravity** ↔ **Ollama** ↔ **OpenAI Responses**
-- ابزار خط فرمان شما قالب OpenAI ارسال می‌کند → 9Router ترجمه می‌کند → ارائه‌دهنده قالب بومی دریافت می‌کند
+- ابزار خط فرمان شما قالب OpenAI ارسال می‌کند → EzRouter ترجمه می‌کند → ارائه‌دهنده قالب بومی دریافت می‌کند
 - با هر ابزاری که از نقاط پایانی سفارشی OpenAI پشتیبانی می‌کند کار می‌کند
 
 ### 👥 پشتیبانی از چند حساب
@@ -589,11 +586,11 @@ http://host.docker.internal:8787
 > **💡 مهم - درک هزینه‌های داشبورد:**
 >
 > "هزینه" نمایش داده شده در تحلیل استفاده **فقط برای پیگیری و مقایسه** است.
-> خود 9Router **هرگز از شما هزینه‌ای دریافت نمی‌کند**. شما فقط مستقیماً به ارائه‌دهندگان هزینه می‌پردازید (در صورت استفاده از خدمات پولی).
+> خود EzRouter **هرگز از شما هزینه‌ای دریافت نمی‌کند**. شما فقط مستقیماً به ارائه‌دهندگان هزینه می‌پردازید (در صورت استفاده از خدمات پولی).
 >
 > **مثال:** اگر داشبورد شما "۲۹۰ دلار هزینه کل" را هنگام استفاده از مدل‌های iFlow نشان می‌دهد، این مبلغ چیزی است که در صورت استفاده مستقیم از APIهای پولی پرداخت می‌کردید. هزینه واقعی شما = **۰ دلار** (iFlow رایگان نامحدود است).
 >
-> به آن به عنوان "ردیاب پس‌انداز" فکر کنید که نشان می‌دهد با استفاده از مدل‌های رایگان یا مسیریابی از طریق 9Router چقدر صرفه‌جویی می‌کنید!
+> به آن به عنوان "ردیاب پس‌انداز" فکر کنید که نشان می‌دهد با استفاده از مدل‌های رایگان یا مسیریابی از طریق EzRouter چقدر صرفه‌جویی می‌کنید!
 
 ### 🌐 استقرار در هر جا
 
@@ -626,15 +623,15 @@ http://host.docker.internal:8787
 
 ---
 
-### 📊 درک هزینه‌ها و صورتحساب 9Router
+### 📊 درک هزینه‌ها و صورتحساب EzRouter
 
-**واقعیت صورتحساب 9Router:**
+**واقعیت صورتحساب EzRouter:**
 
-✅ **نرم‌افزار 9Router = رایگان برای همیشه** (منبع باز، هرگز هزینه‌ای دریافت نمی‌کند)  
+✅ **نرم‌افزار EzRouter = رایگان برای همیشه** (منبع باز، هرگز هزینه‌ای دریافت نمی‌کند)  
 ✅ **"هزینه‌های" داشبورد = فقط نمایش/پیگیری** (صورتحساب واقعی نیستند)  
 ✅ **شما مستقیماً به ارائه‌دهندگان هزینه می‌پردازید** (اشتراک‌ها یا هزینه‌های API)  
 ✅ **ارائه‌دهندگان رایگان واقعاً رایگان هستند** (iFlow، Kiro، Qwen = ۰ دلار نامحدود)  
-❌ **9Router هرگز صورتحساب ارسال نمی‌کند** یا کارت شما را شارژ نمی‌کند
+❌ **EzRouter هرگز صورتحساب ارسال نمی‌کند** یا کارت شما را شارژ نمی‌کند
 
 **نحوه عملکرد نمایش هزینه:**
 
@@ -657,9 +654,9 @@ http://host.docker.internal:8787
 **قوانین پرداخت:**
 
 - **ارائه‌دهندگان اشتراک** (Claude Code، Codex): مستقیماً از طریق وب‌سایت‌هایشان به آنها پرداخت کنید
-- **ارائه‌دهندگان ارزان** (GLM، MiniMax): مستقیماً به آنها پرداخت کنید، 9Router فقط مسیریابی می‌کند
+- **ارائه‌دهندگان ارزان** (GLM، MiniMax): مستقیماً به آنها پرداخت کنید، EzRouter فقط مسیریابی می‌کند
 - **ارائه‌دهندگان رایگان** (iFlow، Kiro، Qwen): واقعاً برای همیشه رایگان، بدون هزینه پنهان
-- **9Router**: هرگز هیچ هزینه‌ای دریافت نمی‌کند، همیشه
+- **EzRouter**: هرگز هیچ هزینه‌ای دریافت نمی‌کند، همیشه
 
 ---
 
@@ -738,7 +735,7 @@ http://host.docker.internal:8787
 <details>
 <summary><b>📊 چرا داشبورد من هزینه‌های بالا نشان می‌دهد؟</b></summary>
 
-داشبورد مصرف توکن شما را پیگیری کرده و **هزینه‌های تخمینی** را نشان می‌دهد گویی مستقیماً از APIهای پولی استفاده می‌کنید. این **صورتحساب واقعی نیست** - این یک مرجع برای نشان دادن میزان پس‌انداز شما با استفاده از مدل‌های رایگان یا اشتراک‌های موجود از طریق 9Router است.
+داشبورد مصرف توکن شما را پیگیری کرده و **هزینه‌های تخمینی** را نشان می‌دهد گویی مستقیماً از APIهای پولی استفاده می‌کنید. این **صورتحساب واقعی نیست** - این یک مرجع برای نشان دادن میزان پس‌انداز شما با استفاده از مدل‌های رایگان یا اشتراک‌های موجود از طریق EzRouter است.
 
 **مثال:**
 
@@ -752,17 +749,17 @@ http://host.docker.internal:8787
 </details>
 
 <details>
-<summary><b>💳 آیا توسط 9Router شارژ می‌شوم؟</b></summary>
+<summary><b>💳 آیا توسط EzRouter شارژ می‌شوم؟</b></summary>
 
-**خیر.** 9Router نرم‌افزاری رایگان و منبع باز است که روی رایانه خودتان اجرا می‌شود. هرگز از شما هزینه‌ای دریافت نمی‌کند.
+**خیر.** EzRouter نرم‌افزاری رایگان و منبع باز است که روی رایانه خودتان اجرا می‌شود. هرگز از شما هزینه‌ای دریافت نمی‌کند.
 
 **شما فقط پرداخت می‌کنید:**
 
 - ✅ **ارائه‌دهندگان اشتراک** (Claude Code ۲۰ دلار/ماه، Codex ۲۰-۲۰۰ دلار/ماه) → مستقیماً در وب‌سایت‌هایشان به آنها پرداخت کنید
-- ✅ **ارائه‌دهندگان ارزان** (GLM، MiniMax) → مستقیماً به آنها پرداخت کنید، 9Router فقط درخواست‌های شما را مسیریابی می‌کند
-- ❌ **خود 9Router** → **هرگز هیچ هزینه‌ای دریافت نمی‌کند، همیشه**
+- ✅ **ارائه‌دهندگان ارزان** (GLM، MiniMax) → مستقیماً به آنها پرداخت کنید، EzRouter فقط درخواست‌های شما را مسیریابی می‌کند
+- ❌ **خود EzRouter** → **هرگز هیچ هزینه‌ای دریافت نمی‌کند، همیشه**
 
-9Router یک پروکسی/مسیریاب محلی است. کارت اعتباری شما را ندارد، نمی‌تواند صورتحساب ارسال کند و سیستم صورتحساب ندارد. این نرم‌افزار کاملاً رایگان است.
+EzRouter یک پروکسی/مسیریاب محلی است. کارت اعتباری شما را ندارد، نمی‌تواند صورتحساب ارسال کند و سیستم صورتحساب ندارد. این نرم‌افزار کاملاً رایگان است.
 
 </details>
 
@@ -777,7 +774,7 @@ http://host.docker.internal:8787
 - **OpenCode Free**: پروکسی عبوری بدون احراز هویت، مدل‌ها به‌طور خودکار از `opencode.ai/zen/v1/models` دریافت می‌شوند
 - **Vertex AI**: ۳۰۰ دلار اعتبار رایگان برای حساب‌های جدید Google Cloud (۹۰ روز)
 
-9Router فقط درخواست‌های شما را به آنها مسیریابی می‌کند - هیچ "دام" یا صورتحساب آینده‌ای وجود ندارد. آنها واقعاً خدمات رایگان هستند و 9Router استفاده از آنها را با پشتیبانی از بازگشت آسان می‌کند.
+EzRouter فقط درخواست‌های شما را به آنها مسیریابی می‌کند - هیچ "دام" یا صورتحساب آینده‌ای وجود ندارد. آنها واقعاً خدمات رایگان هستند و EzRouter استفاده از آنها را با پشتیبانی از بازگشت آسان می‌کند.
 
 **لایه‌های رایگان متوقف شده (دیگر توصیه نمی‌شوند):**
 
@@ -812,7 +809,7 @@ http://host.docker.internal:8787
 
 ۳. **از ارائه‌دهندگان اشتراک در آخر استفاده کنید:**
    - فقط در صورتی که از قبل آنها را دارید
-   - 9Router با پیگیری سهمیه به حداکثر رساندن ارزش آنها کمک می‌کند
+   - EzRouter با پیگیری سهمیه به حداکثر رساندن ارزش آنها کمک می‌کند
 
 **نتیجه:** اکثر کاربران می‌توانند با استفاده فقط از لایه‌های رایگان با ۰ دلار/ماه کار کنند!
 
@@ -821,22 +818,22 @@ http://host.docker.internal:8787
 <details>
 <summary><b>📈 اگر مصرف من ناگهان افزایش یابد چه؟</b></summary>
 
-بازگشت هوشمند 9Router از هزینه‌های غافلگیرکننده جلوگیری می‌کند:
+بازگشت هوشمند EzRouter از هزینه‌های غافلگیرکننده جلوگیری می‌کند:
 
 **سناریو:** شما در یک ماراتن کدنویسی هستید و سهمیه‌های خود را تمام می‌کنید
 
-**بدون 9Router:**
+**بدون EzRouter:**
 
 - ❌ برخورد با محدودیت نرخ → کار متوقف می‌شود → ناامیدی
 - ❌ یا: به‌طور تصادفی صورت‌حساب‌های عظیم API جمع می‌کنید
 
-**با 9Router:**
+**با EzRouter:**
 
 - ✅ اشتراک به حد مجاز می‌رسد → بازگشت خودکار به لایه ارزان
 - ✅ لایه ارزان گران می‌شود → بازگشت خودکار به لایه رایگان
 - ✅ هرگز کدنویسی را متوقف نکنید → هزینه‌های قابل پیش‌بینی
 
-**شما کنترل دارید:** محدودیت‌های هزینه را برای هر ارائه‌دهنده در داشبورد تنظیم کنید و 9Router به آنها احترام می‌گذارد.
+**شما کنترل دارید:** محدودیت‌های هزینه را برای هر ارائه‌دهنده در داشبورد تنظیم کنید و EzRouter به آنها احترام می‌گذارد.
 
 </details>
 
@@ -861,7 +858,7 @@ http://host.docker.internal:8787
   cc/claude-haiku-4-5-20251001
 ```
 
-**نکته حرفه‌ای:** از Opus برای کارهای پیچیده و Sonnet برای سرعت استفاده کنید. 9Router سهمیه را به ازای هر مدل پیگیری می‌کند!
+**نکته حرفه‌ای:** از Opus برای کارهای پیچیده و Sonnet برای سرعت استفاده کنید. EzRouter سهمیه را به ازای هر مدل پیگیری می‌کند!
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -1105,7 +1102,7 @@ codex "your prompt"
 }
 ```
 
-> **توجه:** OpenClaw فقط با 9Router محلی کار می‌کند. برای جلوگیری از مشکلات وضوح IPv6 از `127.0.0.1` به جای `localhost` استفاده کنید.
+> **توجه:** OpenClaw فقط با EzRouter محلی کار می‌کند. برای جلوگیری از مشکلات وضوح IPv6 از `127.0.0.1` به جای `localhost` استفاده کنید.
 
 ### Cline / Continue / RooCode
 
@@ -1125,7 +1122,7 @@ codex "your prompt"
 
 ```bash
 # کلون و نصب
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/golamrabbi696/EzRouter.git
 cd 9router
 npm install
 npm run build
@@ -1157,7 +1154,7 @@ pm2 startup
 تصاویر منتشر شده (چند پلتفرم `linux/amd64` + `linux/arm64`):
 
 - Docker Hub: [`decolua/9router`](https://hub.docker.com/r/decolua/9router)
-- GHCR: [`ghcr.io/decolua/9router`](https://github.com/decolua/9router/pkgs/container/9router)
+- GHCR: [`ghcr.io/decolua/9router`](https://github.com/golamrabbi696/EzRouter/pkgs/container/9router)
 
 **شروع سریع (استفاده از تصویر منتشر شده):**
 
@@ -1167,7 +1164,7 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  decolua/9router:latest
+  ezrouter:latest
 ```
 
 → باز کردن http://localhost:20128
@@ -1175,7 +1172,7 @@ docker run -d \
 **ساخت از سورس (توسعه):**
 
 ```bash
-git clone https://github.com/decolua/9router.git
+git clone https://github.com/golamrabbi696/EzRouter.git
 cd 9router/app
 docker build -t 9router .
 docker run -d --name 9router -p 20128:20128 \
@@ -1193,7 +1190,7 @@ docker run -d --name 9router -p 20128:20128 \
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
-docker pull decolua/9router:latest   # به‌روزرسانی به آخرین نسخه
+docker pull ezrouter:latest   # به‌روزرسانی به آخرین نسخه
 ```
 
 **ماندگاری داده:** `$HOME/.9router/db/data.sqlite` در میزبان ↔ `/app/data/db/data.sqlite` در کانتینر.
@@ -1329,7 +1326,7 @@ docker pull decolua/9router:latest   # به‌روزرسانی به آخرین �
 
 **توکن OAuth منقضی شده است**
 
-- توسط 9Router به‌طور خودکار بازسازی می‌شود
+- توسط EzRouter به‌طور خودکار بازسازی می‌شود
 - اگر مشکل ادامه داشت: داشبورد → ارائه‌دهنده → اتصال مجدد
 
 **هزینه‌های بالا**
@@ -1396,25 +1393,25 @@ Authorization: Bearer your-api-key
 
 - **وب‌سایت**: [9router.com](https://9router.com)
 - **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **مسائل**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **مسائل**: [github.com/golamrabbi696/EzRouter/issues](https://github.com/golamrabbi696/EzRouter/issues)
 
 ---
 
 ## 👥 مشارکت‌کنندگان
 
-با تشکر از همه مشارکت‌کنندگانی که به بهتر شدن 9Router کمک کردند!
+با تشکر از همه مشارکت‌کنندگانی که به بهتر شدن EzRouter کمک کردند!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=golamrabbi696/EzRouter&max=150&columns=15&anon=1&v=20260309)](https://github.com/golamrabbi696/EzRouter/graphs/contributors)
 
 ---
 
 ## 📊 نمودار ستاره
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/golamrabbi696/EzRouter.svg?variant=adaptive)](https://starchart.cc/golamrabbi696/EzRouter)
 
 ## 🔀 فورک‌ها
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — یک فورک کامل TypeScript از 9Router. بیش از ۳۶ ارائه‌دهنده، بازگشت خودکار ۴ لایه، APIهای چندوجهی (تصاویر، جاسازی‌ها، صدا، TTS)، قطع‌کننده مدار، حافظه پنهان معنایی، ارزیابی‌های LLM و داشبوردی زیبا اضافه می‌کند. بیش از ۳۶۸ تست واحد. از طریق npm و داکر در دسترس است.
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — یک فورک کامل TypeScript از EzRouter. بیش از ۳۶ ارائه‌دهنده، بازگشت خودکار ۴ لایه، APIهای چندوجهی (تصاویر، جاسازی‌ها، صدا، TTS)، قطع‌کننده مدار، حافظه پنهان معنایی، ارزیابی‌های LLM و داشبوردی زیبا اضافه می‌کند. بیش از ۳۶۸ تست واحد. از طریق npm و داکر در دسترس است.
 
 ---
 
@@ -1423,11 +1420,11 @@ Authorization: Bearer your-api-key
 ساخته شده بر روی شانه‌های غول‌ها:
 
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — پیاده‌سازی اصلی Go که الهام‌بخش این پورت جاوااسکریپت بود.
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — ذخیره‌ساز توکن Rust. 9Router خط لوله فشرده‌سازی آن را به JS منتقل می‌کند → **۲۰-۴۰٪- توکن ورودی** در هر درخواست.
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) توسط **[@JuliusBrussee](https://github.com/JuliusBrussee)** — پرامپت ویروسی _"چرا از توکن زیاد استفاده کنی وقتی توکن کم کار را انجام می‌دهد"_. 9Router پرامپت آن را تطبیق می‌دهد → **۶۵٪- توکن خروجی**.
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Stars](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) توسط **[@DietrichGebert](https://github.com/DietrichGebert)** — مهارت _"توسعه‌دهنده ارشد تنبل"_. 9Router نردبان YAGNI-first آن را تزریق می‌کند → **توکن کمتر، کد کمتر، دیف‌های کوتاه‌تر**.
+- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — ذخیره‌ساز توکن Rust. EzRouter خط لوله فشرده‌سازی آن را به JS منتقل می‌کند → **۲۰-۴۰٪- توکن ورودی** در هر درخواست.
+- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) توسط **[@JuliusBrussee](https://github.com/JuliusBrussee)** — پرامپت ویروسی _"چرا از توکن زیاد استفاده کنی وقتی توکن کم کار را انجام می‌دهد"_. EzRouter پرامپت آن را تطبیق می‌دهد → **۶۵٪- توکن خروجی**.
+- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Stars](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) توسط **[@DietrichGebert](https://github.com/DietrichGebert)** — مهارت _"توسعه‌دهنده ارشد تنبل"_. EzRouter نردبان YAGNI-first آن را تزریق می‌کند → **توکن کمتر، کد کمتر، دیف‌های کوتاه‌تر**.
 
-تشکر فراوان از این نویسندگان — بدون کار آنها، ویژگی‌های ذخیره‌سازی توکن 9Router وجود نداشت. ⭐ آنها را در GitHub بدهید!
+تشکر فراوان از این نویسندگان — بدون کار آنها، ویژگی‌های ذخیره‌سازی توکن EzRouter وجود نداشت. ⭐ آنها را در GitHub بدهید!
 
 ---
 
