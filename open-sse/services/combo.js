@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { inspectComboPreaction } from "./comboPreaction.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -411,17 +412,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
-        if (requestHasTools(body)) {
-          const streamIssue = await inspectToolStreamForFallback(result);
-          if (streamIssue?.shouldFallback) {
-            lastError = streamIssue.reason;
-            if (!lastStatus) lastStatus = EMPTY_TOOL_STREAM_STATUS;
-            log.warn("COMBO", `Model ${modelStr} returned empty tool stream, trying next`, { status: EMPTY_TOOL_STREAM_STATUS });
-            continue;
-          }
+        const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result, body) : result;
+        if (inspected) {
+          log.info("COMBO", `Model ${modelStr} succeeded`);
+          return inspected;
         }
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        lastError = "Response ended before its first actionable event";
+        if (!lastStatus) lastStatus = 502;
+        log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
+        continue;
       }
 
       // Extract error info from response
