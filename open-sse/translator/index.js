@@ -1,5 +1,5 @@
 import { FORMATS } from "./formats.js";
-import { ensureToolCallIds, fixMissingToolResponses, salvageOrphanedToolResults } from "./concerns/toolCall.js";
+import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
 import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
@@ -69,11 +69,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   if (targetFormat !== FORMATS.KIRO) {
     fixMissingToolResponses(result);
   }
-
-  // Salvage orphaned tool results (tool_result with no matching tool_call).
-  // Folds orphan content into user text instead of deleting — non-lossy across
-  // all formats, preserves Kiro's reconcileOrphanedToolResults salvage semantics.
-  salvageOrphanedToolResults(result);
 
   // Capture thinking intent from the original (pre-translation) body, before any
   // format conversion strips/renames the fields. Applied after translation.
@@ -166,13 +161,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
-  // If same format, pass through — but never wrap a null flush chunk into
-  // an array. Callers signal "no more chunks, emit any state-derived final
-  // events" by passing chunk=null; for same-format streams there is nothing
-  // to emit, and leaking `null` downstream produces `data: null` SSE frames
-  // that crash strict clients (Vercel AI SDK zod, Factory Droid #1052).
+  // If same format, return as-is
   if (sourceFormat === targetFormat) {
-    return chunk == null ? [] : [chunk];
+    return [chunk];
   }
 
   let results = [chunk];
@@ -199,14 +190,6 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
         openaiResults = results; // Store OpenAI intermediate
       }
     }
-  }
-
-  // Flush sentinel: a null chunk means "the stream ended" (stream.js flush).
-  // When step 1 has nothing to convert, forward the sentinel so the source-side
-  // translator can finalize a dangling message (all openai→X translators
-  // null-check their chunk, so this is a no-op unless one implements a flush).
-  if (chunk === null && results.length === 0) {
-    results = [null];
   }
 
   // Step 2: openai -> source (if source is not openai)
@@ -247,9 +230,6 @@ export function initState(sourceFormat) {
     thinkingBlockStarted: false,
     inThinkingBlock: false,
     currentBlockIndex: null,
-    claudeThinkingBlocks: new Map(),
-    claudeThinkingSpanStarted: false,
-    claudeThinkingSpanPendingClose: false,
     toolCalls: new Map(),
     finishReason: null,
     finishReasonSent: false,
@@ -262,6 +242,7 @@ export function initState(sourceFormat) {
     return {
       ...base,
       seq: 0,
+      nextOutputIndex: 0,
       responseId: `resp_${Date.now()}`,
       created: Math.floor(Date.now() / 1000),
       started: false,
@@ -269,20 +250,19 @@ export function initState(sourceFormat) {
       msgItemAdded: {},
       msgContentAdded: {},
       msgItemDone: {},
+      msgOutputIndexes: {},
       reasoningId: "",
       reasoningIndex: -1,
       reasoningBuf: "",
-      reasoningEncryptedContent: "",
       reasoningPartAdded: false,
       reasoningDone: false,
       inThinking: false,
       funcArgsBuf: {},
       funcNames: {},
       funcCallIds: {},
-      funcItemAdded: {},
       funcArgsDone: {},
       funcItemDone: {},
-      customToolNames: new Set(),
+      funcOutputIndexes: {},
       completedSent: false
     };
   }
@@ -312,7 +292,6 @@ import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
 import "./response/gemini-to-openai.js";
 import "./response/openai-to-antigravity.js";
-import "./response/openai-to-gemini.js";
 import "./response/openai-responses.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
