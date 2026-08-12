@@ -180,6 +180,22 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
         ...newCredentials.providerSpecificData,
       };
     }
+    // Mirror refreshToken into providerSpecificData.refreshToken so
+    // _resolveRefreshToken in GrokCliExecutor can find it even when the
+    // top-level column was lost during migration or re-serialisation.
+    // Only apply when we have a PSD base to merge into — the caller or the
+    // preceding PSD block must provide one; otherwise we would clobber the
+    // existing PSD stored in the DB (a bare { refreshToken } would erase
+    // email, userId, authMethod, etc. on write).
+    if (newCredentials.refreshToken) {
+      const psdBase = updates.providerSpecificData || newCredentials.existingProviderSpecificData;
+      if (psdBase) {
+        updates.providerSpecificData = {
+          ...psdBase,
+          refreshToken: newCredentials.refreshToken,
+        };
+      }
+    }
     if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
       updates.providerSpecificData = {
         ...(updates.providerSpecificData || newCredentials.existingProviderSpecificData || {}),
@@ -210,13 +226,18 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
  *
+ * Uses the executor's needsRefresh when available so that provider-specific
+ * heuristics (e.g. Grok CLI's 50-min createdAt fallback) are respected even
+ * when expiresAt is missing from the stored credentials.
+ *
  * @param {string} provider
  * @param {object} credentials
- * @param {{ force?: boolean }} [options]  force=true skips the on-request lead check
- *   (used by background scheduler which applies a larger lead). Request path omits this.
+ * @param {object|{ force?: boolean }} [optionsOrExecutor]  executor instance or options object
  * @returns {Promise<object>} updated credentials object
  */
-export async function checkAndRefreshToken(provider, credentials, options = {}) {
+export async function checkAndRefreshToken(provider, credentials, optionsOrExecutor = {}) {
+  const executor = (optionsOrExecutor && typeof optionsOrExecutor.needsRefresh === "function") ? optionsOrExecutor : null;
+  const options = (optionsOrExecutor && typeof optionsOrExecutor === "object" && !executor) ? optionsOrExecutor : {};
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
@@ -225,7 +246,11 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
   const force = options?.force === true;
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
-  if (force || _shouldRefreshCredentials(provider, creds)) {
+  const needsRefresh = force || (executor
+    ? executor.needsRefresh(creds)
+    : _shouldRefreshCredentials(provider, creds));
+
+  if (needsRefresh) {
     const expiresAt = creds.expiresAt ? new Date(creds.expiresAt).getTime() : null;
     const remaining = expiresAt ? expiresAt - Date.now() : null;
     const refreshLead = _getRefreshLeadMs(provider);
@@ -237,7 +262,14 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
+    // Always use the generic refresh provider rather than delegating to the
+    // executor.  The generic layer (refreshProviderCredentials) has the
+    // withCredentialRefreshLock dedup, mergeRefreshedCredentials for field
+    // preservation, and — as of the PSD bridge in refreshTokenByProvider —
+    // handles the providerSpecificData.refreshToken fallback that used to be
+    // executor-only in GrokCliExecutor.
     const newCreds = await _refreshProviderCredentials(provider, creds, log);
+
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,
