@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -55,6 +55,8 @@ export default function CombosPage() {
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -184,6 +186,65 @@ export default function CombosPage() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const res = await fetch("/api/combos/export");
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "combos-export.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.log("Error exporting combos:", error);
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      setConfirmState({
+        title: "Import Combos",
+        message: `This will replace all ${combos.length} existing combo(s) with ${data.combos?.length || 0} combo(s) from this file. Are you sure?`,
+        onConfirm: async () => {
+          setConfirmState(null);
+          setImporting(true);
+          try {
+            const res = await fetch("/api/combos/import", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: text,
+            });
+            if (res.ok) {
+              await fetchData();
+            } else {
+              const err = await res.json();
+              alert(err.error || "Failed to import combos");
+            }
+          } catch (err) {
+            console.log("Error importing combos:", err);
+            alert("Failed to import combos");
+          } finally {
+            setImporting(false);
+          }
+        },
+      });
+    } catch (error) {
+      console.log("Error reading import file:", error);
+      alert("Invalid JSON file");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -207,9 +268,24 @@ export default function CombosPage() {
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
           </ul>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button variant="secondary" size="sm" iconRight="download" onClick={handleExport} className="flex-1 sm:flex-none">
+            Export
+          </Button>
+          <Button variant="secondary" size="sm" iconRight="upload" loading={importing} onClick={() => fileInputRef.current?.click()} className="flex-1 sm:flex-none">
+            Import
+          </Button>
+          <Button icon="add" size="sm" onClick={() => setShowCreateModal(true)} className="flex-1 sm:flex-none whitespace-nowrap">
+            Create
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+        </div>
       </div>
 
       {/* Combos List */}
@@ -552,7 +628,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove, onTest, isTesting, testStatus }) {
+function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -574,50 +650,12 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     if (e.key === "Escape") { setDraft(model); setEditing(false); }
   };
 
-  const testState = testStatus?.state;
-  const borderColor = testState === "ok"
-    ? "border border-green-500/40"
-    : testState === "error"
-    ? "border border-red-500/40"
-    : "border border-transparent";
-  const statusIcon = isTesting
-    ? "progress_activity"
-    : testState === "ok"
-    ? "check_circle"
-    : testState === "error"
-    ? "cancel"
-    : null;
-  const statusColor = testState === "ok"
-    ? "#22c55e"
-    : testState === "error"
-    ? "#ef4444"
-    : undefined;
-  // Latency tooltip: "{latencyMs}ms" on ok, truncated error on failure.
-  const testTooltip = testState === "ok"
-    ? `${testStatus.latencyMs ?? "?"}ms`
-    : testState === "error"
-    ? (testStatus.error || "Model not reachable").slice(0, 240)
-    : isTesting ? "Testing..." : "Test";
-
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${borderColor} ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
     >
-      {/* Status icon (replaces spacer when idle shows nothing) */}
-      {statusIcon ? (
-        <span
-          className="material-symbols-outlined shrink-0 text-[14px]"
-          style={{
-            color: statusColor,
-            ...(isTesting ? { animation: "spin 1s linear infinite" } : {}),
-          }}
-        >
-          {statusIcon}
-        </span>
-      ) : null}
-
       {/* Drag handle */}
       <button
         {...attributes}
@@ -656,7 +694,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </div>
       )}
 
-      {/* Priority arrows + Test */}
+      {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
         <button
           onClick={onMoveUp}
@@ -674,20 +712,6 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         >
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
         </button>
-        {onTest && (
-          <div className="relative group/test">
-            <button
-              onClick={onTest}
-              disabled={isTesting}
-              className="p-0.5 rounded text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-60"
-              title={testTooltip}
-            >
-              <span className="material-symbols-outlined text-[12px]" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-                {isTesting ? "progress_activity" : "science"}
-              </span>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Remove */}
@@ -710,8 +734,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
-  const [modelTestResults, setModelTestResults] = useState({});
-  const [testingModelIds, setTestingModelIds] = useState(() => new Set());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -795,36 +817,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     setModels(newModels);
   };
 
-  // Probe one combo model via POST /api/models/test (same endpoint the provider
-  // detail page uses). uid keeps results stable across reorders/edits.
-  const handleTestModel = async (uid, modelValue) => {
-    if (testingModelIds.has(uid)) return;
-    setTestingModelIds((prev) => new Set(prev).add(uid));
-    try {
-      const res = await fetch("/api/models/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: modelValue }),
-      });
-      const data = await res.json().catch(() => ({}));
-      setModelTestResults((prev) => ({
-        ...prev,
-        [uid]: {
-          state: data.ok ? "ok" : "error",
-          latencyMs: typeof data.latencyMs === "number" ? data.latencyMs : null,
-          error: data.ok ? null : (data.error || "Model not reachable"),
-        },
-      }));
-    } catch {
-      setModelTestResults((prev) => ({
-        ...prev,
-        [uid]: { state: "error", latencyMs: null, error: "Network error" },
-      }));
-    } finally {
-      setTestingModelIds((prev) => { const n = new Set(prev); n.delete(uid); return n; });
-    }
-  };
-
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
@@ -885,9 +877,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       onMoveUp={() => handleMoveUp(index)}
                       onMoveDown={() => handleMoveDown(index)}
                       onRemove={() => handleRemoveModel(index)}
-                      onTest={() => handleTestModel(uid, model)}
-                      isTesting={testingModelIds.has(uid)}
-                      testStatus={modelTestResults[uid]}
                     />
                   ))}
                 </div>
@@ -935,7 +924,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           kindFilter={kindFilter}
           addedModelValues={models}
           closeOnSelect={false}
-          comboContext={{ id: combo?.id, name: name.trim() }}
         />
       )}
     </>
