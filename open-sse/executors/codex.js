@@ -11,7 +11,6 @@ import { getModelUpstreamId } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { supportsThinkingLevel } from "../providers/thinkingLevels.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -24,6 +23,21 @@ const CODEX_SSE_USER_OUTPUT_PATTERNS = [
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
+const CODEX_COMPACT_REQUEST = Symbol("codexCompactRequest");
+const CODEX_RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
+const CODEX_LITE_METADATA_HEADERS = [
+  "openai-beta",
+  "x-client-request-id",
+  "x-codex-beta-features",
+  "x-codex-installation-id",
+  "x-codex-parent-thread-id",
+  "x-codex-turn-metadata",
+  "x-codex-turn-state",
+  "x-codex-window-id",
+  "x-openai-memgen-request",
+  "x-openai-subagent",
+  "x-responsesapi-include-timing-metrics",
+];
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -41,8 +55,13 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
-  "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
-  "text"
+  "parallel_tool_calls", "reasoning", "service_tier", "include", "prompt_cache_key",
+  "client_metadata", "text"
+]);
+
+const COMPACT_API_ALLOWLIST = new Set([
+  "model", "input", "instructions", "tools", "parallel_tool_calls", "reasoning",
+  "service_tier", "prompt_cache_key", "text"
 ]);
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
@@ -56,7 +75,7 @@ function convertSystemToDeveloperRole(body) {
 }
 
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
-export function stripStoredItemReferences(body) {
+function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
@@ -66,42 +85,6 @@ export function stripStoredItemReferences(body) {
     }
     return true;
   });
-}
-
-// Strip function_call_output items whose call_id has no matching function_call in input.
-// Prevents Codex 400: "No tool call found for function call output with call_id ..."
-// Orphaned outputs occur when conversation compaction removes original tool calls
-// but leaves their results (e.g., multiple image attachments, compacted tool loops).
-function stripOrphanedToolOutputs(body) {
-  if (!Array.isArray(body.input)) return;
-  const callIds = new Set();
-  let outputCount = 0;
-  for (const item of body.input) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    if (item.type === "function_call" && typeof item.call_id === "string") {
-      callIds.add(item.call_id);
-    }
-    // Chat Completions format: assistant message with embedded tool_calls
-    if (Array.isArray(item.tool_calls)) {
-      for (const tc of item.tool_calls) {
-        if (tc && typeof tc.id === "string") callIds.add(tc.id);
-      }
-    }
-    if (item.type === "function_call_output") outputCount++;
-  }
-  if (outputCount === 0) return;
-  const before = body.input.length;
-  body.input = body.input.filter((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return true;
-    if (item.type === "function_call_output" && typeof item.call_id === "string") {
-      return callIds.has(item.call_id);
-    }
-    return true;
-  });
-  const removed = before - body.input.length;
-  if (removed > 0) {
-    dbg("CODEX", `stripOrphanedToolOutputs | removed ${removed} orphaned function_call_output(s) | call_ids=${callIds.size} outputs=${outputCount}`);
-  }
 }
 
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
@@ -161,8 +144,8 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(value, model) {
-  return value === "max" && !supportsThinkingLevel("codex", model, "max") ? "xhigh" : value;
+function normalizeReasoningEffort(value) {
+  return value === "max" ? "xhigh" : value;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -217,32 +200,31 @@ function codexSseErrorResponse(status, message) {
   });
 }
 
-async function isInvalidEncryptedContentResponse(response) {
-  if (response?.status !== HTTP_STATUS.BAD_REQUEST || typeof response.clone !== "function") return false;
-  try {
-    const payload = JSON.parse(await response.clone().text());
-    const error = payload?.error || payload;
-    if (error?.code === "invalid_encrypted_content") return true;
-    const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
-    return message.includes("encrypted content") &&
-      (message.includes("could not be verified") || message.includes("could not be decrypted or parsed"));
-  } catch {
-    return false;
-  }
+function usesResponsesLite(credentials) {
+  return String(credentials?.rawHeaders?.[CODEX_RESPONSES_LITE_HEADER] || "").trim().toLowerCase() === "true";
 }
 
-function removeInvalidEncryptedReasoning(body) {
-  if (!Array.isArray(body?.input)) return 0;
-  let removed = 0;
-  body.input = body.input.filter((item) => {
-    if (!item || item.type !== "reasoning" || !Object.hasOwn(item, "encrypted_content")) return true;
-    delete item.encrypted_content;
-    removed++;
-    const hasSummary = Array.isArray(item.summary) ? item.summary.length > 0 : Boolean(item.summary);
-    const hasContent = Array.isArray(item.content) ? item.content.length > 0 : Boolean(item.content);
-    return hasSummary || hasContent;
-  });
-  return removed;
+function copyResponsesLiteHeaders(headers, credentials) {
+  if (!usesResponsesLite(credentials)) return;
+  const rawHeaders = credentials?.rawHeaders || {};
+  headers[CODEX_RESPONSES_LITE_HEADER] = "true";
+
+  for (const name of CODEX_LITE_METADATA_HEADERS) {
+    const value = rawHeaders[name];
+    if (typeof value === "string" && value && value.length <= 16_384) {
+      headers[name] = value;
+    }
+  }
+
+  const userAgent = rawHeaders["user-agent"];
+  if (typeof userAgent === "string" && /^codex(?:_cli_rs|_exec|-cli)\//i.test(userAgent)) {
+    headers["User-Agent"] = userAgent;
+  }
+
+  const originator = rawHeaders.originator;
+  if (typeof originator === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(originator)) {
+    headers.originator = originator;
+  }
 }
 
 /**
@@ -276,6 +258,7 @@ export class CodexExecutor extends BaseExecutor {
     if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-ID"]) {
       headers["ChatGPT-Account-ID"] = accountId;
     }
+    copyResponsesLiteHeaders(headers, credentials);
     return headers;
   }
 
@@ -332,20 +315,8 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
-    let encryptedRecoveryAttempted = false;
-    let requestArgs = args;
     while (true) {
-      const result = await super.execute(requestArgs);
-      if (!encryptedRecoveryAttempted && await isInvalidEncryptedContentResponse(result.response)) {
-        const recoveryBody = structuredClone(requestArgs.body);
-        const removed = removeInvalidEncryptedReasoning(recoveryBody);
-        if (removed > 0) {
-          encryptedRecoveryAttempted = true;
-          requestArgs = { ...requestArgs, body: recoveryBody };
-          args.log?.warn?.("RETRY", `CODEX | invalid encrypted reasoning; retrying same account without ${removed} encrypted item(s)`);
-          continue;
-        }
-      }
+      const result = await super.execute(args);
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
@@ -463,7 +434,10 @@ export class CodexExecutor extends BaseExecutor {
    * Image fetching is handled separately in prefetchImages() so this stays sync.
    */
   transformRequest(model, body, stream, credentials) {
-    this._isCompact = !!body._compact;
+    const isCompact = body._compact === true || body[CODEX_COMPACT_REQUEST] === true;
+    if (isCompact) body[CODEX_COMPACT_REQUEST] = true;
+    const responsesLite = usesResponsesLite(credentials);
+    this._isCompact = isCompact;
     delete body._compact;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
     this._currentSessionId = resolveCacheSessionId(body, credentials);
@@ -480,21 +454,23 @@ export class CodexExecutor extends BaseExecutor {
     convertSystemToDeveloperRole(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body);
-    // Strip orphaned function_call_output items (no matching function_call) — prevents 400 error
-    stripOrphanedToolOutputs(body);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
-    // Ensure streaming is enabled (Codex API requires it)
-    body.stream = true;
+    // Standard Responses calls stream; /responses/compact is unary JSON.
+    if (isCompact) delete body.stream;
+    else body.stream = true;
 
     // If no instructions provided, inject default Codex instructions
-    if (!body.instructions || body.instructions.trim() === "") {
+    if (!responsesLite && !isCompact && (!body.instructions || body.instructions.trim() === "")) {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
+    } else if (responsesLite && body.instructions === "") {
+      delete body.instructions;
     }
 
     // Ensure store is false (Codex requirement)
-    body.store = false;
+    if (isCompact) delete body.store;
+    else body.store = false;
 
     // Inject prompt_cache_key for stable Codex prompt caching
     if (!body.prompt_cache_key && this._currentSessionId) {
@@ -506,7 +482,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -519,17 +495,23 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low', body.model);
+      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort, body.model);
+      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
+    }
+    if (responsesLite) {
+      body.parallel_tool_calls = false;
+      body.reasoning.context = "all_turns";
     }
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
-    if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
+    if (!isCompact && body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
       body.include = ["reasoning.encrypted_content"];
+    } else if (isCompact) {
+      delete body.include;
     }
 
     // Remove unsupported parameters for Codex API
@@ -554,9 +536,10 @@ export class CodexExecutor extends BaseExecutor {
     if (body.service_tier === "fast") body.service_tier = "priority";
     if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
 
-    // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
+    // Final allowlist filter — compact and streaming Responses use different contracts.
+    const allowlist = isCompact ? COMPACT_API_ALLOWLIST : RESPONSES_API_ALLOWLIST;
     for (const k of Object.keys(body)) {
-      if (!RESPONSES_API_ALLOWLIST.has(k)) delete body[k];
+      if (!allowlist.has(k)) delete body[k];
     }
 
     return body;

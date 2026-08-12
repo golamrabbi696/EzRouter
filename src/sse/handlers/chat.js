@@ -4,7 +4,8 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  resolveClientApiKey,
+  extractApiKey,
+  isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
@@ -13,10 +14,9 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse, authErrorResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { recordOutcome } from "open-sse/services/healthTracker.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
@@ -52,11 +52,12 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Resolve client API key across all presented credentials (Authorization +
-  // x-api-key) — attribution uses the credential that actually validated.
-  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
-  if (apiKey) {
-    log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}${apiKeyValid ? "" : " (not recognized)"}`);
+  // Log API key (masked)
+  const authHeader = request.headers.get("Authorization");
+  const apiKey = extractApiKey(request);
+  if (authHeader && apiKey) {
+    const masked = log.maskKey(apiKey);
+    log.debug("AUTH", `API Key: ${masked}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
@@ -66,11 +67,12 @@ export async function handleChat(request, clientRawRequest = null) {
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return authErrorResponse(clientRawRequest.endpoint, "Missing API key");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    if (!apiKeyValid) {
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return authErrorResponse(clientRawRequest.endpoint, "Invalid API key");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
   }
 
@@ -190,12 +192,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
-  const preferredConnectionId = request?.headers?.get("x-9router-connection-id") || null;
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -229,11 +230,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    // chatCore resolves once upstream response headers are in, so this is a
-    // time-to-first-byte measurement even for streaming responses.
-    const attemptStartedAt = Date.now();
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: { ...structuredClone(body), model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
@@ -269,17 +267,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       }
-    });
-
-    recordOutcome({
-      connectionId: credentials.connectionId,
-      connectionName: credentials.connectionName,
-      provider,
-      model,
-      ok: !!result.success,
-      latencyMs: Date.now() - attemptStartedAt,
-      status: result.status ?? null,
-      config: chatSettings.latencyAwareConfig,
     });
 
     if (result.success) return result.response;

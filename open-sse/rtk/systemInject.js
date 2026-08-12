@@ -36,30 +36,35 @@ function injectMessagesSystem(body, prompt) {
     return;
   }
 
-  const isResponsesShape = Array.isArray(body.input) && !Array.isArray(body.messages);
   const arr = Array.isArray(body.messages) ? body.messages
     : Array.isArray(body.input) ? body.input
     : null;
   if (!arr) return;
 
-  const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
+  const isResponses = arr === body.input;
+  const idx = arr.findIndex(m =>
+    m && (!m.type || m.type === "message") && (m.role === "system" || m.role === "developer")
+  );
   if (idx >= 0) {
-    // Chat content parts use {type:"text"}, Responses content parts use {type:"input_text"}
-    appendToOpenAIMessage(arr[idx], prompt, isResponsesShape ? "input_text" : "text");
-  } else if (isResponsesShape) {
-    // Responses input[] items must be typed; a bare {role,content} item is rejected upstream
-    arr.unshift({ type: "message", role: "system", content: [{ type: "input_text", text: prompt }] });
+    appendToOpenAIMessage(arr[idx], prompt);
+  } else if (isResponses) {
+    const insertAt = arr.findIndex(m => m?.type !== "additional_tools");
+    arr.splice(insertAt < 0 ? arr.length : insertAt, 0, {
+      type: "message",
+      role: "developer",
+      content: [{ type: "input_text", text: prompt }],
+    });
   } else {
     arr.unshift({ role: "system", content: prompt });
   }
 }
 
-function appendToOpenAIMessage(msg, prompt, partType) {
+function appendToOpenAIMessage(msg, prompt) {
   if (typeof msg.content === "string") {
     msg.content = `${msg.content}${SEP}${prompt}`;
   } else if (Array.isArray(msg.content)) {
-    // Chat arrays expect {type:"text"}; Responses arrays expect {type:"input_text"}
-    msg.content.push({ type: partType || "text", text: prompt });
+    // Responses-style array of parts {type:"input_text"|"text", text}
+    msg.content.push({ type: "input_text", text: prompt });
   } else {
     msg.content = prompt;
   }
