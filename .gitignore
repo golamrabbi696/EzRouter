@@ -87,5 +87,6 @@ graphify-out/*
 .PR/
 .next-analyze/*
 
-# Local CLI build tarball
-*.tgz
+# Local development artifacts
+.serena/
+apps/
