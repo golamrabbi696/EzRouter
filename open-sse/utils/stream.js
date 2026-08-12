@@ -2,9 +2,11 @@ import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, decloakClaudeToolUseEvent } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { createToolCallTraceAccumulator, logToolSemantics } from "./toolSemanticsTrace.js";
+import { createSseDoneTracker } from "./sseDoneTracker.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -33,10 +35,7 @@ const STREAM_MODE = {
  * @param {string} options.model - Model name
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {object} options.body - Request body (for input token estimation)
- * @param {function} options.onStreamComplete - Callback when stream completes (content, usage, ttftAt, meta)
- *   meta: { finishReason, upstreamError, empty } from the translator state — used by
- *   request-detail to record a "totally exhausted empty Anthropic attempt" as an error,
- *   not a misleading healthy completion.
+ * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
  * @param {string} options.apiKey - API key for usage tracking
  */
 export function createSSEStream(options = {}) {
@@ -47,12 +46,13 @@ export function createSSEStream(options = {}) {
     provider = null,
     reqLogger = null,
     toolNameMap = null,
-    customToolNames = null,
     model = null,
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    translatedBody = null,
+    log = null
   } = options;
 
   let buffer = "";
@@ -61,9 +61,7 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
-    : null;
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -78,6 +76,11 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+
+  const passthroughDoneTracker = createSseDoneTracker();
+
+  // Tool semantics trace accumulator — counts and HMAC digests only, never raw content
+  const toolTrace = createToolCallTraceAccumulator();
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -106,20 +109,18 @@ export function createSSEStream(options = {}) {
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
+          if (!passthroughDoneTracker.shouldForward(trimmed)) continue;
+          if (passthroughDoneTracker.hasSeenDone()) streamDoneSent = true;
+
           let output;
           let injectedUsage = false;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              toolTrace.push(parsed);
 
               const idFixed = fixInvalidId(parsed);
-
-              // Decloak tool names in Claude content_block_start events.
-              // claude→claude passthrough doesn't go through translateResponse (which
-              // applies toolNameMap in TRANSLATE mode), so without this the client
-              // receives suffixed names (e.g. "Execute_ide") it doesn't recognize.
-              const toolNameDecloaked = decloakClaudeToolUseEvent(parsed, toolNameMap);
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
@@ -182,7 +183,7 @@ export function createSSEStream(options = {}) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
-                usage = mergeUsage(usage, estimated);
+                usage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
@@ -190,10 +191,6 @@ export function createSSEStream(options = {}) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (idFixed || fieldsInjected) {
-                output = `data: ${JSON.stringify(parsed)}\n`;
-                injectedUsage = true;
-              }
-              if (toolNameDecloaked && !injectedUsage) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
@@ -312,6 +309,7 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        toolTrace.push(parsed);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -334,7 +332,7 @@ export function createSSEStream(options = {}) {
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
-              state.usage = mergeUsage(state.usage, estimated);
+              state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
@@ -369,7 +367,7 @@ export function createSSEStream(options = {}) {
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
-            usage = mergeUsage(usage, estimateUsage(body, totalContentLength, FORMATS.OPENAI));
+            usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
           }
 
           if (hasValidUsage(usage)) {
@@ -394,12 +392,9 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt, {
-              finishReason: state?.finishReason,
-              upstreamError: state?.upstreamError,
-              empty: !accumulatedContent,
-            });
+            }, usage, ttftAt);
           }
+          logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "stream-passthrough", requestBody: body, translatedBody, providerBody: null, clientBody: null, providerToolCalls: toolTrace.summary() });
           return;
         }
 
@@ -462,7 +457,7 @@ export function createSSEStream(options = {}) {
         }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
-          state.usage = mergeUsage(state?.usage, estimateUsage(body, totalContentLength, sourceFormat));
+          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
         if (hasValidUsage(state?.usage)) {
@@ -475,12 +470,9 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt, {
-            finishReason: state?.finishReason,
-            upstreamError: state?.upstreamError,
-            empty: !accumulatedContent,
-          });
+          }, state?.usage, ttftAt);
         }
+        logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "stream-translate", requestBody: body, translatedBody, providerBody: null, clientBody: null, providerToolCalls: toolTrace.summary() });
       } catch (error) {
         console.log("Error in flush:", error);
       }
@@ -488,7 +480,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -496,25 +488,29 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     provider,
     reqLogger,
     toolNameMap,
-    customToolNames,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    translatedBody: reqLogger?.toolSemanticsContext?.translatedBody,
+    log: reqLogger?.toolSemanticsContext?.log
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
-    toolNameMap,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    sourceFormat: reqLogger?.toolSemanticsContext?.sourceFormat,
+    targetFormat: reqLogger?.toolSemanticsContext?.targetFormat,
+    translatedBody: reqLogger?.toolSemanticsContext?.translatedBody,
+    log: reqLogger?.toolSemanticsContext?.log
   });
 }

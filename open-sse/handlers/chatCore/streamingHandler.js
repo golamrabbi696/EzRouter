@@ -5,7 +5,6 @@ import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
-import { createTerminalTracker } from "../../utils/streamTerminal.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -23,7 +22,7 @@ const CODEX_SOURCE_TO_TARGET = {
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey }) {
+function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -31,35 +30,27 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames);
+    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames);
+    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
 }
 
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
-  // Defer the account-success callback until the stream actually produces
-  // SOMETHING — HTTP 200 with zero bytes / thought-only / empty attempts is
-  // still a failure mode for the client. Clearing the account's error state
-  // before that risks marking a quota-exhausted account healthy again from a
-  // 200-with-no-body response. See #2517 / #2520 (empty-stream guard parity).
-  let requestSuccessFired = false;
-  const fireRequestSuccess = () => {
-    if (requestSuccessFired || !onRequestSuccess) return;
-    requestSuccessFired = true;
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
+  if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
       .catch(err => {
         console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
       });
-  };
+  }
 
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
@@ -88,37 +79,18 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
-
-  // Tee the stream: fire the deferred success callback the first time a
-  // translated byte actually crosses the wire. A 200 stream that aborts or
-  // empties before emitting anything never reaches this tee and therefore
-  // never clears the account error state.
-  const successTee = new TransformStream({
-    transform(chunk, controller) {
-      fireRequestSuccess();
-      controller.enqueue(chunk);
-    },
-  });
+  // Keep trace-only context off the positional stream factory signatures. This
+  // lets independent transport patches extend those signatures without overlap.
+  if (reqLogger) {
+    reqLogger.toolSemanticsContext = { sourceFormat, targetFormat, translatedBody, log };
+  }
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  // Inject the success tee between the transform stream and the disconnect-aware
-  // wrapper. We do this by wrapping the transform's readable with a tee pipe so
-  // the callback fires on the first byte that survives the transform.
-  const teeWrappedTransform = {
-    ...transformStream,
-    get readable() { return transformStream.readable.pipeThrough(successTee); },
-    get writable() { return transformStream.writable; },
-  };
-  // Watches the CLIENT-facing frames for a terminal event so an upstream that
-  // dies mid-response closes with an explicit error instead of a truncated body
-  // the caller cannot distinguish from a normal finish. Null for formats whose
-  // terminal marker is ambiguous, which leaves those unchanged.
-  const terminalTracker = createTerminalTracker(targetFormat);
-  const transformedBody = pipeWithDisconnect(providerResponse, teeWrappedTransform, streamController, onAbortTerminal, stallTimeoutMs, terminalTracker);
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
@@ -145,10 +117,8 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
  */
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-  let completed = false;
 
-  const onStreamComplete = (contentObj, usage, ttftAt, meta) => {
-    completed = true;
+  const onStreamComplete = (contentObj, usage, ttftAt) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
@@ -156,32 +126,16 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
-    // Truthful status: an exhausted empty stream (no content + embedded error
-    // or "error" finish from the empty-stream guard) is a failed attempt, not a
-    // healthy completion. Mark it "error" so the request-detail panel renders
-    // the real cause instead of a misleading ordinary assistant turn.
-    const isExhausted = meta?.empty && (meta?.upstreamError || meta?.finishReason === "error");
-    const status = isExhausted ? "error" : "success";
-    const reportedContent = isExhausted
-      ? `[Empty streaming response] upstream=${meta?.upstreamError?.status || meta?.finishReason || "EMPTY_RESPONSE"}`
-      : safeContent;
-
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
-      providerResponse: reportedContent,
-      response: {
-        content: reportedContent,
-        thinking: safeThinking,
-        type: "streaming",
-        finishReason: meta?.finishReason,
-        upstreamError: meta?.upstreamError,
-      },
+      providerResponse: safeContent,
+      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status
+      status: "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
@@ -191,29 +145,5 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 
-  // Finalize the placeholder row when the stream ends without flush() ever running:
-  // client disconnect (cancel()), upstream stall timeout, or a mid-stream network
-  // reset. Without this, the row saved by handleStreamingResponse stays
-  // "[Streaming in progress...]" with tokens 0/0 and status "success" forever.
-  // Reuses streamDetailId so the ON CONFLICT(id) upsert overwrites the placeholder.
-  const onStreamAbandoned = (reason) => {
-    if (completed) return;
-    completed = true;
-    const detail = `[Streaming interrupted: ${reason || "unknown"}]`;
-    saveRequestDetail(buildRequestDetail({
-      provider, model, connectionId,
-      latency: { ttft: 0, total: Date.now() - requestStartTime },
-      tokens: { prompt_tokens: 0, completion_tokens: 0 },
-      request: extractRequestConfig(body, stream),
-      providerRequest: finalBody || translatedBody || null,
-      providerResponse: detail,
-      response: { content: detail, thinking: null, type: "streaming" },
-      pxpipe,
-      status: "cancelled"
-    }, { id: streamDetailId })).catch(err => {
-      console.error("[RequestDetail] Failed to finalize interrupted stream:", err.message);
-    });
-  };
-
-  return { onStreamComplete, onStreamAbandoned, streamDetailId };
+  return { onStreamComplete, streamDetailId };
 }
