@@ -1,4 +1,3 @@
-import pChenzk from "./chenzk.js";
 // Auto-generated: static imports for all registry entries
 import p0 from "./alicode-intl.js";
 import p1 from "./alicode.js";
@@ -64,7 +63,6 @@ import p60 from "./mistral.js";
 import p61 from "./mmf.js";
 import p62 from "./nanobanana.js";
 import p63 from "./nebius.js";
-import p120 from "./novita.js";
 import p64 from "./nvidia.js";
 import p65 from "./ollama-local.js";
 import p66 from "./ollama.js";
@@ -77,6 +75,8 @@ import p72 from "./perplexity.js";
 import p73 from "./perplexity-agent.js";
 import p74 from "./playht.js";
 import p75 from "./qoder.js";
+import p116 from "./qoderwork-cn.js";
+import p76 from "./qwen.js";
 import p77 from "./recraft.js";
 import p78 from "./runwayml.js";
 import p79 from "./sdwebui.js";
@@ -117,14 +117,8 @@ import p113 from "./morph.js";
 // import p114 from "./devin-cli.js";
 // import p104 from "./windsurf.js";
 import p115 from "./poolside.js";
-import p116 from "./tokenrouter.js";
-import p117 from "./selfhosted-stt.js";
-import p118 from "./selfhosted-tts.js";
-import p119 from "./selfhosted-embedding.js";
-import pFrontierForAll from "./frontier-for-all.js";
 
 export default [
-  pChenzk,
   p0,
   p1,
   p2,
@@ -189,7 +183,6 @@ export default [
   p61,
   p62,
   p63,
-  p120,
   p64,
   p65,
   p66,
@@ -202,6 +195,8 @@ export default [
   p73,
   p74,
   p75,
+  p116,
+  p76,
   p77,
   p78,
   p79,
@@ -240,10 +235,4 @@ export default [
   // p114, // devin-cli — hidden, spawns local agent with shell/fs access
   // p104, // windsurf — hidden, no tool calling
   p115,
-  p116,
-  p117,
-  p118,
-  p119,
-  pFrontierForAll,
 ];
-

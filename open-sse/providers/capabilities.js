@@ -71,7 +71,11 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
-  // Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
+  // Claude Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
+  "claude-opus-5":     { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "claude-opus-5-thinking": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "claude-opus-5-agentic": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "claude-opus-5-thinking-agentic": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4.6":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4.7":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4-7":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
@@ -113,12 +117,43 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
 
-// The 4.6+ Claude generation: adaptive thinking, 1M context, 128k output. Shared by the
-// patterns below so an unlisted variant (claude-opus-4.8-fast, anthropic/claude-sonnet-5,
-// …) inherits the family's real limits instead of dropping to the 200k/64k floor —
-// maxOutput is a clamp ceiling (translator/formats/claude.js), so a stale value silently
-// caps these models at half their output budget.
-const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
+// Qoder private chat maps Chat `reasoning_effort` → `parameters.reasoning_effort`.
+// Without reasoning:true, applyThinking strips effort. Vision flags follow the
+// live model/list is_vl field.
+const QODER_REASONING_CAPS = {
+  reasoning: true,
+  thinkingFormat: "qoder",
+  thinkingCanDisable: true,
+  maxOutput: 64000,
+};
+const QODER_VL_REASONING_CAPS = {
+  ...QODER_REASONING_CAPS,
+  vision: true,
+};
+/** Shared catalog keys for intl qoder + qoderwork-cn (list still supplies model_config). */
+const QODER_PROVIDER_MODEL_CAPS = {
+  auto: QODER_VL_REASONING_CAPS,
+  qmodel_preview: QODER_VL_REASONING_CAPS,
+  qmodel_latest: QODER_VL_REASONING_CAPS,
+  qmodel: QODER_VL_REASONING_CAPS,
+  "q36fmodel": QODER_VL_REASONING_CAPS,
+  dmodel: QODER_VL_REASONING_CAPS,
+  dfmodel: { ...QODER_VL_REASONING_CAPS, reasoning: false },
+  gm51model: QODER_VL_REASONING_CAPS,
+  kmodel: QODER_VL_REASONING_CAPS,
+  mmodel: {
+    reasoning: false,
+    vision: false,
+    thinkingFormat: "openai",
+    thinkingCanDisable: true,
+    maxOutput: 64000,
+  },
+  // Legacy tier ids still seen on intl catalogs
+  ultimate: QODER_REASONING_CAPS,
+  performance: QODER_REASONING_CAPS,
+  efficient: QODER_REASONING_CAPS,
+  lite: QODER_REASONING_CAPS,
+};
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
@@ -177,6 +212,14 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
+  // Qoder family — one caps table; intl + CN share wire (reasoning_effort).
+  qoder: QODER_PROVIDER_MODEL_CAPS,
+  "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
+  // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
+  "poolside": {
+    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
+    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
+  },
 };
 
 /**
@@ -187,22 +230,17 @@ export const PROVIDER_CAPABILITIES = {
  */
 export const PATTERN_CAPABILITIES = [
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
-  { pattern: "*claude*opus-4.6*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*opus-4.7*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*opus-4.8*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*opus-5*",     caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*sonnet-4.6*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*sonnet-4.7*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*sonnet-5*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  // fable / mythos are newer than 4.6, so they follow the 4.6+ adaptive rule above.
-  // Anthropic rejects thinking.type "enabled" on them outright ("... is not supported
-  // for this model. Use thinking.type.adaptive and output_config.effort"), so a budget
-  // format makes every thinking request 400.
-  { pattern: "*claude*fable*",  caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*mythos*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-5*",     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*sonnet-4.6*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*sonnet-4.7*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
+  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
   { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
 
@@ -303,6 +341,13 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*sonar*",         caps: { search: true, contextWindow: 128000 } },
   { pattern: "*pplx*",          caps: { search: true, contextWindow: 128000 } },
   { pattern: "*perplexity*",    caps: { search: true, contextWindow: 128000 } },
+
+  // ── Poolside Laguna (resellers: openrouter/nvidia/kilocode/vercel/...) ──
+  // Free tiers cap S 2.1 well below the paid 1M window → match the free suffix
+  // (":free" or "-free", depending on reseller) before the plain id.
+  { pattern: "*laguna-s-2.1*free*", caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
+  { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 } },
+  { pattern: "*laguna*",        caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
 
   // ── Others ───────────────────────────────────────────────────────
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
