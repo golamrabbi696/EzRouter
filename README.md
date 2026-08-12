@@ -463,5 +463,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-  <sub>Built with ❤️ for developers who code 24/7</sub> <sub>Maintain by Golam Rabbi</sub>
+  <sub>Built with ❤️ for developers who code 24/7</sub>
+  <br />
+  <sub>
+    Maintained by
+    <a href="https://golamrabbi.dev" target="_blank" rel="noopener noreferrer">
+      Golam Rabbi
+    </a>
+  </sub>
 </div>
