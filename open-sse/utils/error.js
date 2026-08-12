@@ -1,13 +1,13 @@
-import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, isPermanentModelError } from "../config/errorConfig.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {string} [code] - Upstream error code
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
+export function buildErrorBody(statusCode, message, code) {
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
@@ -17,7 +17,7 @@ export function buildErrorBody(statusCode, message) {
     error: {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
-      code: errorInfo.code
+      code: code ?? errorInfo.code
     }
   };
 }
@@ -26,35 +26,17 @@ export function buildErrorBody(statusCode, message) {
  * Create error Response object (for non-streaming)
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {string} [code] - Upstream error code
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, code) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, code)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*"
     }
   });
-}
-
-/**
- * Auth error Response in the client's native format. Anthropic endpoints
- * (/v1/messages*) get the standard Anthropic error envelope so clients like
- * Claude Code surface the message correctly; everything else keeps the
- * OpenAI-compatible shape.
- * @param {string|null} endpoint - Request pathname (e.g. "/v1/messages")
- * @param {string} message - Error message
- * @returns {Response}
- */
-export function authErrorResponse(endpoint, message) {
-  if (endpoint?.includes("/v1/messages")) {
-    return new Response(
-      JSON.stringify({ type: "error", error: { type: "authentication_error", message } }),
-      { status: 401, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
-    );
-  }
-  return errorResponse(401, message);
 }
 
 /**
@@ -73,12 +55,9 @@ export async function writeStreamError(writer, statusCode, message) {
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
- * @param {object} [credentials] - Request credentials, passed through for parsers that need a follow-up
- *   lookup (e.g. kiro confirming a credit-exhaustion reset time via the quota API)
- * @param {object} [proxyOptions] - Proxy options to reuse for any such follow-up lookup
- * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
+ * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number, code?: string}>}
  */
-export async function parseUpstreamError(response, executor = null, credentials = null, proxyOptions = null) {
+export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
   try {
     bodyText = await response.text();
@@ -86,55 +65,39 @@ export async function parseUpstreamError(response, executor = null, credentials 
     bodyText = "";
   }
 
-  // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs).
-  // parseError may be sync (codex) or async (kiro, which may issue a follow-up quota lookup) —
-  // awaiting a plain value is a no-op, so both shapes work here.
+  let structuredMessage = "";
+  let structuredCode;
+  try {
+    const json = JSON.parse(bodyText);
+    structuredMessage = json.error?.message || json.message || json.error || bodyText;
+    structuredCode = json.error?.code || json.code;
+  } catch {
+    structuredMessage = bodyText;
+  }
+  const messageStr = typeof structuredMessage === "string"
+    ? structuredMessage
+    : JSON.stringify(structuredMessage);
+  const fallbackMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+
+  // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
-      const parsed = await executor.parseError(response, bodyText, credentials, proxyOptions);
+      const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
-        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        const message = parsed.message && parsed.message !== bodyText
+          ? parsed.message
+          : fallbackMessage;
+        return {
+          statusCode: parsed.status || response.status,
+          message,
+          resetsAtMs: parsed.resetsAtMs,
+          code: parsed.code ?? structuredCode,
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
 
-  let message = "";
-  let providerName = null;
-  let invalidUrlEmpty = false;
-  try {
-    const json = JSON.parse(bodyText);
-    message = json.error?.message || json.message || json.error || bodyText;
-    providerName = json.error?.metadata?.provider_name || null;
-    // OpenRouter's internal "Stealth" upstream returns a malformed message
-    // like "Invalid URL: " with the URL value left empty (the upstream's
-    // url field in OpenRouter's routing table is unset). Detect the
-    // signature so we can surface a friendlier hint to the user instead of
-    // the opaque 502 + empty message they would otherwise see.
-    if (typeof message === "string") {
-      const m = /^Invalid URL:\s*(.*)$/.exec(message);
-      if (m) invalidUrlEmpty = m[1].trim() === "";
-    }
-  } catch {
-    message = bodyText;
-  }
-
-  const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  let finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-
-  // Annotate OpenRouter "Stealth" (or any upstream whose routing table has an
-  // empty url field) with a hint explaining the failure mode. The 9router
-  // OpenRouterExecutor now sets `provider.allow_fallbacks = true` on retries;
-  // this annotation gives the user a legible reason when no alternate upstream
-  // is configured upstream of 9router.
-  if ((providerName || invalidUrlEmpty) && (response.status === HTTP_STATUS.BAD_GATEWAY || response.status === HTTP_STATUS.SERVER_ERROR)) {
-    const hint = providerName
-      ? `OpenRouter upstream "${providerName}" returned an invalid routing URL — its endpoint is misconfigured on OpenRouter's side`
-      : "Upstream returned an invalid (empty) routing URL";
-    finalMessage = `${finalMessage} — ${hint}. Try a different model, or set \`provider: { allow_fallbacks: true }\` to opt into OpenRouter's automatic upstream fallback.`;
-  }
-
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: fallbackMessage, code: structuredCode };
 }
 
 /**
@@ -142,55 +105,17 @@ export async function parseUpstreamError(response, executor = null, credentials 
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
+ * @param {string} [code] - Upstream error code
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, clientStatus = null) {
+export function createErrorResult(statusCode, message, resetsAtMs, code) {
   return {
     success: false,
-    // The true upstream status, kept for internal classification (fallback
-    // rules, cooldowns) so those keep seeing what the provider actually said.
     status: statusCode,
     error: message,
     resetsAtMs,
-    // What the CLIENT sees, which may be normalised — e.g. an unknown model
-    // reported as 401 becomes 404, so callers do not read it as an auth failure.
-    response: errorResponse(clientStatus ?? statusCode, message)
+    response: errorResponse(statusCode, message, code)
   };
-}
-
-/**
- * Map an upstream failure onto the status the client should see.
- *
- * The contract clients actually depend on is coarse: 4xx means stop, 5xx means
- * retry. So the rule is to preserve the upstream's CLASS, never to flatten it.
- *
- * An earlier version of this collapsed every non-429 4xx to 503 to stop a
- * flaky upstream killing a turn. That was the wrong lever: the real cause of
- * those mislabelled statuses was stale per-connection error state being replayed
- * across requests (fixed in auth.js), and the flattening made permanent failures
- * — a rejected temperature, a nonexistent model — look transient. Clients then
- * burned their whole retry budget on hopeless requests, and 5xx bypassed the
- * reactive repair paths that key off a 4xx naming the rejected parameter.
- *
- * Wrong-model errors are the one deliberate re-mapping: providers report them as
- * 400, as 404, and as 401-with-a-ModelError-body. Passing a 401 through makes a
- * client report "authentication failed" for perfectly good credentials, so those
- * are normalised to 404.
- *
- * @param {number|string|null} upstreamStatus - status from the upstream attempt
- * @param {string|object} [errorText] - upstream error text, for model detection
- * @returns {number} status to return to the client
- */
-export function clientStatusForUpstream(upstreamStatus, errorText = null) {
-  if (isPermanentModelError(errorText)) return HTTP_STATUS.NOT_FOUND;
-
-  const status = Number(upstreamStatus);
-  // Nothing usable to propagate (no attempt made, or a non-numeric code): this
-  // is our own "no capacity" condition, which is genuinely transient.
-  if (!Number.isFinite(status) || status < 400) return HTTP_STATUS.SERVICE_UNAVAILABLE;
-  // Anything already carrying a real class keeps it — 4xx stop, 5xx retry.
-  if (status <= 599) return status;
-  return HTTP_STATUS.SERVICE_UNAVAILABLE;
 }
 
 /**

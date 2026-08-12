@@ -116,50 +116,17 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
-const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
-
-// Qoder private chat maps Chat `reasoning_effort` → `parameters.reasoning_effort`.
-// Without reasoning:true, applyThinking strips effort. Vision flags follow the
-// live model/list is_vl field.
-const QODER_REASONING_CAPS = {
-  reasoning: true,
-  thinkingFormat: "qoder",
-  thinkingCanDisable: true,
-  maxOutput: 64000,
-};
-const QODER_VL_REASONING_CAPS = {
-  ...QODER_REASONING_CAPS,
-  vision: true,
-};
-/** Shared catalog keys for intl qoder + qoderwork-cn (list still supplies model_config). */
-const QODER_PROVIDER_MODEL_CAPS = {
-  auto: QODER_VL_REASONING_CAPS,
-  qmodel_preview: QODER_VL_REASONING_CAPS,
-  qmodel_latest: QODER_VL_REASONING_CAPS,
-  qmodel: QODER_VL_REASONING_CAPS,
-  "q36fmodel": QODER_VL_REASONING_CAPS,
-  dmodel: QODER_VL_REASONING_CAPS,
-  dfmodel: { ...QODER_VL_REASONING_CAPS, reasoning: false },
-  gm51model: QODER_VL_REASONING_CAPS,
-  kmodel: QODER_VL_REASONING_CAPS,
-  mmodel: {
-    reasoning: false,
-    vision: false,
-    thinkingFormat: "openai",
-    thinkingCanDisable: true,
-    maxOutput: 64000,
-  },
-  // Legacy tier ids still seen on intl catalogs
-  ultimate: QODER_REASONING_CAPS,
-  performance: QODER_REASONING_CAPS,
-  efficient: QODER_REASONING_CAPS,
-  lite: QODER_REASONING_CAPS,
-};
+const GITHUB_CLAUDE_200K_CAPS = { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 264000, maxPrompt: 200000, maxOutput: 64000 };
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  "github": {
+    "claude-fable-5": GITHUB_CLAUDE_200K_CAPS,
+    "claude-opus-4.8": GITHUB_CLAUDE_200K_CAPS,
+    "claude-opus-5": GITHUB_CLAUDE_200K_CAPS,
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
@@ -213,9 +180,6 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
-  // Qoder family — one caps table; intl + CN share wire (reasoning_effort).
-  qoder: QODER_PROVIDER_MODEL_CAPS,
-  "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
@@ -231,18 +195,17 @@ export const PROVIDER_CAPABILITIES = {
  */
 export const PATTERN_CAPABILITIES = [
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
-  { pattern: "*claude*opus-4.6*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*opus-4.7*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*opus-4.8*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*opus-5*",     caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*sonnet-4.6*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*sonnet-4.7*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*sonnet-5*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*fable*",  caps: CLAUDE_4_6_PLUS_CAPABILITIES },
-  { pattern: "*claude*mythos*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-5*",     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*sonnet-4.6*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*sonnet-4.7*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
+  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
   { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
 
