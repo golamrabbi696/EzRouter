@@ -6,19 +6,9 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-        const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result, body) : result;
-        if (inspected) {
-          log.info("COMBO", `Model ${modelStr} succeeded`);
-          return annotateComboResponse({
-            comboName: comboName || body?.model,
-            selectedModel: modelStr,
-            attemptedModels: rotatedModels.slice(0, i + 1),
-          }, inspected);
-        }
-        lastError = "Response ended before its first actionable event";
-        if (!lastStatus) lastStatus = 502;
-        log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
-        continue;
+import { inspectComboPreaction } from "./comboPreaction.js";
+import { annotateComboResponse } from "./routeAttribution.js";
+import { estimateInputTokens } from "../utils/usageTracking.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -165,7 +155,6 @@ function ensureTrailingUserTurn(messages) {
   const last = messages[messages.length - 1];
   if (last?.role !== "assistant" && last?.role !== "model") return messages;
   return [...messages, { role: "user", content: "Continue from where the previous assistant message left off." }];
-}
 }
 
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
@@ -550,7 +539,7 @@ export async function handleComboChat({
       
       // Success (2xx) - return response
       if (result.ok) {
-        const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result, body) : result;
+        const inspected = (comboStrategy === "fallback" || requestHasTools(body)) ? await inspectComboPreaction(result, body) : result;
         if (inspected) {
           log.info("COMBO", `Model ${modelStr} succeeded`);
           return annotateComboResponse({
