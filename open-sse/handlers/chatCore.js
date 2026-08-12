@@ -413,7 +413,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     );
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, apiKeyReservation, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
   // Antigravity empty-stream guard — oh-my-pi parity
   if (provider === "antigravity" && stream && providerResponse.body) {
     const reexecute = async () => {
