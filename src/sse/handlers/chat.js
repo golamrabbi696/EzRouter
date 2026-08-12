@@ -24,7 +24,6 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
-import { getExecutor } from "open-sse/executors/index.js";
 import { recordTokenSaverEvent } from "@/lib/usageDb";
 
 /**
