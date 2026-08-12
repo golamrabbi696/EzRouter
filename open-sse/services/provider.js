@@ -19,15 +19,9 @@ function isAnthropicCompatible(provider) {
   return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 }
 
-// Resolve the API type (chat vs responses) for an openai-compatible node.
-// The stored apiType on the connection's providerSpecificData (kept in sync with
-// the node on create/update) is authoritative. Falls back to the node ID
-// substring for legacy nodes created before apiType was persisted — their IDs
-// embed the type: openai-compatible-<chat|responses>-<uuid>.
-export function resolveOpenAICompatibleApiType(provider, credentials = null) {
-  const stored = credentials?.providerSpecificData?.apiType;
-  if (stored === "chat" || stored === "responses") return stored;
-  return typeof provider === "string" && provider.includes("responses") ? "responses" : "chat";
+function getOpenAICompatibleType(provider) {
+  if (!isOpenAICompatible(provider)) return "chat";
+  return provider.includes("responses") ? "responses" : "chat";
 }
 
 // Detect request format from body structure
@@ -111,9 +105,9 @@ export function detectFormat(body) {
 }
 
 // Get provider config (internal — no external runtime consumer)
-function getProviderConfig(provider, credentials = null) {
+function getProviderConfig(provider) {
   if (isOpenAICompatible(provider)) {
-    const apiType = resolveOpenAICompatibleApiType(provider, credentials);
+    const apiType = getOpenAICompatibleType(provider);
     return {
       ...PROVIDERS.openai,
       format: apiType === "responses" ? "openai-responses" : "openai",
@@ -131,49 +125,43 @@ function getProviderConfig(provider, credentials = null) {
 }
 
 // Get target format for provider
-export function getTargetFormat(provider, credentials = null) {
+export function getTargetFormat(provider) {
   if (isOpenAICompatible(provider)) {
-    return resolveOpenAICompatibleApiType(provider, credentials) === "responses" ? "openai-responses" : "openai";
+    return getOpenAICompatibleType(provider) === "responses" ? "openai-responses" : "openai";
   }
   if (isAnthropicCompatible(provider)) {
     return "claude";
   }
-  const config = getProviderConfig(provider, credentials);
+  const config = getProviderConfig(provider);
   return config.format || "openai";
 }
 
-// Resolve transport by format and optional authType.
-export function resolveTransport(provider, format, authType = null) {
+// Resolve which transport to use for a provider given the client sourceFormat.
+// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
+// to avoid lossy translation; falls back to the default transport when no match.
+export function resolveTransport(provider, sourceFormat) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  if (authType) {
-    const exactAuth = transports.filter(t => t.authType && t.authType === authType);
-    const match = exactAuth.find(t => t.format === format) || exactAuth[0];
-    if (match) return match;
-  }
-  return transports.find(t => t.format === format) || null;
+  return transports.find(t => t.format === sourceFormat) || null;
 }
 
-const _transportCache = new Map();
-export function resolveTransportCached(provider, sourceFormat, authType) {
-  const key = provider + "|" + sourceFormat + "|" + (authType || "");
-  let cached = _transportCache.get(key);
-  if (cached === undefined) {
-    cached = resolveTransport(provider, sourceFormat, authType);
-    _transportCache.set(key, cached);
+// Per-model target format resolved at request time from the model NAME.
+// For providers that serve different wire formats per model AND whose live model
+// catalog outruns their static models[] list, a static per-entry `targetFormat`
+// silently misses the newcomers (github/Copilot: claude-* go to the Anthropic-native
+// /v1/messages shim, and the catalog ships claude-* variants well before the registry
+// lists them). Providers opt in by exporting transport.resolveTargetFormat(model).
+// Returns null when the provider has no hook or the model isn't special-cased.
+export function resolveDynamicTargetFormat(provider, model) {
+  const fn = PROVIDERS[provider]?.resolveTargetFormat;
+  if (typeof fn !== "function") return null;
+  try {
+    return fn(model) || null;
+  } catch {
+    // Registry data must never be able to break routing.
+    return null;
   }
-  return cached;
-}
-
-export function resolveRequestTransport(provider, sourceFormat, modelTargetFormat = null, authType = null) {
-  const requestedFormat = modelTargetFormat || sourceFormat;
-  const runtimeTransport = resolveTransport(provider, requestedFormat, authType);
-  return {
-    runtimeTransport,
-    targetFormat: runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider),
-  };
-}
 }
 
 // Check if last message is from user

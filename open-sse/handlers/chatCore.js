@@ -1,4 +1,3 @@
-import { detectFormat, resolveRequestTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
@@ -57,9 +56,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
-  const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: select transport from the effective target format
-  // so URL and translated request body always use the same protocol.
+  const modelTargetFormat = getModelTargetFormat(alias, model)
+    || resolveDynamicTargetFormat(provider, model);
   const { runtimeTransport, targetFormat } = resolveRequestTransport(
     provider,
     sourceFormat,
