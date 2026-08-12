@@ -142,18 +142,17 @@ export function getTargetFormat(provider, credentials = null) {
   return config.format || "openai";
 }
 
-// Resolve transport by auth type first, then client source format.
-// This keeps dual-auth providers (e.g. Kimi OAuth/API key) on the correct endpoint.
-export function resolveTransport(provider, sourceFormat, authType) {
+// Resolve transport by format and optional authType.
+export function resolveTransport(provider, format, authType = null) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  const exactAuth = transports.filter(t => t.authType && t.authType === authType);
-  const generic = transports.filter(t => !t.authType);
-  return exactAuth.find(t => t.format === sourceFormat)
-    || exactAuth[0]
-    || generic.find(t => t.format === sourceFormat)
-    || null;
+  if (authType) {
+    const exactAuth = transports.filter(t => t.authType && t.authType === authType);
+    const match = exactAuth.find(t => t.format === format) || exactAuth[0];
+    if (match) return match;
+  }
+  return transports.find(t => t.format === format) || null;
 }
 
 const _transportCache = new Map();
@@ -165,6 +164,16 @@ export function resolveTransportCached(provider, sourceFormat, authType) {
     _transportCache.set(key, cached);
   }
   return cached;
+}
+
+export function resolveRequestTransport(provider, sourceFormat, modelTargetFormat = null, authType = null) {
+  const requestedFormat = modelTargetFormat || sourceFormat;
+  const runtimeTransport = resolveTransport(provider, requestedFormat, authType);
+  return {
+    runtimeTransport,
+    targetFormat: runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider),
+  };
+}
 }
 
 // Check if last message is from user
