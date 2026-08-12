@@ -32,6 +32,7 @@ function buildProviderEntry(r) {
     ...(r.noAuth ? { noAuth: true } : {}),
     ...(r.passthroughModels ? { passthroughModels: true } : {}),
     ...(r.hasOAuth ? { hasOAuth: true } : {}),
+    ...(r.models ? { models: r.models } : {}),
     ...(r.authModes ? { authModes: r.authModes } : {}),
     ...(r.features ? { features: { ...r.features } } : {}),
     ...(r.authType ? { authType: r.authType } : {}),

@@ -1,18 +1,16 @@
 {
   "name": "ezrouter-app",
-  "version": "0.5.45",
+  "version": "0.5.40",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 20127",
-    "dev:webpack": "next dev --webpack --port 20127",
-    "build": "npm run generate:provider-registry && next build --webpack",
-    "start": "next start --port 20127",
-    "dev:bun": "bun --bun next dev --webpack --port 20127",
-    "build:bun": "npm run generate:provider-registry && bun --bun next build --webpack",
+    "dev": "next dev --port 20128",
+    "dev:webpack": "next dev --webpack --port 20128",
+    "build": "next build --webpack",
+    "start": "next start --port 20128",
+    "dev:bun": "bun --bun next dev --webpack --port 20128",
+    "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
-    "generate:provider-registry": "node scripts/generate-provider-registry.mjs",
-    "check:provider-registry": "node scripts/generate-provider-registry.mjs --check",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },
@@ -46,7 +44,6 @@
     "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
-    "ws": "^8.21.3",
     "zustand": "^5.0.10"
   },
   "optionalDependencies": {
