@@ -20,6 +20,7 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
+import { parseVertexSaJson, refreshVertexToken } from "open-sse/services/tokenRefresh.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -862,6 +863,27 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      case "vertex":
+      case "vertex-partner": {
+        const saJson = parseVertexSaJson(connection.apiKey);
+        if (saJson) {
+          try {
+            const tokenRes = await refreshVertexToken(saJson);
+            if (tokenRes?.accessToken) {
+              return { valid: true, error: null };
+            }
+            return { valid: false, error: "Failed to mint token from Service Account JSON" };
+          } catch (err) {
+            return { valid: false, error: err.message || "Invalid Service Account JSON" };
+          }
+        }
+        const probeRes = await fetchWithConnectionProxy(
+          `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${connection.apiKey}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+          effectiveProxy
+        );
+        const valid = probeRes.status !== 401 && probeRes.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
       }
       default:
         return { valid: false, error: "Provider test not supported" };
