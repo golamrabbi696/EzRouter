@@ -25,6 +25,7 @@ import {
   getCapabilitiesForModel,
 } from "open-sse/providers/capabilities.js";
 import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
+import { shouldFetchCompatibleModels } from "@/shared/utils/compatibleModelDiscovery";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -392,7 +393,17 @@ async function buildModelsListWithState(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      const hasConfiguredCustomModels = customModels.some((model) => {
+        const alias = model?.providerAlias;
+        return alias === staticAlias || alias === outputAlias || alias === providerId;
+      });
+
+      if (shouldFetchCompatibleModels({
+        isCompatibleProvider,
+        hasExplicitEnabledModels,
+        hasConfiguredCustomModels,
+        skipDynamicFetch,
+      })) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
