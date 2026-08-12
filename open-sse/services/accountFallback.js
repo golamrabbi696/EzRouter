@@ -69,6 +69,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  const invalidEncryptedContent = lowerError.includes("invalid_encrypted_content") ||
+    (lowerError.includes("encrypted content") &&
+      (lowerError.includes("could not be verified") || lowerError.includes("could not be decrypted or parsed")));
+  if (status === 400 && invalidEncryptedContent) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   for (const rule of ERROR_RULES) {
     // Regex rule: for phrases the model name sits inside, which a substring
     // cannot span ("Model does-not-exist-xyz is not supported").
