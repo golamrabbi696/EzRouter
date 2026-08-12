@@ -6,10 +6,17 @@
  * direct `claude:kiro` route in ../index.js uses; it is NOT reached through the
  * claude→openai→kiro pivot.
  *
- * After session replay it delegates to the shared Kiro conversation
- * canonicalizer. That layer enforces adjacent one-to-one tool use/results,
- * repairs partial parallel calls, and flattens compacted structured references
- * that can no longer be represented safely.
+ * It reproduces the two 400-guards that live in openai-to-kiro.js so that a
+ * Claude client which omits the `tools` array on a follow-up turn (typical
+ * after client-side compaction) does not trip Kiro's schema validator and get
+ * "Improperly formed request" (HTTP 400):
+ *
+ *   1. flattenClaudeToolInteractions — when the client sent NO tools, collapse
+ *      every tool_use / tool_result block to plain text so no structured tool
+ *      reference survives to trigger the "tools required" rule.
+ *   2. reconcileOrphanedToolResults — when tools ARE present, fold any
+ *      tool_result whose tool_use_id has no matching tool_use back into the
+ *      user text instead of leaving a dangling structured reference.
  *
  * It also handles the 9router-synthetic `-agentic` / `-thinking` suffixes and
  * the `<thinking_mode>enabled</thinking_mode>` reasoning trigger, matching
@@ -17,11 +24,9 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
-import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
+import { v4 as uuidv4 } from "uuid";
 import {
-  resolveKiroModelIntent,
-  applyKiroThinkingOverride,
+  resolveKiroModel,
   resolveKiroThinkingBudget,
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT,
@@ -31,17 +36,82 @@ import {
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
-import {
-  canonicalizeKiroConversation,
-  normalizeKiroToolSpecs,
-} from "../concerns/kiroConversation.js";
+
+/** Stringify a tool_use input as a readable line. */
+function toolUseToText(name, input) {
+  let argStr;
+  try {
+    argStr = typeof input === "string" ? input : JSON.stringify(input ?? {});
+  } catch {
+    argStr = "{}";
+  }
+  return `[Tool call: ${name || "unknown"}(${argStr})]`;
+}
+
+/** Render a Claude tool_result block's content as a readable line. */
+function toolResultBlockToText(content) {
+  let text = "";
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
+    text = content
+      .map((c) => (typeof c === "string" ? c : c?.text || ""))
+      .filter(Boolean)
+      .join("\n");
+  } else if (content) {
+    try {
+      text = JSON.stringify(content);
+    } catch {
+      text = "";
+    }
+  }
+  return `[Tool result: ${text}]`;
+}
+
+/**
+ * When the client sent no tools, rewrite every tool_use (assistant) and
+ * tool_result (user) content block into plain text. Keeps text + images.
+ * Returns a new messages array; never mutates the input.
+ */
+function flattenClaudeToolInteractions(messages) {
+  const out = [];
+  for (const msg of messages) {
+    if (!msg) continue;
+
+    if (msg.role === ROLE.ASSISTANT && Array.isArray(msg.content)) {
+      const parts = [];
+      for (const block of msg.content) {
+        if (block.type === CLAUDE_BLOCK.TEXT && block.text) {
+          parts.push(block.text);
+        } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
+          parts.push(toolUseToText(block.name, block.input));
+        }
+      }
+      out.push({ ...msg, content: parts.join("\n") });
+      continue;
+    }
+
+    if (msg.role === ROLE.USER && Array.isArray(msg.content)) {
+      const newContent = msg.content.map((block) =>
+        block.type === CLAUDE_BLOCK.TOOL_RESULT
+          ? { type: CLAUDE_BLOCK.TEXT, text: toolResultBlockToText(block.content) }
+          : block
+      );
+      out.push({ ...msg, content: newContent });
+      continue;
+    }
+
+    out.push(msg);
+  }
+  return out;
+}
 
 /**
  * Convert Claude messages to Kiro history + currentMessage.
  * Kiro requires alternating user/assistant turns; consecutive same-role
  * messages are merged.
  */
-function convertClaudeMessagesToKiro(messages, model) {
+function convertClaudeMessagesToKiro(messages, tools, model) {
   const history = [];
   let currentMessage = null;
 
@@ -50,6 +120,27 @@ function convertClaudeMessagesToKiro(messages, model) {
   let pendingToolResults = [];
   let pendingImages = [];
   let currentRole = null;
+  let toolsInjected = false;
+
+  const clientProvidedTools = Array.isArray(tools) && tools.length > 0;
+
+  const buildToolSpecs = () =>
+    tools.map((t) => {
+      const name = t.name;
+      const description = t.description || `Tool: ${name}`;
+      const schema = t.input_schema || {};
+      const normalizedSchema =
+        Object.keys(schema).length === 0
+          ? { type: "object", properties: {}, required: [] }
+          : { ...schema, required: schema.required ?? [] };
+      return {
+        toolSpecification: {
+          name,
+          description,
+          inputSchema: { json: normalizedSchema },
+        },
+      };
+    });
 
   const flushPending = () => {
     if (currentRole === ROLE.USER) {
@@ -64,6 +155,15 @@ function convertClaudeMessagesToKiro(messages, model) {
           toolResults: pendingToolResults,
         };
       }
+      // Attach tools to the first user turn only.
+      if (clientProvidedTools && !toolsInjected) {
+        if (!userMsg.userInputMessage.userInputMessageContext) {
+          userMsg.userInputMessage.userInputMessageContext = {};
+        }
+        userMsg.userInputMessage.userInputMessageContext.tools = buildToolSpecs();
+        toolsInjected = true;
+      }
+
       history.push(userMsg);
       currentMessage = userMsg;
       pendingUserContent = [];
@@ -107,7 +207,7 @@ function convertClaudeMessagesToKiro(messages, model) {
             }
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
-              status: block.is_error ? "error" : "success",
+              status: "success",
               content: [{ text: resultContent }],
             });
           }
@@ -154,7 +254,14 @@ function convertClaudeMessagesToKiro(messages, model) {
     }
   }
 
+  // Grab tools from the first history user turn before cleanup strips them.
+  const firstHistoryTools =
+    history[0]?.userInputMessage?.userInputMessageContext?.tools;
+
   history.forEach((item) => {
+    if (item.userInputMessage?.userInputMessageContext?.tools) {
+      delete item.userInputMessage.userInputMessageContext.tools;
+    }
     if (
       item.userInputMessage?.userInputMessageContext &&
       Object.keys(item.userInputMessage.userInputMessageContext).length === 0
@@ -198,7 +305,64 @@ function convertClaudeMessagesToKiro(messages, model) {
     currentMessage = { userInputMessage: { content: "", modelId: model } };
   }
 
+  // Inject tools into currentMessage after cleanup if not already present.
+  if (
+    firstHistoryTools?.length > 0 &&
+    !currentMessage.userInputMessage.userInputMessageContext?.tools
+  ) {
+    if (!currentMessage.userInputMessage.userInputMessageContext) {
+      currentMessage.userInputMessage.userInputMessageContext = {};
+    }
+    currentMessage.userInputMessage.userInputMessageContext.tools =
+      firstHistoryTools;
+  }
+
   return { history: mergedHistory, currentMessage };
+}
+
+/**
+ * Fold orphaned toolResults (those whose toolUseId has no matching toolUse in
+ * any assistant turn) back into the user text, removing the dangling
+ * structured reference that makes Kiro 400.
+ */
+function reconcileOrphanedToolResults(history, currentMessage) {
+  const validIds = new Set();
+  for (const h of history) {
+    const arm = h.assistantResponseMessage;
+    if (!arm) continue;
+    for (const tu of arm.toolUses || []) {
+      if (tu.toolUseId) validIds.add(tu.toolUseId);
+    }
+  }
+
+  const carriers = currentMessage ? [...history, currentMessage] : history;
+  for (const item of carriers) {
+    const uim = item.userInputMessage;
+    const ctx = uim?.userInputMessageContext;
+    if (!ctx?.toolResults?.length) continue;
+
+    const kept = [];
+    const salvaged = [];
+    for (const tr of ctx.toolResults) {
+      if (validIds.has(tr.toolUseId)) {
+        kept.push(tr);
+      } else {
+        const text = Array.isArray(tr.content)
+          ? tr.content.map((c) => c?.text || "").join("\n")
+          : "";
+        salvaged.push(`[Tool result: ${text}]`);
+      }
+    }
+
+    if (salvaged.length === 0) continue;
+
+    const extra = salvaged.join("\n");
+    uim.content = uim.content ? `${uim.content}\n\n${extra}` : extra;
+    ctx.toolResults = kept;
+    if (kept.length === 0 && !ctx.tools?.length) {
+      delete uim.userInputMessageContext;
+    }
+  }
 }
 
 function extractClaudeSystemText(system) {
@@ -217,21 +381,33 @@ function extractClaudeSystemText(system) {
  * Build a Kiro payload directly from a Claude Messages API request body.
  */
 export function claudeToKiroRequest(model, body, stream, credentials) {
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  let messages = Array.isArray(body.messages) ? body.messages : [];
   const tools = Array.isArray(body.tools) ? body.tools : [];
+  const clientProvidedTools = tools.length > 0;
   const maxTokens = body.max_tokens || 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
 
-  const modelIntent = resolveKiroModelIntent(model);
-  const { upstream: upstreamModel, agentic } = modelIntent;
-  const thinkingBody = applyKiroThinkingOverride(body, modelIntent.thinkingOverride);
-  const thinkingBudget = resolveKiroThinkingBudget(thinkingBody, credentials?.rawHeaders, modelIntent.model);
-  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(thinkingBody, upstreamModel);
-  const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
+  const { upstream: upstreamModel, agentic } = resolveKiroModel(model);
+  const thinkingBudget = resolveKiroThinkingBudget(body, credentials?.rawHeaders, model);
+  const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
+  const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
 
-  const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
-  const { history, currentMessage } = convertClaudeMessagesToKiro(messages, upstreamModel);
+  // Guard 1: no client tools → flatten all tool interactions to text.
+  if (!clientProvidedTools) {
+    messages = flattenClaudeToolInteractions(messages);
+  }
+
+  const { history, currentMessage } = convertClaudeMessagesToKiro(
+    messages,
+    tools,
+    upstreamModel
+  );
+
+  // Guard 2: tools present → reconcile dangling tool_results.
+  if (clientProvidedTools) {
+    reconcileOrphanedToolResults(history, currentMessage);
+  }
 
   // api_key / idc / external_idp must never use the shared default ARN (belongs
   // to another account → 403 "bearer token invalid"); OAuth/social fall back to it.
@@ -242,80 +418,60 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
-  // content fallback too because the CodeWhisperer surface does not always
-  // enforce top-level systemPrompt for direct calls.
-  const timestamp = new Date().toISOString();
-  const systemPromptParts = [];
-  if (thinkingBudget !== null && !usesNativeGptEffort) {
-    systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
-  }
-  if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
-  const systemInstruction = extractClaudeSystemText(body.system);
-  if (systemInstruction) systemPromptParts.push(systemInstruction);
-  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
-  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
+  let finalContent = currentMessage?.userInputMessage?.content || "";
 
-  const sessionIdentity = resolveSessionIdentity({
-    headers: credentials?.rawHeaders,
-    body,
-    connectionId: credentials?.connectionId,
-    scope: "kiro",
-  });
-  const conversationId = sessionIdentity.sessionId;
-  const continuationId = resolveContinuationId({
-    sessionId: conversationId,
-    connectionId: credentials?.connectionId,
-    scope: "kiro",
-    ephemeral: sessionIdentity.ephemeral,
-  });
-  const replay = applyKiroSessionReplay({
-    conversationId,
-    connectionId: credentials?.connectionId,
-    modelId: upstreamModel,
-    systemPrompt,
-    contentPrefix,
-    currentContentPrefix: currentTimeContext,
-    history,
-    currentMessage,
-  });
-  const canonical = canonicalizeKiroConversation({
-    history: replay.history,
-    currentMessage: replay.currentMessage,
-    modelId: upstreamModel,
-    toolSpecs,
-    nameMap,
-  });
-  const replayCurrent = canonical.currentMessage.userInputMessage;
+  // System prompt: pass via native systemInstruction field (Kiro/Q API supports it)
+  // and also prepend as <instructions> in user content as fallback for upstreams
+  // that don't support the native field.
+  // ponytail: embed in content (v0.5.20 pattern) — Kiro rejects top-level
+  // `systemPrompt` field with REQUEST_BODY_INVALID. Revert to top-level when
+  // upstream schema accepts it (monitor decolua/9router#2716).
+  let systemInstruction = undefined;
+  if (body.system) {
+    const systemText = extractClaudeSystemText(body.system);
+    if (systemText) {
+      systemInstruction = systemText;
+      finalContent = `<instructions>\n${systemText}\n</instructions>\n\n${finalContent}`;
+    }
+  }
+
+  // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  const timestamp = new Date().toISOString();
+  const prefixParts = [];
+  if (thinkingBudget !== null && !usesNativeGptEffort) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  prefixParts.push(`[Context: Current time is ${timestamp}]`);
+  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+
   const userInputMessage = {
-    content: replayCurrent.content || "",
+    content: finalContent,
     modelId: upstreamModel,
     origin: "AI_EDITOR",
-    ...(replayCurrent.userInputMessageContext && {
-      userInputMessageContext: replayCurrent.userInputMessageContext,
+    ...(currentMessage?.userInputMessage?.userInputMessageContext && {
+      userInputMessageContext:
+        currentMessage.userInputMessage.userInputMessageContext,
     }),
-    ...(replayCurrent.images && {
-      images: replayCurrent.images,
+    ...(currentMessage?.userInputMessage?.images && {
+      images: currentMessage.userInputMessage.images,
     }),
   };
+
+  if (systemInstruction) {
+    userInputMessage.systemInstruction = systemInstruction;
+  }
 
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId,
-      agentContinuationId: continuationId,
-      agentTaskType: "vibe",
+      conversationId: uuidv4(),
       currentMessage: {
         userInputMessage,
       },
-      history: canonical.history,
+      history,
     },
-    agentMode: "vibe",
   };
 
   if (profileArn) payload.profileArn = profileArn;
-  // if (systemPrompt) payload.systemPrompt = systemPrompt;
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
