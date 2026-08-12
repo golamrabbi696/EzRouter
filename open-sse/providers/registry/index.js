@@ -1,3 +1,4 @@
+import pChenzk from "./chenzk.js";
 // Auto-generated: static imports for all registry entries
 import p0 from "./alicode-intl.js";
 import p1 from "./alicode.js";
@@ -122,6 +123,7 @@ import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
 
 export default [
+  pChenzk,
   p0,
   p1,
   p2,
