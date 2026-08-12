@@ -97,14 +97,17 @@ export function selectContextEligibleModels(
 }
 
 // Flatten tool turns into prose so panel models keep the context but can't loop
-// on tools: drop the request's tools, turn tool/function results into assistant
+// on tools: drop the request's tools, turn tool/function results into user
 // text, and inline assistant tool_calls names instead of the structured field.
+// Tool results become user turns (matching the claude-to-openai translator's
+// ROLE.TOOL → USER mapping): a trailing assistant turn is rejected by Anthropic
+// as unsupported prefill on newer Claude models.
 function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
       if (msg.role === "tool" || msg.role === "function") {
-        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
+        return { role: "user", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
       }
       if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
         const { tool_calls, ...rest } = msg;
@@ -152,6 +155,17 @@ export function trimTrailingAssistant(messages) {
   // If we stripped everything (all-assistant input), keep at least the last user-ish
   // msg by falling back to the original so we never send an empty array.
   return out.length > 0 ? out : messages;
+}
+
+// Anthropic rejects conversations that end on an assistant turn ("assistant
+// message prefill") for newer Claude models. Panel bodies are synthesized
+// requests, so close any trailing assistant/model turn (client prefill, or an
+// assistant tool_call inlined by flattenToolHistory) with a user turn.
+function ensureTrailingUserTurn(messages) {
+  const last = messages[messages.length - 1];
+  if (last?.role !== "assistant" && last?.role !== "model") return messages;
+  return [...messages, { role: "user", content: "Continue from where the previous assistant message left off." }];
+}
 }
 
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
@@ -813,15 +827,11 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
-    panelBody.messages = flattenToolHistory(panelBody.messages);
-    // Claude/Anthropic reject assistant-message prefill ("conversation must end with
-    // a user message"). If the inbound turn ends on an assistant msg (e.g. the client
-    // echoed a partial assistant reply), trim trailing assistant roles so the panel
-    // request terminates on a user turn. #2876
-    panelBody.messages = trimTrailingAssistant(panelBody.messages);
+  if (Array.isArray(panelBody.messages)) {
+    panelBody.messages = ensureTrailingUserTurn(flattenToolHistory(panelBody.messages));
   } else if (Array.isArray(panelBody.input)) {
-    panelBody.input = flattenToolHistory(panelBody.input);
-    panelBody.input = trimTrailingAssistant(panelBody.input);
+    panelBody.input = ensureTrailingUserTurn(flattenToolHistory(panelBody.input));
+  }
   }
 
   const t0 = Date.now();
