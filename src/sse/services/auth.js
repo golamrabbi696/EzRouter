@@ -1,8 +1,7 @@
 import { createHash } from "crypto";
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, parseProviderResetMs, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS, RESET_COOLDOWN_CAP_MS } from "open-sse/config/errorConfig.js";
 import { ACCOUNT_ERROR_MESSAGE_MAX_CHARS, MEMORY_CONFIG } from "open-sse/config/runtimeConfig.js";
 import { getModelQuotaFamily, getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { resolveKiroModel } from "open-sse/config/kiroConstants.js";
@@ -278,12 +277,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
       if (excluded || locked) {
-        const lockUntil = getEarliestModelLockUntil(c);
+        const lockUntil = getModelLockUntil(c, model);
         log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
       }
     });
 
     if (availableConnections.length === 0) {
+<<<<<<< HEAD
       if (affinityTransition) {
         logSessionAffinity(provider, affinityTransition.event, affinityContext, affinityTransition.reason, affinityTransition.fromConnectionId, null);
       }
@@ -333,6 +333,22 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           retryAfterHuman: formatRetryAfter(until),
           lastError: `Local ${rpmLimit} RPM cap reached for every ${provider} account`,
           lastErrorCode: null
+=======
+      // Keep retry timing and error metadata paired to the same locked account.
+      const earliestLock = connections
+        .map(connection => ({ connection, retryAfter: getModelLockUntil(connection, model) }))
+        .filter(lock => lock.retryAfter)
+        .sort((a, b) => new Date(a.retryAfter) - new Date(b.retryAfter))[0];
+      if (earliestLock) {
+        const { connection: earliestConn, retryAfter } = earliestLock;
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(retryAfter)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        return {
+          allRateLimited: true,
+          retryAfter,
+          retryAfterHuman: formatRetryAfter(retryAfter),
+          lastError: earliestConn?.lastError || null,
+          lastErrorCode: earliestConn?.errorCode ?? null
+>>>>>>> pr-2664
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
@@ -543,7 +559,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     }
   } catch { /* settings unavailable → fall through to auto behavior */ }
 
-  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
+  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at, kiro
+  // confirmed credit exhaustion) overrides backoff. Each provider's resetsAtMs is capped
+  // at a provider-appropriate max so a far-future reset doesn't lock the account past its
+  // next low-frequency recheck (see RESET_COOLDOWN_CAP_MS).
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (githubResetAtMs) {
     shouldFallback = true;
@@ -551,7 +570,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    const cooldownCapMs = RESET_COOLDOWN_CAP_MS[provider] ?? MAX_RATE_LIMIT_COOLDOWN_MS;
+    cooldownMs = Math.min(resetsAtMs - Date.now(), cooldownCapMs);
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
@@ -614,7 +634,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
+  if (!conn.testStatus && !conn.lastError && !conn.errorCode && allLockKeys.length === 0) return;
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
@@ -624,7 +644,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError && !conn.errorCode) return;
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {
