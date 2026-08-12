@@ -110,6 +110,27 @@ export async function validateApiKey(key) {
   return !!apiKey && apiKey.isActive && (!apiKey.expiresAt || new Date(apiKey.expiresAt).getTime() > Date.now());
 }
 
+export async function getApiKeyBySecret(secret) {
+  return getApiKeyByValue(secret);
+}
+
+export function budgetPeriodMs(period) {
+  switch (period) {
+    case "daily": return 24 * 60 * 60 * 1000;
+    case "weekly": return 7 * 24 * 60 * 60 * 1000;
+    case "monthly": return 30 * 24 * 60 * 60 * 1000;
+    default: return null;
+  }
+}
+
+export async function addKeySpend(key, cost) {
+  if (!cost || cost <= 0) return;
+  const apiKey = await getApiKeyByValue(key);
+  if (!apiKey) return;
+  const db = await getAdapter();
+  db.run(`UPDATE apiKeys SET tokensUsed = tokensUsed + ? WHERE key = ?`, [Math.round(cost * 10000), key]);
+}
+
 export async function reserveApiKeyTokens(key, requestedTokens) {
   const apiKey = await getApiKeyByValue(key);
   if (apiKey?.tokenLimit == null) return { ok: true, reserved: 0 };
