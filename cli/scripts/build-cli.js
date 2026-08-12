@@ -96,6 +96,7 @@ function resolveStandaloneBuild(appDir, buildDistDir) {
     console.log(`ℹ️  Detected nested standalone output: ${pkgName}/`);
     standaloneRoot = nestedRoot;
   }
+  }
 
   const standaloneApp = fs.existsSync(path.join(standaloneRoot, "server.js"))
     ? standaloneRoot
