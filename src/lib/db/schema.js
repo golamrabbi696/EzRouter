@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -82,17 +82,12 @@ export const TABLES = {
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
-      createdAt: "TEXT NOT NULL",
-      // Per-key controls. NULL/0 means "no limit" for every numeric field.
-      rpm: "INTEGER",
-      tpm: "INTEGER",
-      maxBudget: "REAL",
-      budgetPeriod: "TEXT",
-      budgetStartedAt: "TEXT",
-      spend: "REAL DEFAULT 0",
-      models: "TEXT",
-      priority: "TEXT",
       expiresAt: "TEXT",
+      tokenLimit: "INTEGER",
+      tokensUsed: "INTEGER NOT NULL DEFAULT 0",
+      tokensReserved: "INTEGER NOT NULL DEFAULT 0",
+      allowedModels: "TEXT",
+      createdAt: "TEXT NOT NULL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },
@@ -140,12 +135,6 @@ export const TABLES = {
     ],
   },
   usageDaily: {
-    columns: {
-      dateKey: "TEXT PRIMARY KEY",
-      data: "TEXT NOT NULL",
-    },
-  },
-  tokenSaverDaily: {
     columns: {
       dateKey: "TEXT PRIMARY KEY",
       data: "TEXT NOT NULL",

@@ -1,5 +1,3 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
-
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
@@ -7,7 +5,8 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyByValue, getSettings } from "@/lib/localDb";
+import { extractApiKey } from "@/sse/services/auth.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -16,16 +15,9 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
-import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import {
-  aggregateComboCapabilities,
-  capabilitiesFromServiceKind,
-  getCapabilitiesForModel,
-} from "open-sse/providers/capabilities.js";
-import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
-import { shouldFetchCompatibleModels } from "@/shared/utils/compatibleModelDiscovery";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -113,23 +105,7 @@ const LIVE_MODEL_RESOLVERS = {
       providerSpecificData: conn.providerSpecificData || {},
     }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
-  },
-  zed: async (conn) => {
-    const result = await resolveZedModels({
-      accessToken: conn.accessToken,
-      providerSpecificData: conn.providerSpecificData || {},
-    });
-    if (!result?.models?.length) return null;
-    return {
-      models: result.models
-        .filter((m) => !m.isDisabled)
-        .map((m) => ({
-          id: m.id,
-          name: m.name,
-          capabilities: m.supportsTools ? { tools: true } : undefined,
-        })),
-    };
-  },
+  }
 };
 
 const parseOpenAIStyleModels = (data) => {
@@ -143,7 +119,6 @@ const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
-const MODELS_REVISION_KEY = randomBytes(32);
 
 // Map per-model `type` field (in PROVIDER_MODELS) to service kind.
 // Models without `type` are treated as LLM.
@@ -172,7 +147,7 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-export async function fetchCompatibleModelIds(connection) {
+async function fetchCompatibleModelIds(connection) {
   if (!connection?.apiKey) return [];
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
@@ -182,33 +157,24 @@ export async function fetchCompatibleModelIds(connection) {
   if (!baseUrl) return [];
 
   let url = `${baseUrl}/models`;
-  const baseHeaders = {
+  const headers = {
     "Content-Type": "application/json",
   };
-  let authHeaders = {};
 
   if (isOpenAICompatibleProvider(connection.provider)) {
-    authHeaders = { Authorization: `Bearer ${connection.apiKey}` };
+    headers.Authorization = `Bearer ${connection.apiKey}`;
   } else if (isAnthropicCompatibleProvider(connection.provider)) {
     if (url.endsWith("/messages/models")) {
       url = url.slice(0, -9);
     } else if (url.endsWith("/messages")) {
       url = `${url.slice(0, -9)}/models`;
     }
-    authHeaders = {
-      "x-api-key": connection.apiKey,
-      "anthropic-version": "2023-06-01",
-      Authorization: `Bearer ${connection.apiKey}`,
-    };
+    headers["x-api-key"] = connection.apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    headers.Authorization = `Bearer ${connection.apiKey}`;
   } else {
     return [];
   }
-
-  const headers = mergeClientIdentityHeaders(
-    baseHeaders,
-    connection.providerSpecificData || {},
-    authHeaders,
-  );
 
   try {
     const controller = new AbortController();
@@ -259,7 +225,7 @@ function comboMatchesKinds(combo, kindFilter) {
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-async function buildModelsListWithState(kindFilter, options = {}) {
+export async function buildModelsList(kindFilter, options = {}) {
   // When this header is present, the /v1/models request came from another
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
@@ -393,17 +359,7 @@ async function buildModelsListWithState(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      const hasConfiguredCustomModels = customModels.some((model) => {
-        const alias = model?.providerAlias;
-        return alias === staticAlias || alias === outputAlias || alias === providerId;
-      });
-
-      if (shouldFetchCompatibleModels({
-        isCompatibleProvider,
-        hasExplicitEnabledModels,
-        hasConfiguredCustomModels,
-        skipDynamicFetch,
-      })) {
+      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
@@ -513,27 +469,6 @@ async function buildModelsListWithState(kindFilter, options = {}) {
           || capabilitiesFromServiceKind(customKind || liveKind)
           || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
-        // Token limits under the snake_case names the OpenAI/OpenRouter
-        // convention uses. `capabilities.contextWindow` is camelCase and nested,
-        // so clients matching context_length find nothing, fall back to guessing
-        // the window from the model name, and guess high — a 372k model read as
-        // 1.05M never reaches its compaction threshold and hard-fails upstream.
-        // Emitted at top level because not every client recurses into nested
-        // objects; the camelCase `capabilities` block stays for compatibility.
-        if (kind === LLM_KIND || allowAsLlm) {
-          let contextWindow = caps?.contextWindow;
-          let maxOutput = caps?.maxOutput;
-          // Live-catalog and service-kind capabilities are usually partial
-          // (often just { tools: true }), so fill the gaps from the static
-          // table rather than emitting null and leaving clients to guess.
-          if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
-            const fallback = getCapabilitiesForModel(providerId, modelId);
-            if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
-            if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
-          }
-          if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
-          if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
-        }
         models.push(model);
       }
 
@@ -566,64 +501,10 @@ async function buildModelsListWithState(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
-  const comboLookup = Object.fromEntries(combos.map((combo) => [combo.name, combo.models]));
-  const publicModels = new Map(dedupedModels.map((model) => [model.id, model]));
-  for (const combo of combos) {
-    const entry = publicModels.get(combo.name);
-    if (!entry || !Array.isArray(combo.models)) continue;
-    const capabilities = aggregateComboCapabilities(combo.models, {
-      comboLookup,
-      resolveCapabilities: (modelId) => publicModels.get(modelId)?.capabilities || null,
-    });
-    if (!capabilities) continue;
-    entry.capabilities = capabilities;
-    entry.contextWindow = capabilities.contextWindow;
-  }
-
-  return { models: dedupedModels, combos };
-}
-
-export async function buildModelsList(kindFilter, options = {}) {
-  return (await buildModelsListWithState(kindFilter, options)).models;
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function compareStrings(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function canonicalModels(models) {
-  return [...models].sort((a, b) => compareStrings(String(a.id), String(b.id)));
-}
-
-export function createModelsValidator({ publicModels, combos, revisionKey }) {
-  if (!Array.isArray(publicModels) || !Array.isArray(combos) || !Buffer.isBuffer(revisionKey) || revisionKey.length < 32) {
-    throw new TypeError("Models validator requires model arrays and a 32-byte revision key");
-  }
-  const privateMembership = [...combos]
-    .map(({ name, models }) => ({ name, models }))
-    .sort((a, b) => compareStrings(String(a.name), String(b.name)));
-  const privateRevision = createHmac("sha256", revisionKey)
-    .update(canonicalJson(privateMembership))
-    .digest("hex");
-  const digest = createHash("sha256")
-    .update(canonicalJson([canonicalModels(publicModels), privateRevision]))
-    .digest("hex");
-  return `"sha256:${digest}"`;
-}
-
-export function ifNoneMatchMatches(header, etag) {
-  return String(header || "").split(",").some((candidate) => {
-    const tag = candidate.trim();
-    return tag === "*" || tag.replace(/^W\//, "") === etag;
-  });
+  const apiKey = options.apiKey;
+  const allowedModels = apiKey?.allowedModels;
+  if (!Array.isArray(allowedModels) || allowedModels.length === 0) return dedupedModels;
+  return dedupedModels.filter((model) => allowedModels.includes(model.id));
 }
 
 /**
@@ -647,18 +528,12 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const { models, combos } = await buildModelsListWithState([LLM_KIND], { skipDynamicFetch });
-    const data = canonicalModels(models);
-    const etag = createModelsValidator({ publicModels: data, combos, revisionKey: MODELS_REVISION_KEY });
-    const headers = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Expose-Headers": "ETag",
-      ETag: etag,
-    };
-    if (ifNoneMatchMatches(request?.headers?.get("If-None-Match"), etag)) {
-      return new Response(null, { status: 304, headers });
-    }
-    return Response.json({ object: "list", data }, { headers });
+    const policy = await getModelListPolicy(request);
+    if (policy.error) return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401, headers: { "Access-Control-Allow-Origin": "*" } });
+    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
+    return Response.json({ object: "list", data }, {
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(
@@ -666,4 +541,19 @@ export async function GET(request) {
       { status: 500 }
     );
   }
+}
+
+async function getModelListKey(request) {
+  const keyValue = extractApiKey(request);
+  if (!keyValue) return { present: false, key: null };
+  const key = await getApiKeyByValue(keyValue);
+  const expired = key?.expiresAt && new Date(key.expiresAt).getTime() <= Date.now();
+  return { present: true, key: key?.isActive && !expired ? key : null };
+}
+
+export async function getModelListPolicy(request) {
+  const settings = await getSettings();
+  const result = await getModelListKey(request);
+  if ((settings.requireApiKey && !result.key) || (result.present && !result.key)) return { error: true };
+  return { key: result.key };
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -17,12 +17,149 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+
+const TOKEN_LIMIT_PRESETS = [
+  { label: "100K", value: "100000" },
+  { label: "500K", value: "500000" },
+  { label: "1M", value: "1000000" },
+  { label: "5M", value: "5000000" },
+  { label: "10M", value: "10000000" },
+];
+
+function formatTokenCount(value) {
+  const tokens = Math.max(0, Number(value) || 0);
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(tokens % 1_000 === 0 ? 0 : 1)}K`;
+  return String(tokens);
+}
+
+function ApiKeyUsageTracker({ used, limit }) {
+  const safeLimit = Math.max(1, Number(limit) || 1);
+  const safeUsed = Math.max(0, Number(used) || 0);
+  const percentage = Math.min(100, Math.round((safeUsed / safeLimit) * 100));
+  const remaining = Math.max(0, safeLimit - safeUsed);
+  const tone = percentage >= 90
+    ? { bar: "bg-red-500", text: "text-red-600 dark:text-red-400" }
+    : percentage >= 75
+      ? { bar: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" }
+      : { bar: "bg-emerald-500", text: "text-text-muted" };
+
+  return (
+    <div className="mt-2 max-w-sm" title={`${formatTokenCount(safeUsed)} of ${formatTokenCount(safeLimit)} tokens used`}>
+      <div className="mb-1 flex items-center justify-between gap-3 text-[11px]">
+        <span className={tone.text}>{percentage}% used</span>
+        <span className="text-text-muted">{formatTokenCount(remaining)} remaining</span>
+      </div>
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-black/10 dark:bg-white/10"
+        role="progressbar"
+        aria-label={`Token usage: ${percentage}% used, ${formatTokenCount(remaining)} remaining`}
+        aria-valuemin={0}
+        aria-valuemax={safeLimit}
+        aria-valuenow={Math.min(safeUsed, safeLimit)}
+      >
+        <div className={`h-full rounded-full transition-[width] duration-300 ${tone.bar}`} style={{ width: `${percentage}%` }} />
+      </div>
+    </div>
+  );
+}
+
+ApiKeyUsageTracker.propTypes = {
+  used: PropTypes.number,
+  limit: PropTypes.number.isRequired,
+};
+
+function EditApiKeyModal({ apiKey, activeProviders, modelAliases, onClose, onSave }) {
+  const [expiresAt, setExpiresAt] = useState(apiKey.expiresAt ? apiKey.expiresAt.slice(0, 16) : "");
+  const [models, setModels] = useState(apiKey.allowedModels || []);
+  const [tokenAmount, setTokenAmount] = useState("");
+  const [tokenMode, setTokenMode] = useState(apiKey.tokenLimit == null ? "unlimited" : "unchanged");
+  const [showModelSelect, setShowModelSelect] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const hasLimit = apiKey.tokenLimit != null;
+
+  const save = async () => {
+    setSaving(true);
+    await onSave({
+      expiresAt: expiresAt || null,
+      allowedModels: models,
+      ...(tokenMode === "unlimited" ? { tokenLimit: null } : tokenAmount ? { [hasLimit ? "tokenLimitIncrement" : "tokenLimit"]: tokenAmount } : {}),
+    });
+    setSaving(false);
+  };
+
+  return <>
+    <Modal isOpen onClose={onClose} title={`Edit ${apiKey.name}`}>
+      <div className="flex flex-col gap-4">
+        <Input label="Expires at (optional)" type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} hint="Leave blank for no expiry." />
+        <Input
+          label={hasLimit ? "Add tokens" : "Set token limit"}
+          type="number" min="1" step="1" value={tokenAmount}
+          onChange={(e) => {
+            const value = e.target.value;
+            setTokenAmount(value);
+            setTokenMode(value ? "amount" : hasLimit ? "unchanged" : "unlimited");
+          }}
+          placeholder={hasLimit ? "e.g. 500000" : "e.g. 1000000"}
+          hint={hasLimit ? `Added to the current ${formatTokenCount(apiKey.tokenLimit)} limit; usage is preserved.` : "Choose Unlimited to remove the limit."}
+        />
+        <div className="-mt-2 flex flex-wrap gap-1.5" aria-label="Token limit presets">
+          {TOKEN_LIMIT_PRESETS.map((preset) => {
+            const selected = tokenMode === "amount" && tokenAmount === preset.value;
+            return (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => { setTokenAmount(preset.value); setTokenMode("amount"); }}
+                aria-pressed={selected}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${selected
+                  ? "border-primary bg-primary text-white"
+                  : "border-border bg-surface-2 text-text-muted hover:border-primary/50 hover:text-primary"}`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => { setTokenAmount(""); setTokenMode("unlimited"); }}
+            aria-pressed={tokenMode === "unlimited"}
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${tokenMode === "unlimited"
+              ? "border-primary bg-primary text-white"
+              : "border-border bg-surface-2 text-text-muted hover:border-primary/50 hover:text-primary"}`}
+          >
+            Unlimited
+          </button>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-text-main">Allowed models</label>
+          <div className="flex min-h-12 flex-wrap gap-1 rounded-lg border border-border bg-surface-2 p-2">
+            {models.length ? models.map((model) => <span key={model} className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs text-primary"><span>{model}</span><button type="button" onClick={() => setModels((items) => items.filter((item) => item !== model))} aria-label={`Remove ${model}`} className="material-symbols-outlined text-[14px]">close</button></span>) : <span className="p-1 text-xs text-text-muted">All models allowed</span>}
+          </div>
+          <button type="button" onClick={() => setShowModelSelect(true)} className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-black/10 py-2 text-xs font-medium text-primary dark:border-white/10"><span className="material-symbols-outlined text-[16px]">edit</span>Edit model access</button>
+        </div>
+        <div className="flex gap-2"><Button onClick={save} fullWidth disabled={saving}>{saving ? "Saving..." : "Save changes"}</Button><Button onClick={onClose} variant="ghost" fullWidth disabled={saving}>Cancel</Button></div>
+      </div>
+    </Modal>
+    {showModelSelect && <ModelSelectModal isOpen onClose={() => setShowModelSelect(false)} onSelect={(model) => setModels((items) => items.includes(model.value) ? items : [...items, model.value])} onDeselect={(model) => setModels((items) => items.filter((item) => item !== model.value))} activeProviders={activeProviders} modelAliases={modelAliases} addedModelValues={models} closeOnSelect={false} title="Edit allowed models" />}
+  </>;
+}
+
+EditApiKeyModal.propTypes = { apiKey: PropTypes.object.isRequired, activeProviders: PropTypes.array.isRequired, modelAliases: PropTypes.object.isRequired, onClose: PropTypes.func.isRequired, onSave: PropTypes.func.isRequired };
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyExpiresAt, setNewKeyExpiresAt] = useState("");
+  const [newKeyTokenLimit, setNewKeyTokenLimit] = useState("");
+  const [newKeyModels, setNewKeyModels] = useState([]);
+  const [showKeyModelSelect, setShowKeyModelSelect] = useState(false);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
   const [createdKey, setCreatedKey] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -76,9 +213,6 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
-  const [limitsOpen, setLimitsOpen] = useState(null); // key id whose limits editor is open
-  const [limitsDraft, setLimitsDraft] = useState({});
-  const [availableModels, setAvailableModels] = useState([]);
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -104,6 +238,23 @@ export default function APIPageClient({ machineId }) {
     fetchData();
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!showAddModal && !editingKey) return;
+    let cancelled = false;
+    Promise.all([fetch("/api/providers"), fetch("/api/models/alias")])
+      .then(async ([providersRes, aliasesRes]) => {
+        const [providersData, aliasesData] = await Promise.all([
+          providersRes.ok ? providersRes.json() : {},
+          aliasesRes.ok ? aliasesRes.json() : {},
+        ]);
+        if (cancelled) return;
+        setActiveProviders(providersData.connections || []);
+        setModelAliases(aliasesData.aliases || {});
+      })
+      .catch((error) => console.log("Error loading model picker:", error));
+    return () => { cancelled = true; };
+  }, [showAddModal, editingKey]);
 
   // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
   // Visibility re-check: refresh once when tab becomes visible.
@@ -258,26 +409,11 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const fetchKeys = async () => {
-        const res = await fetch("/api/keys");
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.keys || [];
-      };
-
-      let existing = await fetchKeys();
-      // Auto-provision a default key for first-time users so the endpoint works out of the box.
-      if (existing.length === 0) {
-        try {
-          const createRes = await fetch("/api/keys", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: "Default Key" }),
-          });
-          if (createRes.ok) existing = await fetchKeys();
-        } catch { /* fall through to empty render */ }
+      const keysRes = await fetch("/api/keys");
+      const keysData = await keysRes.json();
+      if (keysRes.ok) {
+        setKeys(keysData.keys || []);
       }
-      setKeys(existing);
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -632,7 +768,12 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          expiresAt: newKeyExpiresAt || null,
+          tokenLimit: newKeyTokenLimit || null,
+          allowedModels: newKeyModels,
+        }),
       });
       const data = await res.json();
 
@@ -640,6 +781,10 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyExpiresAt("");
+        setNewKeyTokenLimit("");
+        setNewKeyModels([]);
+        setShowKeyModelSelect(false);
         setShowAddModal(false);
       }
     } catch (error) {
@@ -670,64 +815,6 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
-  // Allowlist options come from what the endpoint can actually serve, so a key
-  // cannot be pinned to a model that does not exist.
-  const loadAvailableModels = async () => {
-    if (availableModels.length) return;
-    try {
-      const res = await fetch("/api/models/access", { cache: "no-store" });
-      const data = await res.json();
-      const out = [];
-      for (const p of data.providers || []) {
-        for (const m of p.models || []) {
-          if (m.blocked) continue;
-          out.push(p.routePrefix ? `${p.routePrefix}/${m.id}` : m.id);
-        }
-      }
-      setAvailableModels([...new Set(out)].sort());
-    } catch {
-      setAvailableModels([]);
-    }
-  };
-
-  const openLimits = (key) => {
-    loadAvailableModels();
-    setLimitsOpen(key.id);
-    setLimitsDraft({
-      rpm: key.rpm ?? "",
-      tpm: key.tpm ?? "",
-      maxBudget: key.maxBudget ?? "",
-      budgetPeriod: key.budgetPeriod ?? "",
-      priority: key.priority ?? "",
-      expiresAt: key.expiresAt ? key.expiresAt.slice(0, 16) : "",
-      models: [...(key.models || [])],
-    });
-  };
-
-  const saveLimits = async (id) => {
-    try {
-      const d = limitsDraft;
-      const res = await fetch(`/api/keys/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rpm: d.rpm === "" ? null : Number(d.rpm),
-          tpm: d.tpm === "" ? null : Number(d.tpm),
-          maxBudget: d.maxBudget === "" ? null : Number(d.maxBudget),
-          budgetPeriod: d.budgetPeriod || null,
-          priority: d.priority || null,
-          expiresAt: d.expiresAt ? new Date(d.expiresAt).toISOString() : null,
-          models: Array.isArray(d.models) ? d.models : [],
-        }),
-      });
-      if (!res.ok) throw new Error("save failed");
-      setLimitsOpen(null);
-      loadData();
-    } catch {
-      // surfaced by the reload showing unchanged values
-    }
-  };
-
   const handleToggleKey = async (id, isActive) => {
     try {
       const res = await fetch(`/api/keys/${id}`, {
@@ -741,6 +828,13 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.log("Error toggling key:", error);
     }
+  };
+
+  const handleUpdateKey = async (id, changes) => {
+    const res = await fetch(`/api/keys/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed to update key");
+    await fetchData();
+    setEditingKey(null);
   };
 
   const maskKey = (fullKey) => {
@@ -1081,7 +1175,7 @@ export default function APIPageClient({ machineId }) {
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
                       <span className="material-symbols-outlined text-[14px]">
@@ -1090,7 +1184,7 @@ export default function APIPageClient({ machineId }) {
                     </button>
                     <button
                       onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                     >
                       <span className="material-symbols-outlined text-[14px]">
                         {copied === key.id ? "check" : "content_copy"}
@@ -1099,105 +1193,16 @@ export default function APIPageClient({ machineId }) {
                   </div>
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
+                    {key.expiresAt ? ` · Expires ${new Date(key.expiresAt).toLocaleString()}` : " · No expiry"}
+                    {key.tokenLimit != null ? ` · ${key.tokensUsed}/${key.tokenLimit} tokens` : " · Unlimited tokens"}
                   </p>
-                  {(() => {
-                    const bits = [];
-                    if (key.rpm) bits.push(`${key.usage?.rpmUsed ?? 0}/${key.rpm} RPM`);
-                    if (key.tpm) bits.push(`${key.usage?.tpmUsed ?? 0}/${key.tpm} TPM`);
-                    if (key.maxBudget) bits.push(`$${(key.usage?.spendUsed ?? 0).toFixed(2)}/$${key.maxBudget}${key.budgetPeriod ? ` per ${key.budgetPeriod}` : ""}`);
-                    if (key.models?.length) bits.push(`${key.models.length} model${key.models.length === 1 ? "" : "s"}`);
-                    if (key.priority) bits.push(key.priority);
-                    if (key.expiresAt) {
-                      const exp = new Date(key.expiresAt);
-                      bits.push(`${exp <= new Date() ? "expired" : "expires"} ${exp.toLocaleDateString()}`);
-                    }
-                    return (
-                      <p className="text-xs text-text-muted mt-1">
-                        {bits.length ? bits.join(" · ") : "No limits"}
-                        <button
-                          onClick={() => (limitsOpen === key.id ? setLimitsOpen(null) : openLimits(key))}
-                          className="ml-2 text-primary hover:underline"
-                        >
-                          {limitsOpen === key.id ? "close" : "edit limits"}
-                        </button>
-                      </p>
-                    );
-                  })()}
-                  {limitsOpen === key.id && (
-                    <div className="mt-2 grid grid-cols-1 gap-2 rounded-md border border-border p-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {[
-                        ["rpm", "RPM (requests/min)", "number", "unlimited"],
-                        ["tpm", "TPM (tokens/min)", "number", "unlimited"],
-                        ["maxBudget", "Max budget (USD)", "number", "unlimited"],
-                        ["budgetPeriod", "Budget period", "text", "1d / 30d / 1mo"],
-                        ["priority", "Priority", "text", "prod / dev"],
-                        ["expiresAt", "Expires", "datetime-local", ""],
-                      ].map(([field, label, type, placeholder]) => (
-                        <label key={field} className="min-w-0 text-[11px] text-text-muted">
-                          {label}
-                          <input
-                            type={type}
-                            value={limitsDraft[field] ?? ""}
-                            placeholder={placeholder}
-                            onChange={(e) => setLimitsDraft((d) => ({ ...d, [field]: e.target.value }))}
-                            className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-                          />
-                        </label>
-                      ))}
-                      <div className="min-w-0 text-[11px] text-text-muted sm:col-span-2 lg:col-span-3">
-                        Model allowlist — blank means every model
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            const picked = e.target.value;
-                            if (!picked) return;
-                            setLimitsDraft((d) => ({
-                              ...d,
-                              models: [...(d.models || []), picked],
-                            }));
-                          }}
-                          className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-                        >
-                          <option value="">
-                            {availableModels.length ? "Add a model..." : "Loading models..."}
-                          </option>
-                          {availableModels
-                            .filter((m) => !(limitsDraft.models || []).includes(m))
-                            .map((m) => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                        </select>
-                        {(limitsDraft.models || []).length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {(limitsDraft.models || []).map((m) => (
-                              <span
-                                key={m}
-                                className="inline-flex max-w-full items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[10px]"
-                              >
-                                <span className="truncate">{m}</span>
-                                <button
-                                  type="button"
-                                  title="Remove"
-                                  onClick={() =>
-                                    setLimitsDraft((d) => ({
-                                      ...d,
-                                      models: (d.models || []).filter((x) => x !== m),
-                                    }))
-                                  }
-                                  className="shrink-0 text-text-muted hover:text-red-500"
-                                >
-                                  <span className="material-symbols-outlined text-[12px]">close</span>
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
-                        <Button size="sm" onClick={() => saveLimits(key.id)}>Save limits</Button>
-                        <Button size="sm" variant="ghost" onClick={() => setLimitsOpen(null)}>Cancel</Button>
-                      </div>
-                    </div>
+                  {key.tokenLimit != null && (
+                    <ApiKeyUsageTracker used={key.tokensUsed} limit={key.tokenLimit} />
+                  )}
+                  {Array.isArray(key.allowedModels) && key.allowedModels.length > 0 && (
+                    <p className="text-xs text-text-muted mt-1 truncate" title={key.allowedModels.join(", ")}>
+                      Models: {key.allowedModels.join(", ")}
+                    </p>
                   )}
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
@@ -1223,6 +1228,7 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
+                  <button onClick={() => setEditingKey(key)} className="p-2 hover:bg-primary/10 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all" title="Edit key"><span className="material-symbols-outlined text-[18px]">edit</span></button>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
@@ -1236,6 +1242,8 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
+      {editingKey && <EditApiKeyModal key={editingKey.id} apiKey={editingKey} activeProviders={activeProviders} modelAliases={modelAliases} onClose={() => setEditingKey(null)} onSave={(changes) => handleUpdateKey(editingKey.id, changes)} />}
+
       {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
@@ -1243,6 +1251,10 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyExpiresAt("");
+          setNewKeyTokenLimit("");
+          setNewKeyModels([]);
+          setShowKeyModelSelect(false);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1252,6 +1264,85 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <Input
+            label="Expires at (optional)"
+            type="datetime-local"
+            value={newKeyExpiresAt}
+            onChange={(e) => setNewKeyExpiresAt(e.target.value)}
+            hint="Leave blank for no expiry."
+          />
+          <Input
+            label="Token limit (optional)"
+            type="number"
+            min="1"
+            step="1"
+            value={newKeyTokenLimit}
+            onChange={(e) => setNewKeyTokenLimit(e.target.value)}
+            placeholder="Unlimited"
+            hint="Total input and output tokens. Strictly enforced."
+          />
+          <div className="-mt-2 flex flex-wrap gap-1.5" aria-label="Token limit presets">
+            {TOKEN_LIMIT_PRESETS.map((preset) => {
+              const selected = newKeyTokenLimit === preset.value;
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => setNewKeyTokenLimit(preset.value)}
+                  aria-pressed={selected}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${selected
+                    ? "border-primary bg-primary text-white"
+                    : "border-border bg-surface-2 text-text-muted hover:border-primary/50 hover:text-primary"}`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setNewKeyTokenLimit("")}
+              aria-pressed={!newKeyTokenLimit}
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${!newKeyTokenLimit
+                ? "border-primary bg-primary text-white"
+                : "border-border bg-surface-2 text-text-muted hover:border-primary/50 hover:text-primary"}`}
+            >
+              Unlimited
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-text-main">Allowed models (optional)</label>
+            {newKeyModels.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-black/10 bg-black/[0.01] px-3 py-4 text-center dark:border-white/10 dark:bg-white/[0.01]">
+                <span className="material-symbols-outlined mb-1 text-xl text-text-muted">layers</span>
+                <p className="text-xs text-text-muted">All models are allowed</p>
+              </div>
+            ) : (
+              <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto rounded-lg border border-border bg-surface-2 p-2">
+                {newKeyModels.map((model) => (
+                  <span key={model} className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs text-primary">
+                    <span className="max-w-48 truncate">{model}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewKeyModels((models) => models.filter((value) => value !== model))}
+                      aria-label={`Remove ${model}`}
+                      className="material-symbols-outlined text-[14px] hover:text-red-500"
+                    >
+                      close
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowKeyModelSelect(true)}
+              className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-black/10 py-2 text-xs font-medium text-primary transition-colors hover:border-primary/50 dark:border-white/10"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              {newKeyModels.length ? "Add another model" : "Choose models"}
+            </button>
+            <p className="text-xs text-text-muted">Leave empty to allow every model.</p>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1260,6 +1351,10 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyExpiresAt("");
+                setNewKeyTokenLimit("");
+                setNewKeyModels([]);
+                setShowKeyModelSelect(false);
               }}
               variant="ghost"
               fullWidth
@@ -1269,6 +1364,20 @@ export default function APIPageClient({ machineId }) {
           </div>
         </div>
       </Modal>
+
+      {showKeyModelSelect && (
+        <ModelSelectModal
+          isOpen={showKeyModelSelect}
+          onClose={() => setShowKeyModelSelect(false)}
+          onSelect={(model) => setNewKeyModels((models) => models.includes(model.value) ? models : [...models, model.value])}
+          onDeselect={(model) => setNewKeyModels((models) => models.filter((value) => value !== model.value))}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          addedModelValues={newKeyModels}
+          closeOnSelect={false}
+          title="Choose models for this API key"
+        />
+      )}
 
       {/* Created Key Modal */}
       <Modal
