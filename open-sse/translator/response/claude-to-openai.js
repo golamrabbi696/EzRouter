@@ -34,7 +34,10 @@ function closeThinkingSpan(state, results) {
     content: "</think>",
     ...(encrypted ? { reasoning_encrypted_content: encrypted } : {}),
   }));
-  state.claudeThinkingBlocks.clear();
+  if (!state.claudeThinkingBlocks) state.claudeThinkingBlocks = new Set();
+    if (!state.claudeThinkingBlocks) state.claudeThinkingBlocks = new Set();
+      if (!state.claudeThinkingBlocks) state.claudeThinkingBlocks = new Set();
+      else state.claudeThinkingBlocks.clear();
   state.claudeThinkingSpanStarted = false;
   state.claudeThinkingSpanPendingClose = false;
   state.inThinkingBlock = false;
@@ -53,6 +56,7 @@ export function claudeToOpenAIResponse(chunk, state) {
       state.messageId = chunk.message?.id || `msg_${Date.now()}`;
       state.model = chunk.message?.model;
       state.toolCallIndex = 0;
+      state.claudeThinkingBlocks = state.claudeThinkingBlocks || new Map();
       state.claudeThinkingBlocks.clear();
       state.claudeThinkingSpanStarted = false;
       state.claudeThinkingSpanPendingClose = false;

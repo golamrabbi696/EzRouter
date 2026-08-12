@@ -5,4 +5,5 @@ export {
   appendRequestLog, getRecentLogs,
   saveRequestDetail, getRequestDetails, getRequestDetailById,
   saveErrorLog, getErrorLogs, getErrorLogById, getDistinctErrorProviders,
+  recordTokenSaverEvent, getTokenSaverStats,
 } from "@/lib/db/index.js";

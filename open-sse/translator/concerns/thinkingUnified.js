@@ -9,7 +9,7 @@ import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel }
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
   openai: "openai",
-  "openai-responses": "openai",
+  "openai-responses": "openai-responses",
   "openai-response": "openai",
   codex: "openai",
   claude: "claude-budget",
@@ -38,6 +38,7 @@ export function parseSuffix(model) {
   if (raw === "none" || raw === "off") return { cleanModel, override: { mode: "none" } };
   if (raw === "auto") return { cleanModel, override: { mode: "auto" } };
   if (/^\d+$/.test(raw)) return { cleanModel, override: { mode: "budget", budget: Number(raw) } };
+  if (raw === "ultra") return { cleanModel, override: { mode: "level", level: "ultra" } };
   if (LEVEL_TO_BUDGET[raw] !== undefined) return { cleanModel, override: { mode: "level", level: raw } };
   return { cleanModel, override: null };
 }
@@ -76,6 +77,15 @@ export function extractThinking(body) {
     return { mode: "level", level: e };
   }
 
+  // Kiro additionalModelRequestFields
+  const kiroFields = body.additionalModelRequestFields;
+  if (kiroFields && typeof kiroFields === "object") {
+    const oc = kiroFields.output_config?.effort || kiroFields.thinking?.effort;
+    if (typeof oc === "string" && oc) return { mode: "level", level: oc.toLowerCase() };
+    const re = kiroFields.reasoning?.effort;
+    if (typeof re === "string" && re) return { mode: "level", level: re.toLowerCase() };
+  }
+
   // Gemini shape (top-level, generationConfig, or request envelope)
   const tc = body.thinkingConfig || body.generationConfig?.thinkingConfig || body.request?.generationConfig?.thinkingConfig;
   if (tc && typeof tc === "object") {
@@ -105,6 +115,8 @@ export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
+  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) return "openai";
+  if (targetFormat === "openai-responses") return "openai-responses";
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -220,11 +232,25 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
   const eff = none && !canDisable ? { mode: "level", level: "minimal" } : cfg;
 
   switch (fmt) {
+    case "openai-responses": {
+      if (none && canDisable) { delete body.reasoning; break; }
+      const level = toLevel(eff);
+      if (level) {
+        const clamped = (level === "ultra" && !supportsThinkingLevel(provider, model, "ultra")) ? "max" : (level === "max" && !supportsThinkingLevel(provider, model, "max") ? "xhigh" : level);
+        body.reasoning = { effort: clamped };
+      }
+      break;
+    }
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      // Clamp max unless target provider/model metadata explicitly supports it.
       if (level) body.reasoning_effort = level === "max" && !supportsThinkingLevel(provider, model, "max") ? "xhigh" : level;
+      break;
+    }
+        case "qoder": {
+      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level;
       break;
     }
     case "claude-adaptive": {

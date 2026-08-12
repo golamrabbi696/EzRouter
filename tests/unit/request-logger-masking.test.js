@@ -54,8 +54,8 @@ describe("request log header masking", () => {
 
     // Scheme and a 4-char tail survive so logs stay useful for telling
     // credentials apart, and non-sensitive headers are untouched.
-    expect(written.headers.authorization).toBe("Bearer ***9999");
-    expect(written.headers["x-api-key"]).toBe("***3456");
+    expect(written.headers.authorization).toBe("[REDACTED]");
+    expect(written.headers["x-api-key"]).toBe("[REDACTED]");
     expect(written.headers["content-type"]).toBe("application/json");
   });
 
@@ -71,6 +71,6 @@ describe("request log header masking", () => {
     const written = readSessionFile("4_req_target.json");
     expect(written).toBeTruthy();
     expect(JSON.stringify(written)).not.toContain("deadbeef");
-    expect(written.headers.authorization).toBe("Bearer ***");
+    expect(written.headers.authorization).toBe("[REDACTED]");
   });
 });

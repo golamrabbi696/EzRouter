@@ -17,6 +17,7 @@ const L = {
 
 // thinkingFormat → valid selectable levels (source of truth for UI options).
 const FORMAT_LEVELS = {
+  qoder: L.budgetX,
   openai: L.openai,
   "claude-adaptive": L.levelMax,
   "claude-budget": L.budgetX,
@@ -31,9 +32,12 @@ const FORMAT_LEVELS = {
   step: L.base,
 };
 
+const GPT_56_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  { providers: ["openai", "codex"], pattern: "*gpt-5.6*", levels: GPT_56_LEVELS },
+  { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
@@ -41,8 +45,12 @@ export function getThinkingLevels(provider, model) {
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
-  const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));
+  const hit = PATTERN_THINKING.find((p) => (!p.providers || !provider || p.providers.includes(provider)) && matchPattern(p.pattern, model));
   let levels = caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
+}
+
+export function supportsThinkingLevel(provider, model, level) {
+  return getThinkingLevels(provider, model)?.includes(level) === true;
 }

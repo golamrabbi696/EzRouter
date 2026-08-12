@@ -21,7 +21,37 @@ exports[`GOLDEN response stream: Claude → OpenAI > text + thinking + tool_use 
     "choices": [
       {
         "delta": {
+          "content": "<think>",
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-msg_1",
+    "model": "claude-opus-4-6",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
           "reasoning_content": "let me think",
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-msg_1",
+    "model": "claude-opus-4-6",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
+          "content": "</think>",
         },
         "finish_reason": null,
         "index": 0,
@@ -443,6 +473,7 @@ exports[`GOLDEN response stream: OpenAI-Responses (codex) → OpenAI > text + re
       {
         "delta": {
           "content": "Hello",
+          "role": "assistant",
         },
         "finish_reason": null,
         "index": 0,
@@ -475,12 +506,34 @@ exports[`GOLDEN response stream: OpenAI-Responses (codex) → OpenAI > text + re
           "tool_calls": [
             {
               "function": {
-                "arguments": "{"city":"NYC"}",
+                "arguments": "",
                 "name": "get_weather",
               },
               "id": "call_1",
               "index": 0,
               "type": "function",
+            },
+          ],
+        },
+        "finish_reason": null,
+        "index": 0,
+      },
+    ],
+    "created": 0,
+    "id": "chatcmpl-<TS>",
+    "model": "unknown",
+    "object": "chat.completion.chunk",
+  },
+  {
+    "choices": [
+      {
+        "delta": {
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{"city":"NYC"}",
+              },
+              "index": 0,
             },
           ],
         },

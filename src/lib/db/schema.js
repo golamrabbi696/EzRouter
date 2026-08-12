@@ -176,6 +176,12 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_el_combo ON errorLogs(comboName)",
     ],
   },
+  tokenSaverDaily: {
+    columns: {
+      dateKey: "TEXT PRIMARY KEY",
+      data: "TEXT NOT NULL",
+    },
+  },
   convoyRules: {
     columns: {
       id: "TEXT PRIMARY KEY",

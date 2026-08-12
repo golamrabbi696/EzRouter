@@ -115,14 +115,53 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 
 // Codex OAuth (ChatGPT backend) — per-model context window reported by upstream
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
-const CODEX_GPT_56_THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
-const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_THINKING_LEVELS, contextWindow: 372000, maxOutput: 128000 };
-const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_THINKING_LEVELS, contextWindow: 272000, maxOutput: 128000 };
+const CODEX_GPT_56_SOL_THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+const CODEX_GPT_56_DEFAULT_THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_SOL_THINKING_LEVELS, contextWindow: 372000, maxOutput: 128000 };
+const CODEX_GPT_56_TERRA_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_SOL_THINKING_LEVELS, contextWindow: 272000, maxOutput: 128000 };
+const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_DEFAULT_THINKING_LEVELS, contextWindow: 272000, maxOutput: 128000 };
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
+const QODER_REASONING_CAPS = {
+  reasoning: true,
+  thinkingFormat: "qoder",
+  thinkingCanDisable: true,
+  maxOutput: 64000,
+};
+const QODER_VL_REASONING_CAPS = {
+  ...QODER_REASONING_CAPS,
+  vision: true,
+};
+const QODER_PROVIDER_MODEL_CAPS = {
+  auto: QODER_VL_REASONING_CAPS,
+  qmodel_preview: QODER_VL_REASONING_CAPS,
+  qmodel_latest: QODER_VL_REASONING_CAPS,
+  qmodel: QODER_VL_REASONING_CAPS,
+  "q36fmodel": QODER_VL_REASONING_CAPS,
+  dmodel: QODER_VL_REASONING_CAPS,
+  dfmodel: { ...QODER_VL_REASONING_CAPS, reasoning: false },
+  gm51model: QODER_VL_REASONING_CAPS,
+  kmodel: QODER_VL_REASONING_CAPS,
+  mmodel: {
+    reasoning: false,
+    vision: false,
+    thinkingFormat: "openai",
+    thinkingCanDisable: true,
+    maxOutput: 64000,
+  },
+  ultimate: QODER_REASONING_CAPS,
+  performance: QODER_REASONING_CAPS,
+  efficient: QODER_REASONING_CAPS,
+  lite: QODER_REASONING_CAPS,
+};
+
+const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
+
 export const PROVIDER_CAPABILITIES = {
+  qoder: QODER_PROVIDER_MODEL_CAPS,
+  "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
@@ -135,8 +174,8 @@ export const PROVIDER_CAPABILITIES = {
   "codex": {
     "gpt-5.6-sol":               CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-sol-review":        CODEX_GPT_56_SOL_CAPS,
-    "gpt-5.6-terra":             CODEX_GPT_56_DEFAULT_CAPS,
-    "gpt-5.6-terra-review":      CODEX_GPT_56_DEFAULT_CAPS,
+    "gpt-5.6-terra":             CODEX_GPT_56_TERRA_CAPS,
+    "gpt-5.6-terra-review":      CODEX_GPT_56_TERRA_CAPS,
     "gpt-5.6-luna":              CODEX_GPT_56_DEFAULT_CAPS,
     "gpt-5.6-luna-review":       CODEX_GPT_56_DEFAULT_CAPS,
   },
@@ -190,6 +229,7 @@ export const PROVIDER_CAPABILITIES = {
  * a broad family pattern swallowing an exception (e.g. glm-4.6v vs glm-5).
  */
 export const PATTERN_CAPABILITIES = [
+  { pattern: "*qoder*", caps: QODER_REASONING_CAPS },
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
   { pattern: "*claude*opus-5*",     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
@@ -200,7 +240,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
-  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*fable*",  caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
   { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
