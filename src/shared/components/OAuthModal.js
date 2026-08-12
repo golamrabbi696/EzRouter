@@ -5,31 +5,6 @@ import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-// Providers using the dynamic-port local callback proxy.
-// Browser OAuth: popup → auto callback → auto exchange → poll-status.
-const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed"]);
-
-// Providers offering a paste-token fallback (import-token flow).
-// UX warns if the IDE (which issues the token) is not installed.
-const PASTE_TOKEN_PROVIDERS = {
-  trae: {
-    label: "Cloud-IDE-JWT",
-    instructions:
-      "Sign in at trae.ai (or solo.trae.ai), open DevTools → Network, copy the Cloud-IDE-JWT token from any request's Authorization header (~14-day lifetime).",
-    placeholder: "Paste Cloud-IDE-JWT here...",
-    ideName: "Trae",
-    ideOptional: true, // token can be grabbed from DevTools without the IDE
-  },
-  windsurf: {
-    label: "Windsurf API key",
-    instructions:
-      "In the Windsurf/VS Code IDE, run the \"Windsurf: Provide Auth Token\" command, then copy the displayed sk-ws-... key.",
-    placeholder: "Paste sk-ws-... key here...",
-    ideName: "Windsurf",
-    ideOptional: false,
-  },
-};
-
 /**
  * OAuth Modal Component
  * - Localhost: Auto callback via popup message
@@ -43,10 +18,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isDeviceCode, setIsDeviceCode] = useState(false);
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
-  // trae/windsurf: choose between browser OAuth (proxy) and paste-token (import)
-  const [authMode, setAuthMode] = useState("browser"); // "browser" | "paste-token"
-  const [pasteToken, setPasteToken] = useState("");
-  const [ideStatus, setIdeStatus] = useState(null);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -146,7 +117,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          body: JSON.stringify({
+            deviceCode,
+            codeVerifier,
+            extraData,
+            ...(provider === "cursor" ? { state: deviceCode } : {}),
+          }),
         });
 
         const data = await res.json();
@@ -179,59 +155,34 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     setPolling(false);
   }, [provider, onSuccess]);
 
-  // Trae/Windsurf proxy OAuth flow: dynamic-port local callback → auto exchange.
-  const startProxyFlow = useCallback(async (providerId) => {
-    // 1. Start the local callback server (returns a dynamic port + callback URL).
-    const startRes = await fetch(`/api/oauth/${providerId}/start-proxy`);
-    const startData = await startRes.json();
-    if (!startRes.ok || !startData.success || !startData.callbackUrl) {
-      throw new Error(startData.reason || startData.error || `Failed to start ${providerId} callback server`);
-    }
-    // 2. Build the authorize URL with redirect_uri = proxy callback URL.
-    const authorizeUrl = new URL(`/api/oauth/${providerId}/authorize`, window.location.origin);
-    authorizeUrl.searchParams.set("redirect_uri", startData.callbackUrl);
-    const authRes = await fetch(authorizeUrl);
-    const authData = await authRes.json();
-    if (!authRes.ok) throw new Error(authData.error);
-    // 3. Register the session so the proxy can match the incoming callback.
-    //    Zed also passes code_verifier (encodes the RSA private key for decrypt);
-    //    sent via POST body so the private key never lands in URL/query logs.
-    const regBody = { state: authData.state };
-    if (authData.codeVerifier) regBody.codeVerifier = authData.codeVerifier;
-    await fetch(`/api/oauth/${providerId}/register-session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(regBody),
-    });
-    // 4. Open popup; proxy auto-exchanges on callback, modal polls poll-status.
-    setAuthData({ ...authData, proxyProvider: providerId });
-    setStep("waiting");
-    popupRef.current = window.open(authData.authUrl, "oauth_popup", "width=600,height=700");
-    if (!popupRef.current) setStep("input"); // popup blocked → fall back to manual paste
-  }, []);
-
   // Start OAuth flow
   const startOAuthFlow = useCallback(async () => {
     if (!provider) return;
     try {
       setError(null);
 
-      // Trae/Windsurf: proxy OAuth (browser mode) — handled by dedicated flow.
-      // Paste-token mode is handled by handleManualSubmit (no /authorize call).
-      if (PROXY_OAUTH_PROVIDERS.has(provider) && authMode === "browser") {
-        await startProxyFlow(provider);
+      if (provider === "cursor") {
+        setIsDeviceCode(true);
+        setStep("waiting");
+        const res = await fetch(`/api/oauth/cursor/authorize?redirect_uri=${encodeURIComponent(window.location.origin + "/callback")}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        setAuthData(data);
+        setDeviceData({ verification_uri: data.authUrl, user_code: "" });
+        if (data.authUrl) window.open(data.authUrl, "_blank", "noopener,noreferrer");
+        startPolling(data.state, null, 2, null, (data.expiresIn || 300) * 1000);
         return;
       }
 
-      // Device code flow providers (must match oauth providers with flowType: "device_code")
+      // Device code flow providers
       const deviceCodeProviders = [
         "github",
+        "qwen",
         "kiro",
         "kimi",
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",
-        "codebuddy-intl",
         "qoder",
         "grok-cli",
       ];
@@ -396,7 +347,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, authMode, startProxyFlow]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -410,17 +361,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
-      setAuthMode("browser");
-      setPasteToken("");
-      setIdeStatus(null);
       pollingAbortRef.current = false;
-      // Best-effort IDE detection for paste-token providers (Trae/Windsurf)
-      if (PASTE_TOKEN_PROVIDERS[provider]) {
-        fetch(`/api/oauth/${provider}/ide-status`)
-          .then((r) => r.json())
-          .then((data) => setIdeStatus(data))
-          .catch(() => setIdeStatus({ installed: false, path: null }));
-      }
       startOAuthFlow();
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
@@ -430,26 +371,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         fetch("/api/oauth/codex/stop-proxy").catch(() => {});
       } else if (provider === "xai") {
         fetch("/api/oauth/xai/stop-proxy").catch(() => {});
-      } else if (provider === "trae") {
-        fetch("/api/oauth/trae/stop-proxy").catch(() => {});
-      } else if (provider === "windsurf") {
-        fetch("/api/oauth/windsurf/stop-proxy").catch(() => {});
-      } else if (provider === "zed") {
-        fetch("/api/oauth/zed/stop-proxy").catch(() => {});
       }
     }
   }, [isOpen, provider, startOAuthFlow]);
 
-  // Server-side proxy mode (codex/xai fixed-port + trae/windsurf dynamic-port):
-  // poll status until the proxy auto-exchanges and saves the connection.
+  // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
   useEffect(() => {
-    const pollProvider = authData?.codexServerSide
-      ? "codex"
-      : authData?.xaiServerSide
-        ? "xai"
-        : authData?.proxyProvider
-          ? authData.proxyProvider
-          : null;
+    const pollProvider = authData?.codexServerSide ? "codex" : authData?.xaiServerSide ? "xai" : null;
     if (!pollProvider || !authData?.state) return;
     if (callbackProcessedRef.current) return;
     let cancelled = false;
@@ -577,37 +505,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Paste-token mode (Trae/Windsurf): token goes straight to /exchange
-      if (authMode === "paste-token" && PASTE_TOKEN_PROVIDERS[provider]) {
-        const token = pasteToken.trim();
-        if (!token) throw new Error("Missing token");
-        const res = await fetch(`/api/oauth/${provider}/exchange`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: token }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        setStep("success");
-        onSuccess?.();
-        return;
-      }
-
       const input = callbackUrl.trim();
-
-      // Trae/Windsurf proxy flow fallback (popup blocked): paste the full callback URL
-      if (PROXY_OAUTH_PROVIDERS.has(provider) && input) {
-        const res = await fetch(`/api/oauth/${provider}/exchange`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: input, state: authData?.state }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        setStep("success");
-        onSuccess?.();
-        return;
-      }
 
       // Detect raw JWT access token (starts with eyJ) — skip URL parsing
       if (input.startsWith("eyJ") && input.includes(".")) {
@@ -658,12 +556,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       fetch("/api/oauth/codex/stop-proxy").catch(() => {});
     } else if (provider === "xai") {
       fetch("/api/oauth/xai/stop-proxy").catch(() => {});
-    } else if (provider === "trae") {
-      fetch("/api/oauth/trae/stop-proxy").catch(() => {});
-    } else if (provider === "windsurf") {
-      fetch("/api/oauth/windsurf/stop-proxy").catch(() => {});
-    } else if (provider === "zed") {
-      fetch("/api/oauth/zed/stop-proxy").catch(() => {});
     }
     onClose();
   }, [onClose, provider]);
@@ -682,82 +574,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback */}
-        {PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
-          <>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🌐 Sign in with browser
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🔑 Paste token
-              </button>
-            </div>
-
-            {authMode === "browser" && (
-              <>
-                {step === "waiting" && (
-                  <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-                    <span className="material-symbols-outlined text-base text-primary animate-spin">progress_activity</span>
-                    <span className="text-sm">Waiting for browser authorization…</span>
-                  </div>
-                )}
-                {step === "input" && (
-                  <div className="space-y-3">
-                    <p className="text-sm text-text-muted">
-                      Popup was blocked. After authorizing in the browser, paste the full callback URL here:
-                    </p>
-                    <Input
-                      value={callbackUrl}
-                      onChange={(e) => setCallbackUrl(e.target.value)}
-                      placeholder="http://127.0.0.1:.../callback?..."
-                      className="font-mono text-xs"
-                    />
-                    <div className="flex gap-2">
-                      <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>Connect</Button>
-                      <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {authMode === "paste-token" && (
-              <div className="space-y-3">
-                {ideStatus && !ideStatus.installed && (
-                  <div className={`px-3 py-2 rounded-lg text-sm ${PASTE_TOKEN_PROVIDERS[provider].ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}>
-                    {PASTE_TOKEN_PROVIDERS[provider].ideName} IDE not detected.
-                    {PASTE_TOKEN_PROVIDERS[provider].ideOptional
-                      ? " You can still grab the token from DevTools."
-                      : ` Install ${PASTE_TOKEN_PROVIDERS[provider].ideName} IDE to get the token, or use "Sign in with browser".`}
-                  </div>
-                )}
-                <p className="text-sm text-text-muted">{PASTE_TOKEN_PROVIDERS[provider].instructions}</p>
-                <Input
-                  value={pasteToken}
-                  onChange={(e) => setPasteToken(e.target.value)}
-                  placeholder={PASTE_TOKEN_PROVIDERS[provider].placeholder}
-                  className="font-mono text-xs"
-                />
-                <div className="flex gap-2">
-                  <Button onClick={handleManualSubmit} fullWidth disabled={!pasteToken}>Connect</Button>
-                  <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Waiting + Manual Input combined (non-device-code, non-proxy) */}
-        {(step === "waiting" || step === "input") && !isDeviceCode && !PROXY_OAUTH_PROVIDERS.has(provider) && (
+        {/* Waiting + Manual Input combined (non-device-code) */}
+        {(step === "waiting" || step === "input") && !isDeviceCode && (
           <>
             {/* Option A: Auto via popup */}
             <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
@@ -850,18 +668,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                   </Button>
                 </div>
               </div>
-              <div className="bg-primary/10 p-4 rounded-lg">
-                <p className="text-xs text-text-muted mb-1">Your Code</p>
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={copied === "user_code" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.user_code, "user_code")}
-                  />
+              {deviceData.user_code && (
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <p className="text-xs text-text-muted mb-1">Your Code</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={copied === "user_code" ? "check" : "content_copy"}
+                      onClick={() => copy(deviceData.user_code, "user_code")}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             {polling && (
               <div className="flex items-center justify-center gap-2 text-sm text-text-muted">

@@ -5,8 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, DEFAULT_PROVIDER_RPM } from "@/shared/constants/providers";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -14,8 +14,6 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-import { runModelBatchTest } from "@/shared/utils/modelBatchTester";
-import { useNotificationStore } from "@/store/notificationStore";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -26,27 +24,11 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
-const MODEL_SEARCH_PLACEHOLDER = "Search models...";
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
 };
-
-// Per-provider retry-delay options. "auto" = honor the provider's reported reset
-// (retryDelay / Retry-After / resets_at), else the built-in backoff. A number is
-// the cooldown (seconds) used only when the provider reports no reset of its own.
-const RETRY_DELAY_OPTIONS = [
-  { value: "auto", label: "Retry: Auto" },
-  { value: "15", label: "Retry: 15s" },
-  { value: "30", label: "Retry: 30s" },
-  { value: "60", label: "Retry: 1m" },
-  { value: "120", label: "Retry: 2m" },
-  { value: "300", label: "Retry: 5m" },
-  { value: "600", label: "Retry: 10m" },
-  { value: "1800", label: "Retry: 30m" },
-  { value: "3600", label: "Retry: 1h" },
-];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,7 +40,6 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
-  const [codexPlans, setCodexPlans] = useState({});
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -84,11 +65,9 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
-  const [retryDelay, setRetryDelay] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
-  const [rpmLimit, setRpmLimit] = useState("");
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -99,13 +78,6 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [batchTesting, setBatchTesting] = useState(false);
-  const [batchStopping, setBatchStopping] = useState(false);
-  const [batchResults, setBatchResults] = useState({});
-  const [batchSummary, setBatchSummary] = useState(null);
-  const stopBatchTestRef = useRef(false);
-  const notify = useNotificationStore();
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -189,11 +161,10 @@ export default function ProviderDetailPage() {
   const apiKeyConnectionLabel =
     providerId === "xai" ? "xAI API Key"
     : providerId === "kimi" ? "Kimi API Key"
-    : providerId === "qoder" ? "PAT"
     : "API Key";
   // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
   const resolveThinkingSuffix = (modelId) => {
-    if (!thinkingMode || thinkingMode === "auto" || thinkingMode === "none") return null;
+    if (!thinkingMode || thinkingMode === "auto") return null;
     const levels = getThinkingLevels(providerId, modelId);
     return levels && levels.includes(thinkingMode) ? thinkingMode : null;
   };
@@ -207,7 +178,7 @@ export default function ProviderDetailPage() {
       if (!modelId || seen.has(modelId)) return;
       seen.add(modelId);
       const lv = getThinkingLevels(providerId, modelId);
-      if (lv) lv.forEach((l) => set.add(l));
+      if (lv) lv.forEach((l) => { if (l !== "none") set.add(l); });
     };
     for (const m of models) addLevels(m.id);
     for (const m of kiloFreeModels) addLevels(m.id);
@@ -216,9 +187,7 @@ export default function ProviderDetailPage() {
       if ((entry.kind || entry.type || "llm") !== "llm") continue;
       addLevels(entry.id);
     }
-    if (!set.size) return null;
-    const rest = [...set].filter((l) => l !== "none");
-    return ["auto", "none", ...rest];
+    return set.size ? ["auto", ...[...set]] : null;
   })();
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
@@ -334,22 +303,6 @@ export default function ProviderDetailPage() {
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
-
-        if (providerId === "codex") {
-          const plans = await Promise.all(filtered.map(async (connection) => {
-            try {
-              const usageRes = await fetch(`/api/usage/${connection.id}`);
-              const usage = usageRes.ok ? await usageRes.json() : null;
-              const plan = usage?.plan?.trim();
-              return plan && plan.toLowerCase() !== "unknown" ? [connection.id, plan] : null;
-            } catch {
-              return null;
-            }
-          }));
-          setCodexPlans(Object.fromEntries(plans.filter(Boolean)));
-        } else {
-          setCodexPlans({});
-        }
         setConnections(filtered);
       }
       if (proxyPoolsRes.ok) {
@@ -362,12 +315,6 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
-      // Load per-provider retry-delay override
-      const rd = (settingsData.retryDelayByProvider || {})[providerId];
-      setRetryDelay(rd != null && rd !== "auto" ? String(rd) : "auto");
-      // Per-account RPM cap; blank input means "use the provider default"
-      const rpm = (settingsData.rpmByProvider || {})[providerId];
-      setRpmLimit(rpm != null ? String(rpm) : "");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
@@ -481,53 +428,6 @@ export default function ProviderDetailPage() {
   const handleThinkingModeChange = (mode) => {
     setThinkingMode(mode);
     saveThinkingConfig(mode);
-  };
-
-  const saveRetryDelay = async (value) => {
-    try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.retryDelayByProvider || {};
-      const updated = { ...current };
-      if (!value || value === "auto") {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = Number(value);
-      }
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ retryDelayByProvider: updated }),
-      });
-    } catch (error) {
-      console.log("Error saving retry delay:", error);
-    }
-  };
-
-  const saveRpmLimit = async (value) => {
-    try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const updated = { ...(settingsData.rpmByProvider || {}) };
-      const trimmed = String(value ?? "").trim();
-      if (trimmed === "") {
-        delete updated[providerId]; // fall back to the provider default
-      } else {
-        updated[providerId] = Math.max(0, Number(trimmed) || 0);
-      }
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rpmByProvider: updated }),
-      });
-    } catch (error) {
-      console.log("Error saving RPM limit:", error);
-    }
-  };
-
-  const handleRetryDelayChange = (value) => {
-    setRetryDelay(value);
-    saveRetryDelay(value);
   };
 
   const saveAutoPing = async (next) => {
@@ -1055,7 +955,6 @@ export default function ProviderDetailPage() {
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
-                plan={codexPlans[conn.id]}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
                 isFirst={index === 0}
@@ -1170,102 +1069,6 @@ export default function ProviderDetailPage() {
     }
   };
 
-  // Batch-test the given models through the same /api/models/test probe, with a
-  // bounded concurrency pool. Per-model status is fed into the shared
-  // batchResults map; ModelRow shows it via the testStatus/isTesting props.
-  const handleTestModels = async (modelsToTest) => {
-    if (!modelsToTest.length || batchTesting) return;
-
-    const initial = {};
-    modelsToTest.forEach((m) => {
-      initial[m.id] = { state: "queued", latencyMs: null, error: null };
-    });
-
-    stopBatchTestRef.current = false;
-    setBatchTesting(true);
-    setBatchStopping(false);
-    setBatchResults(initial);
-    setBatchSummary(null);
-
-    try {
-      const finalSummary = await runModelBatchTest({
-        models: modelsToTest,
-        buildFullModel: (m) => `${providerStorageAlias}/${m.id}`,
-        onResult: (modelId, result) =>
-          setBatchResults((prev) => ({ ...prev, [modelId]: result })),
-        onSummary: setBatchSummary,
-        stopRef: stopBatchTestRef,
-      });
-
-      if (finalSummary.stopped) {
-        notify.warning(`Stopped: ${finalSummary.passed}/${finalSummary.completed} passed`);
-      } else if (finalSummary.failed === 0) {
-        notify.success(`All ${finalSummary.total} models passed`);
-      } else {
-        notify.warning(`${finalSummary.passed}/${finalSummary.total} passed, ${finalSummary.failed} failed`);
-      }
-    } catch (error) {
-      notify.error("Model batch test failed");
-      console.log("Error in batch model test:", error);
-    } finally {
-      setBatchTesting(false);
-      setBatchStopping(false);
-      stopBatchTestRef.current = false;
-    }
-  };
-
-  const handleStopTestModels = () => {
-    if (!batchTesting) return;
-    stopBatchTestRef.current = true;
-    setBatchStopping(true);
-  };
-
-  const canBatchTest = connections.length > 0 || isFreeNoAuth;
-  const batchRunning = batchTesting || batchStopping;
-
-  // Derived model lists for this provider (llm kind only). Shared by the
-  // "Available Models" header (search + batch-test controls) and the rows below.
-  const modelsSectionData = (() => {
-    if (isCompatible) return null;
-    const allModels = [
-      ...models,
-      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
-    const disabledSet = new Set(disabledModelIds);
-    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
-    const customModelRows = getProviderCustomModelRows({
-      customModels,
-      modelAliases,
-      providerAlias: providerStorageAlias,
-      builtInModels: models,
-      type: "llm",
-    });
-    const modelSearch = modelSearchQuery.trim().toLowerCase();
-    const matchesModelSearch = (model) =>
-      !modelSearch ||
-      (model.id || "").toLowerCase().includes(modelSearch) ||
-      (model.name || "").toLowerCase().includes(modelSearch) ||
-      (model.fullModel || "").toLowerCase().includes(modelSearch);
-    const filteredCustomRows = customModelRows.filter(matchesModelSearch);
-    const filteredDisplayModels = displayModels.filter(matchesModelSearch);
-    const batchTestTargets = [
-      ...filteredCustomRows,
-      ...filteredDisplayModels,
-    ].map((m) => ({ id: m.id, fullModel: `${providerStorageAlias}/${m.id}` }));
-    return {
-      allModels,
-      displayModels,
-      disabledDisplayModels,
-      customModelRows,
-      filteredCustomRows,
-      filteredDisplayModels,
-      batchTestTargets,
-      modelSearch,
-      shownCount: batchTestTargets.length,
-    };
-  })();
-
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1285,19 +1088,27 @@ export default function ProviderDetailPage() {
         />
       );
     }
-    const {
-      filteredCustomRows,
-      filteredDisplayModels,
-      disabledDisplayModels,
-      customModelRows,
-      modelSearch,
-      shownCount,
-    } = modelsSectionData;
+    // Combine hardcoded models with Kilo free models (deduplicated)
+    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
+    const allModels = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
+    const disabledSet = new Set(disabledModelIds);
+    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
+    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
+    const customModelRows = getProviderCustomModelRows({
+      customModels,
+      modelAliases,
+      providerAlias: providerStorageAlias,
+      builtInModels: models,
+      type: "llm",
+    });
 
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
-        {filteredCustomRows.map((model) => (
+        {customModelRows.map((model) => (
           <ModelRow
             key={`${model.source}-${model.fullModel}`}
             model={{ id: model.id, name: model.name }}
@@ -1313,9 +1124,9 @@ export default function ProviderDetailPage() {
                 handleDeleteAlias(model.alias);
               }
             }}
-            testStatus={batchResults[model.id]?.state === "ok" ? "ok" : batchResults[model.id]?.state === "error" ? "error" : modelTestResults[model.id]}
+            testStatus={modelTestResults[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelIds.has(model.id) || batchResults[model.id]?.state === "testing"}
+            isTesting={testingModelIds.has(model.id)}
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
@@ -1323,7 +1134,7 @@ export default function ProviderDetailPage() {
           />
         ))}
 
-        {filteredDisplayModels.map((model) => {
+        {displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -1339,9 +1150,9 @@ export default function ProviderDetailPage() {
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={batchResults[model.id]?.state === "ok" ? "ok" : batchResults[model.id]?.state === "error" ? "error" : modelTestResults[model.id]}
+              testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-              isTesting={testingModelIds.has(model.id) || batchResults[model.id]?.state === "testing"}
+              isTesting={testingModelIds.has(model.id)}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
@@ -1350,18 +1161,7 @@ export default function ProviderDetailPage() {
           );
         })}
 
-        {/* Empty state when the model search has no matches */}
-        {modelSearch && shownCount === 0 && (
-          <div className="flex w-full flex-col items-center gap-1 py-6 text-center">
-            <span className="material-symbols-outlined text-[28px] text-text-muted">
-              search_off
-            </span>
-            <p className="text-sm text-text-muted">No models match &quot;{modelSearch}&quot;</p>
-          </div>
-        )}
-
         {/* Add model button — inline, same style as model chips */}
-        {!modelSearch && (
         <button
           onClick={() => setShowAddCustomModel(true)}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
@@ -1369,7 +1169,6 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
-        )}
 
         {/* Import Qoder models button — only show for qoder provider */}
         {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
@@ -1527,31 +1326,6 @@ export default function ProviderDetailPage() {
             <p className="text-text-muted">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>
-          </div>
-          {/* Retry-delay control — right side of the provider header */}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden text-xs text-text-muted sm:inline">RPM / account</span>
-            <input
-              type="number"
-              min="0"
-              value={rpmLimit}
-              placeholder={String(DEFAULT_PROVIDER_RPM[providerId] || 0)}
-              onChange={(e) => setRpmLimit(e.target.value)}
-              onBlur={(e) => saveRpmLimit(e.target.value)}
-              title="Max requests per minute per account. Accounts over the cap are skipped before a request is sent, so the provider never sees a 429. Blank = provider default, 0 = unlimited."
-              className="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-            />
-            <span className="hidden text-xs text-text-muted sm:inline">Retry delay</span>
-            <select
-              value={retryDelay}
-              onChange={(e) => handleRetryDelayChange(e.target.value)}
-              title="Cooldown after a rate-limit/error when the provider reports no reset time of its own. Auto = honor the provider's reported delay, else built-in backoff."
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-            >
-              {RETRY_DELAY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
           </div>
         </div>
       </div>
@@ -1881,7 +1655,11 @@ export default function ProviderDetailPage() {
             )}
           </div>
           {!isCompatible && (() => {
-            const activeIds = modelsSectionData.displayModels.map((m) => m.id);
+            const allIds = [
+              ...models,
+              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
+            const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
                 {disabledModelIds.length > 0 && (
@@ -1898,55 +1676,6 @@ export default function ProviderDetailPage() {
             );
           })()}
         </div>
-        {!isCompatible && (
-          <div className="mb-4 flex flex-col gap-2 border-t border-black/[0.03] pt-3 dark:border-white/[0.03] lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:max-w-xs">
-              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
-                search
-              </span>
-              <input
-                type="text"
-                value={modelSearchQuery}
-                onChange={(e) => setModelSearchQuery(e.target.value)}
-                placeholder={MODEL_SEARCH_PLACEHOLDER}
-                className="w-full h-9 pl-8 pr-7 rounded-lg border border-border bg-surface-2 text-sm focus:outline-none focus:border-primary/50 transition-colors"
-              />
-              {modelSearchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setModelSearchQuery("")}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
-                  aria-label="Clear model search"
-                >
-                  <span className="material-symbols-outlined text-[16px]">close</span>
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {batchSummary && (
-                <span className="text-xs text-text-muted tabular-nums">
-                  {batchSummary.completed}/{batchSummary.total} · {batchSummary.passed} ok{batchSummary.failed > 0 ? ` · ${batchSummary.failed} fail` : ""}{batchSummary.avgLatencyMs != null ? ` · avg ${batchSummary.avgLatencyMs}ms` : ""}{batchSummary.stopped ? " · stopped" : ""}
-                </span>
-              )}
-              {batchRunning ? (
-                <Button size="sm" variant="ghost" icon="stop" onClick={handleStopTestModels} disabled={batchStopping}>
-                  {batchStopping ? "Stopping..." : "Stop"}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon="science"
-                  onClick={() => handleTestModels(modelsSectionData.batchTestTargets)}
-                  disabled={!canBatchTest || modelsSectionData.shownCount === 0}
-                  title={canBatchTest ? `Test the ${modelsSectionData.shownCount} model(s) shown` : "Add a connection to test models"}
-                >
-                  Test {modelsSectionData.shownCount} Model{modelsSectionData.shownCount === 1 ? "" : "s"}
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
         )}
@@ -1960,12 +1689,6 @@ export default function ProviderDetailPage() {
         <KiroOAuthWrapper
           isOpen={showOAuthModal}
           providerInfo={providerInfo}
-          onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
-        />
-      ) : providerId === "cursor" ? (
-        <CursorAuthModal
-          isOpen={showOAuthModal}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
         />
@@ -1998,7 +1721,6 @@ export default function ProviderDetailPage() {
         providerName={providerInfo.name}
         isCompatible={isCompatible}
         isAnthropic={isAnthropicCompatible}
-        providerNode={providerNode}
         authType={providerInfo?.authType}
         authHint={providerInfo?.authHint}
         website={providerInfo?.website}
