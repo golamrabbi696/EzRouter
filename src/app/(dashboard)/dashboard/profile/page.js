@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
@@ -8,7 +9,6 @@ import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
-import { translate } from "@/i18n/runtime";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
 
 function getLocaleFromCookie() {
@@ -461,21 +461,6 @@ export default function ProfilePage() {
     }
   };
 
-  const updateAnalyticsEnabled = async (enabled) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ analyticsEnabled: enabled }),
-      });
-      if (res.ok) {
-        setSettings(prev => ({ ...prev, analyticsEnabled: enabled }));
-      }
-    } catch (err) {
-      console.error("Failed to update analyticsEnabled:", err);
-    }
-  };
-
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -567,7 +552,6 @@ export default function ProfilePage() {
   };
 
   const observabilityEnabled = settings.enableObservability === true;
-  const analyticsEnabled = settings.analyticsEnabled === true;
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -955,6 +939,25 @@ export default function ProfilePage() {
               />
             </div>
 
+            {/* Latency-Aware — mutually exclusive with Round Robin */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Latency-Aware</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Prefer the fastest healthy account and skip ones that are currently failing
+                  {" · "}
+                  <Link href="/dashboard/routing-health" className="text-primary hover:underline">
+                    view stats
+                  </Link>
+                </p>
+              </div>
+              <Toggle
+                checked={settings.fallbackStrategy === "latency-aware"}
+                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "latency-aware" ? "fill-first" : "latency-aware")}
+                disabled={loading}
+              />
+            </div>
+
             {/* Sticky Round Robin Limit */}
             {settings.fallbackStrategy === "round-robin" && (
               <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
@@ -1015,10 +1018,12 @@ export default function ProfilePage() {
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
-                : translate("Currently using accounts in priority order (Fill First).")}
+                : settings.fallbackStrategy === "latency-aware"
+                  ? "Currently ranking accounts by live latency and error rate."
+                  : "Currently using accounts in priority order (Fill First)."}
               {settings.comboStrategy === "round-robin"
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
-                : ` ${translate("Combos always start with their first model.")}`}
+                : " Combos always start with their first model."}
             </p>
           </div>
         </Card>
@@ -1113,29 +1118,6 @@ export default function ProfilePage() {
             <Toggle
               checked={observabilityEnabled}
               onChange={updateObservabilityEnabled}
-              disabled={loading}
-            />
-          </div>
-        </Card>
-
-        {/* Privacy Settings */}
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
-              <span className="material-symbols-outlined text-[20px]">privacy_tip</span>
-            </div>
-            <h3 className="text-base sm:text-lg font-semibold">Privacy</h3>
-          </div>
-          <div className="flex items-start sm:items-center justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm sm:text-base">Anonymous Usage Analytics</p>
-              <p className="text-xs sm:text-sm text-text-muted">
-                Send anonymous page-view analytics to Google Analytics. Off by default.
-              </p>
-            </div>
-            <Toggle
-              checked={analyticsEnabled}
-              onChange={updateAnalyticsEnabled}
               disabled={loading}
             />
           </div>

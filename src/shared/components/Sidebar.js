@@ -23,6 +23,7 @@ const navItems = [
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
+  { href: "/dashboard/routing-health", label: "Routing Health", icon: "speed" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   { href: "/dashboard/convoy", label: "Input Guard", icon: "filter_alt" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
