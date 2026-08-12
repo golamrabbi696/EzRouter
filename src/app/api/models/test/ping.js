@@ -37,7 +37,7 @@ function createSilentWavFile() {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-async function getInternalHeaders(connectionId = null) {
+async function getInternalHeaders() {
   let apiKey = null;
   try {
     const keys = await getApiKeys();
@@ -47,21 +47,19 @@ async function getInternalHeaders(connectionId = null) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
-  if (connectionId) headers["x-9router-connection-id"] = String(connectionId);
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, options = {}) {
-  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 15000);
-  const headers = await getInternalHeaders(options.connectionId);
+export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, customPrompt = null) {
+  const headers = await getInternalHeaders();
   const start = Date.now();
 
   if (kind === "embedding") {
     const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, input: "test" }),
-      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({ model, input: customPrompt || "test" }),
+      signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -76,15 +74,15 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!hasEmbedding) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no embedding data" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: `Embedding [${parsed.data[0].embedding.length} dims]` };
   }
 
   if (kind === "image") {
     const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, prompt: "test" }),
-      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({ model, prompt: customPrompt || "test" }),
+      signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -100,7 +98,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!hasImages) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no image data for this model" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: "Image generated successfully" };
   }
 
   if (kind === "stt") {
@@ -113,7 +111,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
       body: form,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(15000),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -129,23 +127,22 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     if (!text.trim()) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+    return { ok: true, latencyMs, error: null, status: res.status, preview: text };
   }
 
+  const promptContent = customPrompt || "hi";
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify({
       model,
-      // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
-      // their budget on chain-of-thought before emitting an answer. A tiny probe like
-      // max_tokens:16 starves the answer and yields a false "no choices" failure.
-      // See issue #3010.
-      max_tokens: 1024,
+      // Claude-on-Copilot returns empty choices at max_tokens:1 (budget is spent
+      // before a content token emits), so a 1-token probe yields a false negative.
+      max_tokens: 64,
       stream: false,
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "user", content: promptContent }],
     }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(15000),
   });
   const latencyMs = Date.now() - start;
 
@@ -184,21 +181,6 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
   }
 
   const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
-
-  // Soft-pass (issue #3010): a reasoning model may burn its whole budget on
-  // chain-of-thought and return finish_reason:"length" with empty content but
-  // non-empty reasoning/thinking. That's a successful connection, not a failure.
-  const firstChoice = parsed?.choices?.[0] || {};
-  const hasReasoning =
-    firstChoice.message?.reasoning ||
-    firstChoice.message?.reasoning_content ||
-    firstChoice.message?.thinking ||
-    firstChoice.message?.thinking_content;
-  const contentEmpty = !String(firstChoice.message?.content || "").trim();
-  if (hasChoices && firstChoice.finish_reason === "length" && contentEmpty && hasReasoning) {
-    return { ok: true, latencyMs, error: null, status: res.status, note: "reasoning-only response (length-limited)" };
-  }
-
   if (!hasChoices) {
     return {
       ok: false,
@@ -208,5 +190,6 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     };
   }
 
-  return { ok: true, latencyMs, error: null, status: res.status };
+  const preview = parsed?.choices?.[0]?.message?.content || parsed?.choices?.[0]?.text || null;
+  return { ok: true, latencyMs, error: null, status: res.status, preview };
 }
