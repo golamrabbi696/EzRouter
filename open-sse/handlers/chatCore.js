@@ -1,4 +1,4 @@
-import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
+import { detectFormat, getTargetFormat, resolveTransportCached as resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";

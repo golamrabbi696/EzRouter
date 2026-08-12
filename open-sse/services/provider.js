@@ -156,6 +156,17 @@ export function resolveTransport(provider, sourceFormat, authType) {
     || null;
 }
 
+const _transportCache = new Map();
+export function resolveTransportCached(provider, sourceFormat, authType) {
+  const key = provider + "|" + sourceFormat + "|" + (authType || "");
+  let cached = _transportCache.get(key);
+  if (cached === undefined) {
+    cached = resolveTransport(provider, sourceFormat, authType);
+    _transportCache.set(key, cached);
+  }
+  return cached;
+}
+
 // Check if last message is from user
 export function isLastMessageFromUser(body) {
   const messages = body.messages || body.contents;
