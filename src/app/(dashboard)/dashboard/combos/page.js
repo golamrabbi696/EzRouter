@@ -935,6 +935,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           kindFilter={kindFilter}
           addedModelValues={models}
           closeOnSelect={false}
+          comboContext={{ id: combo?.id, name: name.trim() }}
         />
       )}
     </>
