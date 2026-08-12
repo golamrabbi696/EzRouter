@@ -95,26 +95,17 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, terminalTracker = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
 
-  // Emit a synthesized terminal payload once.
-  //
-  // Falls back to the format tracker when no onAbortTerminal is configured: an
-  // abort, stall or network reset on an OpenAI/Claude stream used to close with
-  // nothing appended, leaving the client with a truncated body and no way to
-  // tell a dropped connection from a finished answer. Suppressed once a real
-  // terminal has already gone out, so a completed stream is never decorated.
+  // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
-    if (terminalEmitted) return;
-    const build = onAbortTerminal
-      || (terminalTracker && !terminalTracker.sawTerminal() ? () => terminalTracker.buildDrop() : null);
-    if (!build) return;
+    if (terminalEmitted || !onAbortTerminal) return;
     terminalEmitted = true;
     try {
-      const bytes = build();
+      const bytes = onAbortTerminal();
       if (bytes) controller.enqueue(bytes);
     } catch { /* best-effort terminal */ }
   };
@@ -131,25 +122,10 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         const { done, value } = await reader.read();
 
         if (done) {
-          // Upstream EOF. Reaching here does NOT mean the response finished —
-          // a provider that dies mid-response also lands here, and closing
-          // silently left the client with a truncated body carrying no
-          // finish_reason and no error, so it waited for a terminal event that
-          // was never coming. Synthesize one instead. Only fires when the
-          // format has an unambiguous terminal marker AND none was seen.
-          if (terminalTracker && !terminalTracker.sawTerminal() && !terminalEmitted) {
-            terminalEmitted = true;
-            try {
-              controller.enqueue(terminalTracker.buildDrop());
-            } catch { /* downstream already gone */ }
-            streamController.handleError(new Error("upstream stream ended without a terminal event"));
-          } else {
-            streamController.handleComplete();
-          }
+          streamController.handleComplete();
           controller.close();
           return;
         }
-        if (terminalTracker) terminalTracker.observe(value);
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
@@ -176,12 +152,9 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           code === "UND_ERR_SOCKET";
 
         // Graceful close on network/abort, or when a structured terminal is available
-        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error).
-        // terminalTracker counts as a structured terminal too, so an OpenAI/Claude
-        // stream cut by a reset now closes with an explicit error frame rather
-        // than a bare truncation the client cannot interpret.
+        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
         try {
-          if (!wasConnected || isNetworkClose || onAbortTerminal || terminalTracker) {
+          if (!wasConnected || isNetworkClose || onAbortTerminal) {
             emitTerminal(controller);
             controller.close();
           } else {
@@ -215,7 +188,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, terminalTracker = null) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -268,15 +241,49 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
   });
 
+  // A stream that delivers ZERO bytes to the client is never a legitimate
+  // completion — even an empty answer emits a role delta, a finish_reason and
+  // [DONE]. Without this guard that case reaches the caller as HTTP 200 with an
+  // empty body: no content, no error, nothing to branch on. Anything checking
+  // status codes reads it as success.
+  //
+  // Seen in production on 2026-08-05: a Claude account whose OAuth had expired
+  // stayed isActive, requests routed to it, and callers got 200/0 bytes while
+  // observability recorded "success" with "[Empty streaming response]".
+  //
+  // The status line is already committed by the time we know — headers go out
+  // before the first chunk — so the honest remedy is an in-band error frame. It
+  // fires ONLY on a completely empty stream, so a normal response never sees it.
+  let outBytes = 0;
+  const emptyStreamGuard = new TransformStream({
+    transform(chunk, controller) {
+      outBytes += chunk?.byteLength || chunk?.length || 0;
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      if (outBytes > 0) return;
+      dbg(tag, `EMPTY STREAM — upstream chunks=${chunkCount} bytes=${totalBytes}; emitting error frame`);
+      const payload = JSON.stringify({
+        error: {
+          message: "Upstream returned an empty stream — no content was produced. " +
+                   "The provider connection may be unauthenticated or unavailable.",
+          type: "upstream_empty_response",
+          code: "empty_stream"
+        }
+      });
+      controller.enqueue(new TextEncoder().encode(`data: ${payload}\n\ndata: [DONE]\n\n`));
+    }
+  });
+
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+    .pipeThrough(transformStream)
+    .pipeThrough(emptyStreamGuard);
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    onAbortTerminal,
-    terminalTracker
+    onAbortTerminal
   );
 }
 
