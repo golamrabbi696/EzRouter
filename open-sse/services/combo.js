@@ -6,8 +6,19 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { inspectComboPreaction } from "./comboPreaction.js";
-import { estimateInputTokens } from "../utils/usageTracking.js";
+        const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result, body) : result;
+        if (inspected) {
+          log.info("COMBO", `Model ${modelStr} succeeded`);
+          return annotateComboResponse({
+            comboName: comboName || body?.model,
+            selectedModel: modelStr,
+            attemptedModels: rotatedModels.slice(0, i + 1),
+          }, inspected);
+        }
+        lastError = "Response ended before its first actionable event";
+        if (!lastStatus) lastStatus = 502;
+        log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
+        continue;
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -528,7 +539,11 @@ export async function handleComboChat({
         const inspected = comboStrategy === "fallback" ? await inspectComboPreaction(result, body) : result;
         if (inspected) {
           log.info("COMBO", `Model ${modelStr} succeeded`);
-          return inspected;
+          return annotateComboResponse({
+            comboName: comboName || body?.model,
+            selectedModel: modelStr,
+            attemptedModels: rotatedModels.slice(0, i + 1),
+          }, inspected);
         }
         lastError = "Response ended before its first actionable event";
         if (!lastStatus) lastStatus = 502;
