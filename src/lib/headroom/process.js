@@ -55,7 +55,7 @@ function extrasProxyArgs({ codeAware, kompress, lossless } = {}) {
   return args;
 }
 
-export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = false, kompress = true, lossless = false } = {}) {
+export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = false, kompress = false, lossless = false } = {}) {
   const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
   const binary = findHeadroomBinary();
   if (!binary) {
