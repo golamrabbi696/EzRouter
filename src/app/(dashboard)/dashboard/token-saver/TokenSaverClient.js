@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Button, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import TokenSaverOverview from "./components/TokenSaverOverview";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
@@ -12,11 +11,9 @@ import {
 } from "../endpoint/endpointConstants";
 
 export default function TokenSaverClient() {
-  const [tab, setTab] = useState("overview");
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
-  const [headroomToken, setHeadroomToken] = useState("");
   const [headroomStatus, setHeadroomStatus] = useState({
     installed: false,
     running: false,
@@ -47,6 +44,8 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [customSystemPromptEnabled, setCustomSystemPromptEnabled] = useState(false);
+  const [customSystemPrompt, setCustomSystemPrompt] = useState("");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -355,6 +354,13 @@ export default function TokenSaverClient() {
     setPonytailLevel(level);
     patchSetting({ ponytailLevel: level });
   };
+  const handleCustomSystemPromptEnabled = (value) => {
+    setCustomSystemPromptEnabled(value);
+    patchSetting({ customSystemPromptEnabled: value });
+  };
+  const handleCustomSystemPromptBlur = () => {
+    patchSetting({ customSystemPrompt });
+  };
 
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
@@ -418,13 +424,14 @@ export default function TokenSaverClient() {
           setRtkEnabledState(data.rtkEnabled !== false);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
-          setHeadroomToken(data.headroomToken || "");
           setCodeAware(data.headroomCodeAware === true);
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setCustomSystemPromptEnabled(!!data.customSystemPromptEnabled);
+          setCustomSystemPrompt(data.customSystemPrompt || "");
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -470,22 +477,6 @@ export default function TokenSaverClient() {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex w-fit rounded-lg border border-border bg-surface-2 p-1">
-        <button
-          onClick={() => setTab("overview")}
-          className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === "overview" ? "bg-primary text-white" : "text-text-muted hover:text-text"}`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setTab("settings")}
-          className={`rounded-md px-4 py-1.5 text-sm font-medium ${tab === "settings" ? "bg-primary text-white" : "text-text-muted hover:text-text"}`}
-        >
-          Settings
-        </button>
-      </div>
-
-      {tab === "overview" ? <TokenSaverOverview /> : <>
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -753,6 +744,35 @@ export default function TokenSaverClient() {
             />
           </div>
         </div>
+        {/* Custom user-defined system prompt */}
+        <div className="flex items-start justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Custom system prompt
+            </p>
+            <p className="text-sm text-text-muted">
+              Inject your own text into the system message of every request
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2 shrink-0 min-w-[300px]">
+            {customSystemPromptEnabled && (
+              <textarea
+                value={customSystemPrompt}
+                onChange={(e) => setCustomSystemPrompt(e.target.value)}
+                onBlur={handleCustomSystemPromptBlur}
+                placeholder="Enter your custom system prompt here..."
+                rows={3}
+                className="w-full px-3 py-2 rounded text-sm border border-border bg-surface-2 text-text placeholder:text-text-muted resize-y focus:outline-none focus:border-primary"
+              />
+            )}
+            <div className="flex items-center gap-3 shrink-0">
+              <Toggle
+                checked={customSystemPromptEnabled}
+                onChange={() => handleCustomSystemPromptEnabled(!customSystemPromptEnabled)}
+              />
+            </div>
+          </div>
+        </div>
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
@@ -837,20 +857,6 @@ export default function TokenSaverClient() {
             <p className="text-xs text-text-muted">
               Use a local proxy for Start/Stop, or an external Docker sidecar
               like http://headroom:8787.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">Bearer Token</p>
-            <Input
-              type="password"
-              value={headroomToken}
-              onChange={(e) => setHeadroomToken(e.target.value)}
-              onBlur={() => patchSetting({ headroomToken })}
-              placeholder="Optional — for authenticated endpoints"
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-text-muted">
-              Sets Authorization: Bearer &lt;token&gt; on compress requests. Leave empty for no auth.
             </p>
           </div>
           {headroomManaged ? (
@@ -1044,7 +1050,6 @@ export default function TokenSaverClient() {
         confirmText={extrasConfirm?.confirmText}
         variant={extrasConfirm?.variant}
       />
-      </>}
     </div>
   );
 }

@@ -5,17 +5,14 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
+  isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
-import { authorizeApiKeyRequest, settleApiKeyReservation } from "../services/apiKeyPolicy.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
-import { applyConvoyRules } from "@/lib/convoy/rulesEngine.js";
-import { getRules } from "@/lib/db/repos/rulesRepo.js";
-
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
@@ -65,14 +62,24 @@ export async function handleChat(request, clientRawRequest = null) {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
+  // Enforce API key if enabled in settings
+  const settings = await getSettings();
+  if (settings.requireApiKey) {
+    if (!apiKey) {
+      log.warn("AUTH", "Missing API key (requireApiKey=true)");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+    }
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
-
-  const policy = await authorizeApiKeyRequest(request, { model: modelStr.includes("/") ? modelStr : null, body });
-  if (policy.error) return policy.error;
-  const settings = await getSettings();
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
@@ -127,7 +134,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, apiKeyReservation = 0) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -177,31 +184,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
-  const policy = await authorizeApiKeyRequest(request, { model: `${provider}/${model}`, body, reserveTokens: true });
-  if (policy.error) return policy.error;
-  body = policy.body;
-  apiKeyReservation = policy.reservation || 0;
-
-  let routedBody = body;
-  let routedRawRequest = clientRawRequest;
-  let convoy = { applied: false, provider, hits: [] };
-  try {
-    const rules = await getRules();
-    const result = applyConvoyRules(body, rules, provider);
-    routedBody = result.body;
-    convoy = {
-      applied: result.hits.length > 0,
-      provider,
-      hits: result.hits,
-    };
-    if (clientRawRequest) routedRawRequest = { ...clientRawRequest, body: routedBody, convoy };
-    if (result.hits.length > 0) {
-      const hitInfo = result.hits.map((hit) => `${hit.ruleName}(${hit.count})`).join(", ");
-      log.info("CONVOY", `[${provider}] Rules applied: ${hitInfo}`);
-    }
-  } catch (error) {
-    log.warn("CONVOY", `[${provider}] Rule engine error: ${error.message}`);
-  }
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -222,16 +204,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        await settleApiKeyReservation(apiKey, apiKeyReservation, null);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        await settleApiKeyReservation(apiKey, apiKeyReservation, null);
         return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      await settleApiKeyReservation(apiKey, apiKeyReservation, null);
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
@@ -240,7 +219,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
+      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
       if (pid) {
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately
@@ -252,26 +231,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...routedBody, model: `${provider}/${model}` },
+      body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
-      clientRawRequest: routedRawRequest,
-      convoy,
+      clientRawRequest,
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
-      apiKeyReservation,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      headroomToken: chatSettings.headroomToken || "",
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
+      customSystemPromptEnabled: !!chatSettings.customSystemPromptEnabled,
+      customSystemPrompt: chatSettings.customSystemPrompt || "",
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
@@ -290,13 +268,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
-      },
-      // Empty-stream retries exhausted mid-stream (headers already sent, so no
-      // pre-stream fallback is possible): bench the account so the client's
-      // automatic retry of the in-stream error lands on the next one. Quota
-      // exhaustion passes a precise resetsAtMs instead of the generic cooldown.
-      onUpstreamEmptyExhausted: async (reason, resetsAtMs) => {
-        await markAccountUnavailable(credentials.connectionId, HTTP_STATUS.BAD_GATEWAY, reason, provider, model, resetsAtMs);
       }
     });
 
@@ -313,7 +284,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       continue;
     }
 
-    await settleApiKeyReservation(apiKey, apiKeyReservation, null);
     return result.response;
   }
 }

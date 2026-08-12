@@ -6,7 +6,6 @@ const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787"
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
-  analyticsEnabled: false,
   tunnelEnabled: false,
   tunnelUrl: "",
   tunnelProvider: "cloudflare",
@@ -15,24 +14,10 @@ const DEFAULT_SETTINGS = {
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
   quotaVisibility: {},
-  // Per-provider retry-delay fallback: { [providerId]: "auto" | <seconds> }.
-  // "auto"/absent → provider-reported reset else built-in backoff; a number is
-  // the lock duration used when the provider reports no reset of its own.
-  retryDelayByProvider: {},
-  // Per-provider requests-per-minute cap per ACCOUNT: { [providerId]: <number> }.
-  // Absent → DEFAULT_PROVIDER_RPM, 0 → unlimited.
-  rpmByProvider: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
-  capacityAdapter: {
-    vision: { enabled: true, roundRobin: false, models: [] },
-    pdf: { enabled: false, roundRobin: false, models: [] },
-    audioInput: { enabled: true, roundRobin: false, models: [] },
-    videoInput: { enabled: false, roundRobin: false, models: [] },
-  },
   requireLogin: true,
-  requireApiKey: true,
   tunnelDashboardAccess: true,
   authMode: "password",
   oidcIssuerUrl: "",
@@ -40,7 +25,7 @@ const DEFAULT_SETTINGS = {
   oidcClientSecret: "",
   oidcScopes: "openid profile email",
   oidcLoginLabel: "Sign in with OIDC",
-  enableObservability: false,
+  enableObservability: true,
   observabilityMaxRecords: 1000,
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
@@ -54,11 +39,12 @@ const DEFAULT_SETTINGS = {
   headroomEnabled: false,
   headroomUrl: DEFAULT_HEADROOM_URL,
   headroomCompressUserMessages: false,
-  headroomToken: "",
   cavemanEnabled: false,
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  customSystemPromptEnabled: false,
+  customSystemPrompt: "",
   pxpipeEnabled: false,
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
@@ -99,13 +85,13 @@ export async function getSettings() {
 export async function updateSettings(updates) {
   const db = await getAdapter();
   let next;
-  db.transaction(function () {
+  db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)],
+      [stringifyJson(next)]
     );
   });
   return mergeWithDefaults(next);
