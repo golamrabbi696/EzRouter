@@ -8,12 +8,9 @@ export const MITM_TOOLS = {
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
-    modelAliases: ["gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
+    modelAliases: ["gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
     defaultModels: [
-      { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", alias: "gemini-3.6-flash-high" },
-      { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", alias: "gemini-3.6-flash-medium" },
-      { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", alias: "gemini-3.6-flash-low" },
-      { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium) / Default", alias: "gemini-3.5-flash-low", mandatory: true },
+      { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium) / Default", alias: "gemini-3.5-flash-low" },
       { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)", alias: "gemini-3-flash-agent" },
       { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)", alias: "gemini-3.5-flash-extra-low" },
       { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)", alias: "gemini-3.1-pro-low" },
@@ -108,7 +105,7 @@ export const CLI_TOOLS = {
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
       { id: "fable", name: "Claude Fable", alias: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "cc/claude-fable-5" },
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-5" },
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-8" },
       { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-5" },
       { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
     ],
@@ -242,13 +239,31 @@ export const CLI_TOOLS = {
     name: "Amp CLI",
     image: "/providers/amp.png",
     color: "#F97316",
-    description: "Amp coding agent — custom API endpoints unsupported",
-    docsUrl: "https://ampcode.com/manual",
+    description: "Sourcegraph Amp coding assistant CLI",
+    docsUrl: "/docs?section=cli-tools&tool=amp",
     configType: "guide",
-    unsupported: true,
+    defaultCommand: "amp",
+    modelAliases: ["g25p", "g25f", "cs45", "g54"],
     notes: [
-      { type: "error", text: "Amp does not support custom OpenAI-compatible base URLs. AMP_URL configures the Amp service, not the model inference endpoint, so Amp cannot connect directly to 9Router." },
+      { type: "info", text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates." },
+      { type: "warning", text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
     ],
+    guideSteps: [
+      { step: 1, title: "Install Amp", desc: "Install the Amp CLI using the package manager supported by your environment." },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config." },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `export OPENAI_API_KEY="{{apiKey}}"
+export OPENAI_BASE_URL="{{baseUrl}}"
+amp --model "{{model}}"
+# Example shorthand aliases you can map locally:
+# g25p -> gemini/gemini-2.5-pro
+# cs45 -> cc/claude-sonnet-4-5-20250929`,
+    },
   },
   qwen: {
     id: "qwen",
@@ -342,7 +357,7 @@ export const CLI_TOOLS = {
       },
     ],
     defaultModels: [
-      { id: "claude-opus-5", name: "Claude Opus 5", alias: "opus", defaultValue: "cc/claude-opus-5" },
+      { id: "claude-opus-4-7", name: "Claude Opus 4.7", alias: "opus", defaultValue: "cc/claude-opus-4-7" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
       { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
@@ -372,70 +387,33 @@ export const CLI_TOOLS = {
       },
     ],
   },
-  devin: {
-    id: "devin",
-    name: "Devin CLI",
-    image: "/providers/devin-cli.png",
-    color: "#6366F1",
-    description: "Cognition Devin CLI — local binary called by the Devin CLI provider via ACP/stdio",
-    configType: "guide",
-    installUrl: "https://cli.devin.ai",
-    notes: [
-      { type: "info", text: "This is a local dependency, not a routed CLI. The Devin CLI provider spawns `devin acp --agent-type summarizer` and relays its output." },
-      { type: "warning", text: "Install the Devin CLI and run `devin auth login` — without it, the provider returns a spawn error on first request." },
-    ],
-    guideSteps: [
-      { step: 1, title: "Install Devin CLI", desc: "Install via the official installer at cli.devin.ai.", docsUrl: "https://cli.devin.ai" },
-      { step: 2, title: "Authenticate", desc: "Log in once so the binary stores its own credentials." },
-      { step: 3, title: "Use the provider", desc: "Pick any Devin CLI model under the Providers tab — no API key field needed." },
-    ],
-    codeBlock: {
-      language: "bash",
-      code: `# Install Devin CLI (see https://cli.devin.ai for options)
-devin auth login
-
-# Verify detection (optional)
-devin --version`,
-    },
-  },
-  opendesign: {
-    id: "opendesign",
-    name: "OpenDesign",
-    image: "/providers/opendesign.png",
+  pi: {
+    id: "pi",
+    name: "Pi",
+    image: "/providers/pi.svg",
     color: "#7C3AED",
-    description: "OpenDesign — claude.ai/design open-sourced! Agent-native design skills pack",
-    docsUrl: "https://github.com/manalkaff/opendesign",
-    configType: "guide",
+    description: "Pi Coding Agent harness (pi.dev)",
+    configType: "custom",
+    docsUrl: "https://pi.dev/docs/latest/models",
+    defaultCommand: "pi",
+    defaultModels: [
+      { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
+      { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
+    ],
     notes: [
-      { type: "info", text: "OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at 9Router, /opendesign design sessions route through 9Router automatically — no extra env vars needed." },
-      { type: "info", text: "Invoke with /opendesign <brief>. Covers decks, wireframes, interactive prototypes, design-system extraction, and brand systems, with a verifier subagent that checks output against the brief." },
+      {
+        type: "info",
+        text: "Pi stores custom providers in ~/.pi/agent/models.json. 9Router writes a '9router' provider entry with selected models.",
+      },
+      {
+        type: "info",
+        text: "After Apply, run pi (or /model) to see 9router/ models. Config auto-reloads on /model — no restart needed.",
+      },
+      {
+        type: "warning",
+        text: "Config path: ~/.pi/agent/models.json",
+      },
     ],
-    guideSteps: [
-      { step: 1, title: "Install the plugin", desc: "Pick your host below and run the matching install command from the matrix." },
-      { step: 2, title: "No config needed", desc: "OpenDesign runs inside your host agent and uses its model config. If the host already routes through 9Router, /opendesign traffic does too." },
-      { step: 3, title: "Start designing", desc: "Invoke OpenDesign from your agent:", value: "/opendesign make a pitch deck for a seed-stage AI company, 10 slides", copyable: true },
-    ],
-    codeBlock: {
-      language: "bash",
-      code: `# Claude Code
-/plugin marketplace add manalkaff/opendesign
-/plugin install opendesign@opendesign
-
-# Cursor
-/add-plugin opendesign
-
-# OpenAI Codex CLI
-/plugins   # search "opendesign" -> Install Plugin
-
-# OpenAI Codex App
-# Plugins sidebar -> OpenDesign (Design section) -> +
-
-# Gemini CLI
-gemini extensions install https://github.com/manalkaff/opendesign
-
-# OpenCode
-# Fetch and follow .opencode/INSTALL.md from the repo`,
-    },
   },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
