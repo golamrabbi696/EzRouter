@@ -9,7 +9,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { applyReasoningVisibility } from "../../utils/reasoningVisibility.js";
+import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -272,11 +272,19 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
-  // reasoning_content is kept by default; only an explicit opt-out drops it.
-  // Claude-format responses carry thinking as a content block and are untouched.
-  if (!isClaudeMessageResponse) {
-    applyReasoningVisibility(translatedResponse, clientRawRequest);
+  // Strip reasoning_content only when content is non-empty.
+  // When content is empty (e.g. thinking models that used all tokens for reasoning),
+  // reasoning_content is the only useful output and must be preserved.
+  if (!isClaudeMessageResponse && translatedResponse?.choices) {
+    for (const choice of translatedResponse.choices) {
+      if (choice?.message?.reasoning_content && choice.message.content) {
+        delete choice.message.reasoning_content;
+      }
+    }
   }
+
+  // JSON mode: drop a ```json fence the provider added around the object
+  unfenceJsonChoices(body, translatedResponse);
 
   reqLogger.logConvertedResponse(translatedResponse);
 
