@@ -28,34 +28,33 @@ export const DEFAULT_ERROR_MESSAGES = {
   504: "Gateway timeout"
 };
 
-// Exponential backoff config for rate limits
+// Exponential backoff config for rate limits.
+// `max` is the blind ceiling used only when the provider reports no reset time. The
+// ladder needs ~9 consecutive failures to reach it, so it applies to accounts that are
+// genuinely spent, not to transient throttles. At the old 5 min an account out of
+// monthly quota was re-probed ~288 times a day, every day, forever.
 export const BACKOFF_CONFIG = {
   base: 2000,
-  max: 5 * 60 * 1000,
+  max: 30 * 60 * 1000,
   maxLevel: 15
 };
 
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
-// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
-export const MAX_RATE_LIMIT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
-
-// Confirmed Kiro credit exhaustion (monthly quota, `resetAt` from GetUsageLimits) can be
-// weeks away. Capping it at the generic 30-min rate-limit window would mean re-probing an
-// account we already know is exhausted every 30 minutes; instead cap it at a low-frequency
-// daily probe so the account is retried roughly once a day — enough to notice an early
-// reset (manual top-up, plan change) without hammering a known-dead account.
-export const KIRO_CREDIT_EXHAUSTION_PROBE_MS = 24 * 60 * 60 * 1000;
-
-// Per-provider override for the max resetsAtMs-derived cooldown (see markAccountUnavailable).
-// Any provider not listed here falls back to MAX_RATE_LIMIT_COOLDOWN_MS.
-export const RESET_COOLDOWN_CAP_MS = {
-  kiro: KIRO_CREDIT_EXHAUSTION_PROBE_MS,
-};
+// Sanity ceiling for a provider-reported reset time (resetsAtMs), NOT a policy cap.
+// Providers report genuinely long resets: codex `resets_at` runs 5-6h out and
+// cloudcode-pa returns `quotaResetTimeStamp` up to ~150h out. Truncating those to
+// 30 min put the account straight back into rotation to fail again. This value exists
+// only to reject nonsense timestamps (some usage APIs return year 9999), so it sits
+// just past the longest legitimate window — a calendar month.
+export const MAX_RATE_LIMIT_COOLDOWN_MS = 31 * 24 * 60 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {
+  // Provider says a calendar-month allowance is spent but reports no reset time
+  // (e.g. kiro 402 MONTHLY_REQUEST_COUNT). Re-probe a few times a day, not every 2 min.
+  monthly: 6 * 60 * 60 * 1000,
   long: 2 * 60 * 1000,
   short: 5 * 1000,
 };
@@ -63,94 +62,20 @@ const COOLDOWN = {
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
- * Each rule: { text?, status?, cooldownMs?, backoff?, fallback? }
+ * Each rule: { text?, status?, cooldownMs?, backoff? }
  *   - text: substring match (case-insensitive) on error message
  *   - status: HTTP status code match
  *   - cooldownMs: fixed cooldown duration
  *   - backoff: true = use exponential backoff (rate limit)
- *   - fallback: false = request-scoped failure. Do not switch accounts and do
- *     not cool the current one down, because a retry with the same body cannot
- *     succeed anywhere.
  */
-/**
- * Phrases that identify a permanently wrong model name, whatever status the
- * provider chose to attach to it. Providers are wildly inconsistent here: the
- * same class of failure arrives as 400 ("model is not supported"), as 401 with
- * a ModelError body, or as 404. Clients key their retry behaviour off the
- * status, so these are normalised to one permanent status rather than passed
- * through as an auth failure the caller cannot act on.
- */
-export const PERMANENT_MODEL_ERROR_PATTERNS = [
-  "model is not supported",
-  "model not supported",
-  "model not found",
-  "model does not exist",
-  "unknown model",
-  "invalid model",
-  // Matches a lowercased `"type":"ModelError"` body, which is how at least one
-  // provider reports an unknown model — on a 401, of all statuses.
-  "modelerror",
-];
-
-/**
- * Regex matchers for the same class, needed where the model NAME sits in the
- * middle of the phrase: "Model does-not-exist-xyz is not supported". A plain
- * substring cannot span that.
- */
-export const PERMANENT_MODEL_ERROR_REGEXES = [
-  /\bmodel\s+\S+\s+is\s+not\s+supported\b/,
-  /\bmodel\s+\S+\s+(?:does\s+not\s+exist|not\s+found)\b/,
-];
-
-/**
- * Request-scoped failures that are permanent but are NOT about the model — a
- * parameter the model rejects, for instance. These must not cool down the
- * account: the request is the caller's fault, so retrying on another account
- * repeats the same failure, and locking the model makes one client's bad
- * parameter break every other client's good request for the cooldown window.
- *
- * Matched on the INNER error class, because this provider wraps everything in
- * "Upstream request failed:" — including genuinely transient socket errors. The
- * bracketed class after that prefix is what separates them:
- *   permanent : "Upstream request failed: [invalid_request_error] invalid temperature: ..."
- *   transient : "Upstream request failed: connection reset by peer"
- * Matching "invalid_request_error" alone would wrongly catch the transient case,
- * whose envelope also carries that type.
- */
-export const PERMANENT_REQUEST_ERROR_REGEXES = [
-  /upstream request failed:\s*\[invalid_request_error\]/,
-];
-
-/**
- * @param {string|object} errorText - upstream error text or parsed body
- * @returns {boolean} true when the text names a permanently wrong model
- */
-export function isPermanentModelError(errorText) {
-  if (!errorText) return false;
-  const text = (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase();
-  if (PERMANENT_MODEL_ERROR_PATTERNS.some((p) => text.includes(p))) return true;
-  return PERMANENT_MODEL_ERROR_REGEXES.some((re) => re.test(text));
-}
-
 export const ERROR_RULES = [
-  // --- Permanent, request-scoped failures (highest priority) ---
-  // The model name itself is wrong, so no other account can do better. Without
-  // these the default "fall back and cool down" applied: one typo walked every
-  // account into cooldown and then answered 503 "try again later" for something
-  // retrying can never fix. `permanent` returns the upstream status straight to
-  // the caller and leaves account state untouched.
-  ...PERMANENT_MODEL_ERROR_PATTERNS.map((text) => ({ text, permanent: true })),
-  ...PERMANENT_MODEL_ERROR_REGEXES.map((pattern) => ({ pattern, permanent: true })),
-  ...PERMANENT_REQUEST_ERROR_REGEXES.map((pattern) => ({ pattern, permanent: true })),
-
   // --- Text-based rules (checked first, order = priority) ---
-  // An over-long prompt is a property of the request, not of the account: every
-  // account will reject the same body with the same error, so falling back
-  // burns a second upstream call for nothing and the cooldown takes healthy
-  // accounts out of rotation for unrelated (short) traffic on the same model.
-  { text: "context_length_exceeded",  fallback: false },
+  // Monthly allowance spent — must be matched before the generic 402/429 rules.
+  { text: "monthly_request_count",    cooldownMs: COOLDOWN.monthly },
+  { text: "monthly limit",            cooldownMs: COOLDOWN.monthly },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
+  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
@@ -169,6 +94,7 @@ export const ERROR_RULES = [
 export const COOLDOWN_MS = {
   unauthorized: COOLDOWN.long,
   paymentRequired: COOLDOWN.long,
+  monthlyQuota: COOLDOWN.monthly,
   notFound: COOLDOWN.long,
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
