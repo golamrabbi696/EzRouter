@@ -59,13 +59,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model)
     || resolveDynamicTargetFormat(provider, model);
-  const { runtimeTransport, targetFormat } = resolveRequestTransport(
-    provider,
-    sourceFormat,
-    modelTargetFormat,
-  );
+  const transportOverrides = (provider === "kimi" && credentials?.authType === "apikey")
+    ? { openai: "openai-apikey", claude: "openai-apikey", "openai-responses": "openai-apikey" }
+    : null;
+  const effectiveSourceFormat = transportOverrides?.[sourceFormat] || sourceFormat;
+  const runtimeTransport = resolveTransport(provider, effectiveSourceFormat) || resolveTransport(provider, sourceFormat);
+  const transportFormat = runtimeTransport?.format?.replace(/-apikey$/, "") || null;
+  const targetFormat = modelTargetFormat || transportFormat || getTargetFormat(provider);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
