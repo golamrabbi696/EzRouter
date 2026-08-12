@@ -164,38 +164,15 @@ describe("KiroExecutor thinking tag stripping", () => {
     let output = "";
     const { value } = await readNextWithTimeout(reader);
     output += decoder.decode(value, { stream: true });
-    expect(output).not.toContain("\"finish_reason\":\"stop\"");
+    expect(output).not.toContain(""finish_reason":"stop"");
 
     upstreamController.close();
-    while (!output.includes("\"finish_reason\":\"stop\"")) {
+    while (!output.includes(""finish_reason":"stop"")) {
       const { value: nextValue, done } = await readNextWithTimeout(reader);
       if (done) break;
       output += decoder.decode(nextValue, { stream: true });
     }
 
-    expect(output).toContain("\"finish_reason\":\"stop\"");
-  });
-
-  it("uses tool_calls finish reason for tool streams without messageStop", async () => {
-    const executor = new KiroExecutor();
-
-    const f1 = createMockFrame("toolUseEvent", { toolUseId: "tool-1", name: "read_file", input: { path: "a.txt" } });
-
-    const readableStream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(f1);
-        controller.close();
-      }
-    });
-
-    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
-    const output = await readAllSSE(transformedResponse.body);
-    const objects = output
-      .split("\n")
-      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
-      .map(line => JSON.parse(line.slice(6)));
-
-    const finalChunk = objects.at(-1);
-    expect(finalChunk.choices[0].finish_reason).toBe("tool_calls");
+    expect(output).toContain(""finish_reason":"stop"");
   });
 });

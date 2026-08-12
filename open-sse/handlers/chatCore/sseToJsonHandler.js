@@ -4,6 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { readBodyWithTimeout, BodyReadTimeoutError } from "../../utils/bodyTimeout.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
+import { estimateUsage, extractUsage, filterUsageForFormat, hasValidUsage, mergeUsage } from "../../utils/usageTracking.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
@@ -135,6 +136,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
   let finishReason = "stop";
   let usage = null;
+  let internalUsage = null;
 
   for (const chunk of chunks) {
     const choice = chunk?.choices?.[0];
@@ -142,7 +144,11 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
     if (choice?.finish_reason) finishReason = choice.finish_reason;
-    if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
+    if (chunk?.usage && typeof chunk.usage === "object") {
+      usage = chunk.usage;
+      const extracted = extractUsage(chunk);
+      if (extracted) internalUsage = mergeUsage(internalUsage, extracted);
+    }
 
     // Accumulate tool_calls from streaming deltas
     if (Array.isArray(delta.tool_calls)) {
@@ -172,7 +178,14 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     model: first.model || fallbackModel || "unknown",
     choices: [{ index: 0, message, finish_reason: finishReason }]
   };
-  if (usage) result.usage = usage;
+  if (usage) result.usage = filterUsageForFormat(usage, FORMATS.OPENAI);
+  if (internalUsage) {
+    Object.defineProperty(result, "_internalUsage", {
+      value: internalUsage,
+      enumerable: false,
+      configurable: true,
+    });
+  }
   return result;
 }
 
@@ -305,7 +318,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     if (onRequestSuccess) await onRequestSuccess();
 
-    const usage = parsed.usage || {};
+    let usage = parsed._internalUsage || parsed.usage || {};
+    if (!hasValidUsage(usage)) {
+      const contentLength = parsed.choices?.[0]?.message?.content?.length || 0;
+      if (contentLength > 0) {
+        usage = mergeUsage(usage, estimateUsage(body, contentLength, sourceFormat));
+      }
+    }
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
