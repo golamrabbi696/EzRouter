@@ -40,7 +40,7 @@ async function createLogSession(sourceFormat, targetFormat, model) {
   
   try {
     if (!fs.existsSync(LOGS_DIR)) {
-      fs.mkdirSync(LOGS_DIR, { recursive: true });
+      fs.mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
     }
     
     const timestamp = formatTimestamp();
@@ -48,7 +48,7 @@ async function createLogSession(sourceFormat, targetFormat, model) {
     const folderName = `${sourceFormat}_${targetFormat}_${safeModel}_${timestamp}`;
     const sessionPath = path.join(LOGS_DIR, folderName);
     
-    fs.mkdirSync(sessionPath, { recursive: true });
+    fs.mkdirSync(sessionPath, { recursive: true, mode: 0o700 });
     
     return sessionPath;
   } catch (err) {
@@ -63,36 +63,34 @@ function writeJsonFile(sessionPath, filename, data) {
   
   try {
     const filePath = path.join(sessionPath, filename);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
   } catch (err) {
     console.log(`[LOG] Failed to write ${filename}:`, err.message);
   }
 }
 
-// Mask credentials in headers. Request logs are written to disk unredacted
-// otherwise, so an enabled ENABLE_REQUEST_LOGS persists provider OAuth tokens
-// and client API keys in plaintext for as long as the log folder survives.
+const SENSITIVE_HEADER_NAMES = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "api-key",
+  "x-goog-api-key",
+]);
+
+// Normalize and mask sensitive data without mutating the input headers.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  const masked = { ...headers };
-  const sensitiveKeys = ["authorization", "x-api-key", "api-key", "cookie", "token", "secret"];
+  const entries = typeof headers.entries === "function" ? headers.entries() : Object.entries(headers);
 
-  for (const key of Object.keys(masked)) {
-    const lowerKey = key.toLowerCase();
-    if (!sensitiveKeys.some(sk => lowerKey.includes(sk))) continue;
-    const value = masked[key];
-    if (typeof value !== "string" || !value) continue;
-
-    // Keep the auth scheme so logs still show which auth path ran, plus the last
-    // 4 chars to tell two credentials apart — never the secret itself. Short
-    // values are masked too: a 12-char key is no less sensitive than a 40-char one.
-    const parts = value.match(/^(\S+)\s+(.*)$/);
-    const scheme = parts && /^(bearer|basic|token)$/i.test(parts[1]) ? `${parts[1]} ` : "";
-    const secret = scheme ? parts[2] : value;
-    masked[key] = `${scheme}***${secret.length > 4 ? secret.slice(-4) : ""}`;
-  }
-
-  return masked;
+  return Object.fromEntries(Array.from(entries, ([name, value]) => {
+    const lowerName = name.toLowerCase();
+    const sensitive = SENSITIVE_HEADER_NAMES.has(lowerName)
+      || lowerName.includes("token")
+      || lowerName.includes("secret");
+    return [name, sensitive ? "[REDACTED]" : value];
+  }));
 }
 
 // No-op logger when logging is disabled
@@ -175,7 +173,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: maskSensitiveHeaders(headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {}),
+        headers: maskSensitiveHeaders(headers),
         body
       });
     },
@@ -185,7 +183,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, chunk, { mode: 0o600 });
       } catch (err) {
         // Ignore append errors
       }
@@ -196,7 +194,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, chunk, { mode: 0o600 });
       } catch (err) {
         // Ignore append errors
       }
@@ -215,7 +213,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, chunk, { mode: 0o600 });
       } catch (err) {
         // Ignore append errors
       }
@@ -241,7 +239,7 @@ export function logError(provider, { error, url, model, requestBody }) {
   
   try {
     if (!fs.existsSync(LOGS_DIR)) {
-      fs.mkdirSync(LOGS_DIR, { recursive: true });
+      fs.mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
     }
     
     const date = new Date().toISOString().split("T")[0];
@@ -258,7 +256,7 @@ export function logError(provider, { error, url, model, requestBody }) {
       requestBody
     };
     
-    fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");
+    fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n", { mode: 0o600 });
   } catch (err) {
     console.log("[LOG] Failed to write error log:", err.message);
   }
