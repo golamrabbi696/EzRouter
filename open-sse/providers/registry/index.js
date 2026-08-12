@@ -24,6 +24,7 @@ import providerBraveSearch from "./brave-search.js";
 import providerByteplus from "./byteplus.js";
 import providerCartesia from "./cartesia.js";
 import providerCerebras from "./cerebras.js";
+import providerChenzk from "./chenzk.js";
 import providerChutes from "./chutes.js";
 import providerClaude from "./claude.js";
 import providerCline from "./cline.js";
@@ -46,6 +47,7 @@ import providerFalAi from "./fal-ai.js";
 import providerFeatherless from "./featherless.js";
 import providerFirecrawl from "./firecrawl.js";
 import providerFireworks from "./fireworks.js";
+import providerFrontierForAll from "./frontier-for-all.js";
 import providerGeminiCli from "./gemini-cli.js";
 import providerGemini from "./gemini.js";
 import providerGithub from "./github.js";
@@ -79,6 +81,7 @@ import providerMmf from "./mmf.js";
 import providerMorph from "./morph.js";
 import providerNanobanana from "./nanobanana.js";
 import providerNebius from "./nebius.js";
+import providerNovita from "./novita.js";
 import providerNvidia from "./nvidia.js";
 import providerOllamaLocal from "./ollama-local.js";
 import providerOllama from "./ollama.js";
@@ -93,19 +96,22 @@ import providerPlayht from "./playht.js";
 import providerPoolside from "./poolside.js";
 import providerQoder from "./qoder.js";
 import providerQoderworkCn from "./qoderwork-cn.js";
-import providerQwen from "./qwen.js";
 import providerRecraft from "./recraft.js";
 import providerRunwayml from "./runwayml.js";
 import providerSambanova from "./sambanova.js";
 import providerSdwebui from "./sdwebui.js";
 import providerSearchapi from "./searchapi.js";
 import providerSearxng from "./searxng.js";
+import providerSelfhostedEmbedding from "./selfhosted-embedding.js";
+import providerSelfhostedStt from "./selfhosted-stt.js";
+import providerSelfhostedTts from "./selfhosted-tts.js";
 import providerSerper from "./serper.js";
 import providerSiliconflow from "./siliconflow.js";
 import providerStabilityAi from "./stability-ai.js";
 import providerTavily from "./tavily.js";
 import providerTencent from "./tencent.js";
 import providerTogether from "./together.js";
+import providerTokenrouter from "./tokenrouter.js";
 import providerTopaz from "./topaz.js";
 import providerTortoise from "./tortoise.js";
 import providerVenice from "./venice.js";
@@ -139,6 +145,7 @@ export default [
   providerByteplus,
   providerCartesia,
   providerCerebras,
+  providerChenzk,
   providerChutes,
   providerClaude,
   providerCline,
@@ -161,6 +168,7 @@ export default [
   providerFeatherless,
   providerFirecrawl,
   providerFireworks,
+  providerFrontierForAll,
   providerGeminiCli,
   providerGemini,
   providerGithub,
@@ -194,6 +202,7 @@ export default [
   providerMorph,
   providerNanobanana,
   providerNebius,
+  providerNovita,
   providerNvidia,
   providerOllamaLocal,
   providerOllama,
@@ -208,19 +217,22 @@ export default [
   providerPoolside,
   providerQoder,
   providerQoderworkCn,
-  providerQwen,
   providerRecraft,
   providerRunwayml,
   providerSambanova,
   providerSdwebui,
   providerSearchapi,
   providerSearxng,
+  providerSelfhostedEmbedding,
+  providerSelfhostedStt,
+  providerSelfhostedTts,
   providerSerper,
   providerSiliconflow,
   providerStabilityAi,
   providerTavily,
   providerTencent,
   providerTogether,
+  providerTokenrouter,
   providerTopaz,
   providerTortoise,
   providerVenice,
