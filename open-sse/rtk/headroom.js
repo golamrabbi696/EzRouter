@@ -25,17 +25,9 @@ function messagePayload(body) {
 
 function captureSizeSnapshot(body) {
   const messages = messagePayload(body);
-  const toolHistory = messages?.filter((message) =>
-    message?.role === "tool"
-    || message?.role === "function"
-    || message?.tool_calls?.length
-    || message?.content?.some?.((part) => part?.type === "tool_use" || part?.type === "tool_result")
-  ) || [];
   return {
     bodyBytes: jsonBytes(body),
     messageBytes: messages ? jsonBytes(messages) : 0,
-    toolSchemaBytes: jsonBytes(body?.tools || []),
-    toolHistoryBytes: jsonBytes(toolHistory),
   };
 }
 
@@ -207,16 +199,18 @@ function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) 
 }
 
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
-async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
+async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics, token) {
   const endpoint = buildCompressEndpoint(url);
   diagnostics.endpoint = maskEndpoint(endpoint);
   const payload = { messages, model };
   if (compressUserMessages) payload.config = { compress_user_messages: true };
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   let res;
   try {
     res = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -239,7 +233,7 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
 // Compress request body via Headroom proxy. Fail-open: returns null on any error.
 // /v1/compress only understands OpenAI shape, so Claude bodies are translated
 // to OpenAI, compressed, then translated back using 9Router's own translators.
-export async function compressWithHeadroom(body, { enabled, url, model, format, compressUserMessages, timeoutMs = DEFAULT_TIMEOUT_MS, diagnostics = null } = {}) {
+export async function compressWithHeadroom(body, { enabled, url, model, format, compressUserMessages, timeoutMs = DEFAULT_TIMEOUT_MS, diagnostics = null, token } = {}) {
   if (!enabled) {
     setDiagnostic(diagnostics, "disabled");
     return null;
@@ -263,7 +257,7 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         setDiagnostic(diagnostics, "Claude request did not translate to messages[]");
         return null;
       }
-      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {}, token);
       if (!data) return null;
       const claudeBody = openaiToClaudeRequest(model, { ...oai, messages: data.messages }, false);
       if (Array.isArray(claudeBody?.messages)) body.messages = claudeBody.messages;
@@ -281,11 +275,8 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         return null;
       }
       const oai = openaiResponsesToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) {
-        setDiagnostic(diagnostics, "Responses request did not translate to messages[]");
-        return null;
-      }
-      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      if (!Array.isArray(oai?.messages)) return null;
+      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {}, token);
       if (!data) return null;
       // input: undefined so the translator rebuilds input from the compressed
       // messages instead of returning the original input unchanged.
@@ -308,7 +299,7 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         setDiagnostic(diagnostics, "Kiro request did not project to messages[]");
         return null;
       }
-      const data = await callCompress(url, projection.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      const data = await callCompress(url, projection.messages, model, timeoutMs, compressUserMessages, diagnostics || {}, token);
       if (!data) return null;
       if (!applyKiroHeadroomMessages(projection, data.messages, diagnostics)) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
@@ -323,7 +314,7 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
       setDiagnostic(diagnostics, `unsupported ${format || "unknown"} request shape`);
       return null;
     }
-    const data = await callCompress(url, body[key], model, timeoutMs, compressUserMessages, diagnostics || {});
+    const data = await callCompress(url, body[key], model, timeoutMs, compressUserMessages, diagnostics || {}, token);
     if (!data) return null;
     body[key] = data.messages;
     if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
@@ -332,22 +323,6 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
     setDiagnostic(diagnostics, `unexpected error: ${error?.message || String(error)}`);
     return null;
   }
-}
-
-export function classifyHeadroomDiagnostic(diagnostics, stats, enabled) {
-  if (stats) return "compressed";
-  if (!enabled) return "disabled";
-
-  const reason = String(diagnostics?.reason || "").toLowerCase();
-  if (reason.includes("missing proxy url")) return "missing-proxy-url";
-  if (reason.includes("timeout") || reason.includes("abort")) return "timeout";
-  if (reason.includes("proxy returned http")) return "http-error";
-  if (reason.includes("openai-responses tool/reasoning")) return "unsafe-responses-input";
-  if (reason.includes("did not translate") || reason.includes("translate to messages")) return "translation-failed";
-  if (reason.includes("unsupported") || reason.includes("did not project")) return "unsupported-shape";
-  if (reason.includes("proxy response")) return "invalid-proxy-response";
-  if (reason.includes("unexpected error")) return "unexpected-error";
-  return "other-skip";
 }
 
 export function formatHeadroomLog(stats) {
@@ -363,10 +338,7 @@ export function formatHeadroomSizeLog(diagnostics) {
   const before = diagnostics?.before;
   const after = diagnostics?.after;
   if (!before || !after) return "";
-  const effective = before.bodyBytes > 0
-    ? (((before.bodyBytes - after.bodyBytes) / before.bodyBytes) * 100).toFixed(1)
-    : "0.0";
-  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B tools=${before.toolSchemaBytes || 0}B→${after.toolSchemaBytes || 0}B toolHistory=${before.toolHistoryBytes || 0}B→${after.toolHistoryBytes || 0}B effective=${effective}%`;
+  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B`;
 }
 
 export function isHeadroomPhantomSavings(stats, diagnostics, minShrinkRatio = 0.05) {
