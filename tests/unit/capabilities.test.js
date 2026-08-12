@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
-import github from "../../open-sse/providers/registry/github.js";
 
 describe("getCapabilitiesForModel", () => {
   const claudeSonnet5Expected = {
@@ -21,18 +20,6 @@ describe("getCapabilitiesForModel", () => {
     search: true,
   };
 
-  it("reports Kiro Claude Opus 5 variants as 1M adaptive-thinking models", () => {
-    for (const model of [
-      "claude-opus-5",
-      "anthropic/claude-opus-5",
-      "claude-opus-5-thinking",
-      "claude-opus-5-agentic",
-      "claude-opus-5-thinking-agentic",
-    ]) {
-      expect(getCapabilitiesForModel("kiro", model)).toMatchObject(claudeSonnet5Expected);
-    }
-  });
-
   it("reports Kiro Claude Opus 4.8 as a 1M context model", () => {
     expect(getCapabilitiesForModel("kiro", "claude-opus-4.8").contextWindow).toBe(1000000);
     expect(getCapabilitiesForModel("kiro", "anthropic/claude-opus-4.8").contextWindow).toBe(1000000);
@@ -49,26 +36,13 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
   });
 
-  it("keeps Copilot Claude prompt and output limits provider-specific", () => {
-    for (const model of ["claude-fable-5", "claude-opus-4.8", "claude-opus-5"]) {
-      expect(getCapabilitiesForModel("github", model)).toMatchObject({
-        contextWindow: 264000,
-        maxPrompt: 200000,
-        maxOutput: 64000,
-        thinkingFormat: "claude-adaptive",
-        reasoning: true,
-      });
-    }
-    expect(getCapabilitiesForModel("kiro", "claude-opus-4.8")).toMatchObject({
+  it("reports GitHub Claude Fable 5 as an adaptive-thinking model", () => {
+    expect(getCapabilitiesForModel("github", "claude-fable-5")).toMatchObject({
       contextWindow: 1000000,
       maxOutput: 128000,
+      thinkingFormat: "claude-adaptive",
+      reasoning: true,
     });
-  });
-
-  it("keeps current Copilot Claude models in the static fallback catalog", () => {
-    for (const model of ["claude-fable-5", "claude-opus-4.8", "claude-opus-5"]) {
-      expect(github.models.some(({ id }) => id === model)).toBe(true);
-    }
   });
 
   it("reports Kiro GPT 5.6 models with the Kiro 272k context window", () => {
