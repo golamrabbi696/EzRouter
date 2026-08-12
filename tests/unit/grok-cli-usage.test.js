@@ -18,6 +18,7 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+/** Free/promo exhausted: no percent fields, onDemandCap=0 (legacy path). */
 const EXHAUSTED_BILLING = {
   config: {
     currentPeriod: {
@@ -35,6 +36,7 @@ const EXHAUSTED_BILLING = {
   },
 };
 
+/** Absolute on-demand + prepaid (older / top-up style accounts). */
 const ACTIVE_BILLING = {
   config: {
     currentPeriod: {
@@ -51,11 +53,70 @@ const ACTIVE_BILLING = {
   },
 };
 
+/**
+ * Live SuperGrok / X Premium+ shape captured from cli-chat-proxy:
+ * onDemandCap stays 0 while creditUsagePercent + productUsage carry the real state.
+ */
+const UNIFIED_ACTIVE_BILLING = {
+  config: {
+    currentPeriod: {
+      type: "USAGE_PERIOD_TYPE_WEEKLY",
+      start: "2026-07-10T18:08:56.887518+00:00",
+      end: "2026-07-17T18:08:56.887518+00:00",
+    },
+    creditUsagePercent: 55.0,
+    onDemandCap: { val: 0 },
+    onDemandUsed: { val: 0 },
+    productUsage: [
+      { product: "GrokBuild", usagePercent: 45.0 },
+      { product: "GrokChat", usagePercent: 10.0 },
+    ],
+    isUnifiedBillingUser: true,
+    prepaidBalance: { val: 0 },
+    topUpMethod: "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+    billingPeriodStart: "2026-07-10T18:08:56.887518+00:00",
+    billingPeriodEnd: "2026-07-17T18:08:56.887518+00:00",
+  },
+};
+
+const UNIFIED_EXHAUSTED_BILLING = {
+  config: {
+    currentPeriod: {
+      type: "USAGE_PERIOD_TYPE_WEEKLY",
+      start: "2026-07-06T13:52:09.270845+00:00",
+      end: "2026-07-13T13:52:09.270845+00:00",
+    },
+    creditUsagePercent: 100.0,
+    onDemandCap: { val: 0 },
+    onDemandUsed: { val: 0 },
+    productUsage: [{ product: "GrokBuild", usagePercent: 100.0 }],
+    isUnifiedBillingUser: true,
+    prepaidBalance: { val: 0 },
+    billingPeriodStart: "2026-07-06T13:52:09.270845+00:00",
+    billingPeriodEnd: "2026-07-13T13:52:09.270845+00:00",
+  },
+};
+
+const PLAIN_MONTHLY_BILLING = {
+  config: {
+    monthlyLimit: { val: 20000 },
+    used: { val: 6689 },
+    onDemandCap: { val: 0 },
+    billingPeriodStart: "2026-07-01T00:00:00+00:00",
+    billingPeriodEnd: "2026-08-01T00:00:00+00:00",
+  },
+};
+
 const USER_PROFILE = {
   userId: "d84768dd-224d-4052-ba49-0d336fa9160c",
   email: "user@example.com",
   hasGrokCodeAccess: true,
   subscriptionTier: null,
+};
+
+const SUPERGROK_USER = {
+  ...USER_PROFILE,
+  subscriptionTier: "XPremiumPlus",
 };
 
 describe("grok-cli registry usage flag", () => {
@@ -88,7 +149,72 @@ describe("parseGrokCliBilling", () => {
     expect(parsed.exhausted).toBe(false);
   });
 
-  it("marks depleted free/promo account as exhausted", () => {
+  it("maps SuperGrok productUsage percents (does not treat onDemandCap=0 as exhausted)", () => {
+    const parsed = parseGrokCliBilling(UNIFIED_ACTIVE_BILLING, SUPERGROK_USER);
+    expect(parsed.plan).toBe("X Premium Plus");
+    // Per-product bars — NOT the synthetic 1/1 On-demand depleted row
+    expect(parsed.quotas["On-demand"]).toBeUndefined();
+    expect(parsed.quotas["Grok Build"]).toMatchObject({
+      used: 45,
+      total: 100,
+      remainingPercentage: 55,
+    });
+    expect(parsed.quotas["Grok Chat"]).toMatchObject({
+      used: 10,
+      total: 100,
+      remainingPercentage: 90,
+    });
+    expect(parsed.exhausted).toBe(false);
+  });
+
+  it("maps fully used SuperGrok productUsage as exhausted", () => {
+    const parsed = parseGrokCliBilling(UNIFIED_EXHAUSTED_BILLING, SUPERGROK_USER);
+    expect(parsed.quotas["Grok Build"]).toMatchObject({
+      used: 100,
+      total: 100,
+      remainingPercentage: 0,
+    });
+    expect(parsed.exhausted).toBe(true);
+  });
+
+  it("falls back to creditUsagePercent when productUsage is missing", () => {
+    const billing = {
+      config: {
+        creditUsagePercent: 30,
+        onDemandCap: { val: 0 },
+        onDemandUsed: { val: 0 },
+        isUnifiedBillingUser: true,
+        billingPeriodEnd: "2026-07-17T00:00:00+00:00",
+      },
+    };
+    const parsed = parseGrokCliBilling(billing, SUPERGROK_USER);
+    expect(parsed.quotas.Credits).toMatchObject({
+      used: 30,
+      total: 100,
+      remainingPercentage: 70,
+    });
+    expect(parsed.quotas["On-demand"]).toBeUndefined();
+  });
+
+  it("merges plain monthly limit/used into Monthly bar", () => {
+    const parsed = parseGrokCliBilling(
+      UNIFIED_ACTIVE_BILLING,
+      SUPERGROK_USER,
+      PLAIN_MONTHLY_BILLING,
+    );
+    expect(parsed.quotas.Monthly).toMatchObject({
+      used: 6689,
+      total: 20000,
+    });
+    expect(parsed.quotas.Monthly.remainingPercentage).toBeCloseTo(
+      ((20000 - 6689) / 20000) * 100,
+      5,
+    );
+    // Weekly product rows still present
+    expect(parsed.quotas["Grok Build"]).toBeTruthy();
+  });
+
+  it("marks depleted free/promo account as exhausted (legacy onDemandCap=0)", () => {
     const parsed = parseGrokCliBilling(EXHAUSTED_BILLING, USER_PROFILE);
     expect(parsed.quotas["On-demand"].remainingPercentage).toBe(0);
     expect(parsed.exhausted).toBe(true);
@@ -102,51 +228,16 @@ describe("parseGrokCliBilling", () => {
     expect(parsed.plan).toBe("Super Grok");
   });
 
-  it("does not report paid subscription access as depleted on-demand credit", () => {
-    const parsed = parseGrokCliBilling(EXHAUSTED_BILLING, {
-      ...USER_PROFILE,
-      subscriptionTier: "XPremiumPlus",
-    });
-    expect(parsed.plan).toBe("XPremiumPlus");
-    expect(parsed.subscriptionAccess).toBe(true);
-    expect(parsed.quotas).toEqual({});
-    expect(parsed.exhausted).toBe(false);
+  it("humanizes XPremiumPlus plan label", () => {
+    const parsed = parseGrokCliBilling(ACTIVE_BILLING, SUPERGROK_USER);
+    expect(parsed.plan).toBe("X Premium Plus");
   });
 
-  it("maps creditUsagePercent to a single Weekly SuperGrok bar (not productUsage)", () => {
-    const parsed = parseGrokCliBilling(
-      {
-        config: {
-          currentPeriod: {
-            type: "USAGE_PERIOD_TYPE_WEEKLY",
-            start: "2026-07-17T12:42:26.494595+00:00",
-            end: "2026-07-24T12:42:26.494595+00:00",
-          },
-          creditUsagePercent: 99.0,
-          onDemandCap: { val: 0 },
-          onDemandUsed: { val: 0 },
-          productUsage: [
-            { product: "GrokBuild", usagePercent: 97.0 },
-            { product: "GrokImagine", usagePercent: 2.0 },
-          ],
-          isUnifiedBillingUser: true,
-          prepaidBalance: { val: 0 },
-          billingPeriodStart: "2026-07-17T12:42:26.494595+00:00",
-          billingPeriodEnd: "2026-07-24T12:42:26.494595+00:00",
-        },
-      },
-      { subscriptionTier: "XPremiumPlus", hasGrokCodeAccess: true },
-    );
-    // Single shared-pool bar from creditUsagePercent
-    expect(parsed.quotas["Weekly SuperGrok"]).toMatchObject({
-      used: 99,
-      total: 100,
-      remainingPercentage: 1,
-      resetAt: "2026-07-24T12:42:26.494Z",
-      unlimited: false,
-    });
-    // productUsage must NOT become independent quota bars
-    expect(Object.keys(parsed.quotas)).toEqual(["Weekly SuperGrok"]);
+  it("does not report paid subscription access as depleted on-demand credit", () => {
+    const parsed = parseGrokCliBilling(EXHAUSTED_BILLING, SUPERGROK_USER);
+    expect(parsed.plan).toBe("X Premium Plus");
+    expect(parsed.subscriptionAccess).toBe(true);
+    expect(parsed.quotas).toEqual({});
     expect(parsed.exhausted).toBe(false);
   });
 
@@ -169,80 +260,16 @@ describe("parseGrokCliBilling", () => {
   });
 });
 
-function encodeVarint(value) {
-  const bytes = [];
-  let v = BigInt(value);
-  do {
-    let byte = Number(v & 0x7fn);
-    v >>= 7n;
-    if (v !== 0n) byte |= 0x80;
-    bytes.push(byte);
-  } while (v !== 0n);
-  return Buffer.from(bytes);
-}
-
-function encodeTag(fieldNumber, wireType) {
-  return encodeVarint((fieldNumber << 3) | wireType);
-}
-
-function encodeFixed32Field(fieldNumber, value) {
-  const body = Buffer.alloc(4);
-  body.writeFloatLE(value, 0);
-  return Buffer.concat([encodeTag(fieldNumber, 5), body]);
-}
-
-function encodeLengthDelimited(fieldNumber, body) {
-  return Buffer.concat([encodeTag(fieldNumber, 2), encodeVarint(body.length), body]);
-}
-
-function encodeVarintField(fieldNumber, value) {
-  return Buffer.concat([encodeTag(fieldNumber, 0), encodeVarint(value)]);
-}
-
-function encodeTimestampField(fieldNumber, seconds, nanos) {
-  const parts = [];
-  if (seconds !== 0) parts.push(encodeVarintField(1, seconds));
-  if (nanos !== 0) parts.push(encodeVarintField(2, nanos));
-  return encodeLengthDelimited(fieldNumber, Buffer.concat(parts));
-}
-
-/** Framed GetGrokCreditsConfig response for a usage ratio 0..1. */
-function buildCreditsResponseBuffer(usageRatio, resetSeconds = 1784825940, resetNanos = 867850000) {
-  const creditsInfo = Buffer.concat([
-    encodeFixed32Field(1, usageRatio),
-    encodeTimestampField(5, resetSeconds, resetNanos),
-  ]);
-  const topMessage = encodeLengthDelimited(1, creditsInfo);
-  const header = Buffer.alloc(5);
-  header[0] = 0x00;
-  header.writeUInt32BE(topMessage.length, 1);
-  return Buffer.concat([header, topMessage]);
-}
-
-function binaryResponse(buffer, status = 200) {
-  return new Response(buffer, {
-    status,
-    headers: { "content-type": "application/grpc-web+proto" },
-  });
-}
-
-function accessTokenWithTier(tier) {
-  const payload = Buffer.from(JSON.stringify({ tier })).toString("base64url");
-  return `header.${payload}.signature`;
-}
-
-const EMPTY_GRPC_WEB_FRAME = Buffer.from([0, 0, 0, 0, 0]);
-const GRPC_CREDITS_URL =
-  "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
-
 describe("getUsageForProvider(grok-cli)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("returns normalized quotas from billing + user endpoints", async () => {
+    // credits, plain monthly, user
     proxyAwareFetch
       .mockResolvedValueOnce(jsonResponse(ACTIVE_BILLING))
+      .mockResolvedValueOnce(jsonResponse(PLAIN_MONTHLY_BILLING))
       .mockResolvedValueOnce(jsonResponse(USER_PROFILE));
 
     const usage = await getUsageForProvider({
@@ -266,10 +293,15 @@ describe("getUsageForProvider(grok-cli)", () => {
       total: 12.5,
       remainingPercentage: 100,
     });
+    expect(usage.quotas.Monthly).toMatchObject({
+      used: 6689,
+      total: 20000,
+    });
 
-    // Official CLI fingerprint headers
+    // Official CLI fingerprint headers on credits call
     const billingCall = proxyAwareFetch.mock.calls[0];
     expect(billingCall[0]).toContain("/v1/billing");
+    expect(billingCall[0]).toContain("format=credits");
     expect(billingCall[1].headers.Authorization).toBe("Bearer test-token");
     expect(billingCall[1].headers["x-xai-token-auth"]).toBe("xai-grok-cli");
     expect(billingCall[1].headers["x-grok-client-version"]).toBe("0.2.99");
@@ -277,13 +309,35 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(billingCall[1].headers["x-userid"]).toBe(
       "d84768dd-224d-4052-ba49-0d336fa9160c",
     );
-    // REST already has numeric quotas — do not hit gRPC fallback
-    expect(proxyAwareFetch.mock.calls).toHaveLength(2);
+
+    // Plain monthly endpoint (no format=credits)
+    const plainCall = proxyAwareFetch.mock.calls[1];
+    expect(plainCall[0]).toMatch(/\/v1\/billing$/);
+  });
+
+  it("returns SuperGrok productUsage quotas without false exhausted bar", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(UNIFIED_ACTIVE_BILLING))
+      .mockResolvedValueOnce(jsonResponse(PLAIN_MONTHLY_BILLING))
+      .mockResolvedValueOnce(jsonResponse(SUPERGROK_USER));
+
+    const usage = await getUsageForProvider({
+      provider: "grok-cli",
+      accessToken: "test-token",
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("X Premium Plus");
+    expect(usage.quotas["On-demand"]).toBeUndefined();
+    expect(usage.quotas["Grok Build"].remainingPercentage).toBe(55);
+    expect(usage.quotas["Grok Chat"].remainingPercentage).toBe(90);
+    expect(usage.quotas.Monthly.used).toBe(6689);
   });
 
   it("surfaces auth-expired message on 401", async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(jsonResponse({ error: "unauthorized" }, 401))
+      .mockResolvedValueOnce(jsonResponse(PLAIN_MONTHLY_BILLING))
       .mockResolvedValueOnce(jsonResponse(USER_PROFILE));
 
     const usage = await getUsageForProvider({
@@ -292,13 +346,12 @@ describe("getUsageForProvider(grok-cli)", () => {
     });
 
     expect(usage.message).toMatch(/expired|re-authorize/i);
-    // Auth failure must not attempt gRPC fallback
-    expect(proxyAwareFetch.mock.calls).toHaveLength(2);
   });
 
   it("returns depleted on-demand bar without blocking message when cap is zero", async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
+      .mockResolvedValueOnce(jsonResponse({ config: {} }))
       .mockResolvedValueOnce(jsonResponse(USER_PROFILE));
 
     const usage = await getUsageForProvider({
@@ -311,90 +364,23 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(usage.message).toBeUndefined();
     expect(usage.quotas["On-demand"].remainingPercentage).toBe(0);
     expect(usage.quotas["On-demand"].total).toBe(1);
-    // Exhausted free already has a quota bar — no gRPC fallback
-    expect(proxyAwareFetch.mock.calls).toHaveLength(2);
   });
 
-  it("falls back to GetGrokCreditsConfig gRPC when paid sub has no REST numeric quota", async () => {
-    const accessToken = accessTokenWithTier(5);
-    const resetSeconds = 1784825940;
-    const resetNanos = 867850000;
-    const resetAt = new Date(
-      resetSeconds * 1000 + Math.round(resetNanos / 1_000_000),
-    ).toISOString();
-
+  it("reports active paid access when provider exposes no numeric quota", async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...USER_PROFILE,
-          subscriptionTier: "XPremiumPlus",
-        }),
-      )
-      .mockResolvedValueOnce(binaryResponse(buildCreditsResponseBuffer(0.35, resetSeconds, resetNanos)));
-
-    const usage = await getUsageForProvider({
-      provider: "grok-cli",
-      accessToken,
-    });
-
-    expect(usage.message).toBeUndefined();
-    expect(usage.plan).toBe("SuperGrok Heavy");
-    expect(usage.quotas["Weekly SuperGrok"]).toMatchObject({
-      used: 35,
-      total: 100,
-      remainingPercentage: 65,
-      resetAt,
-      unlimited: false,
-    });
-
-    const grpcCall = proxyAwareFetch.mock.calls[2];
-    expect(grpcCall[0]).toBe(GRPC_CREDITS_URL);
-    expect(grpcCall[1].method).toBe("POST");
-    expect(grpcCall[1].headers.Authorization).toBe(`Bearer ${accessToken}`);
-    expect(grpcCall[1].headers["Content-Type"]).toBe("application/grpc-web+proto");
-    expect(grpcCall[1].headers["X-Grpc-Web"]).toBe("1");
-    // Empty gRPC-web request frame is required (flag 0 + length 0)
-    expect(Buffer.from(grpcCall[1].body)).toEqual(EMPTY_GRPC_WEB_FRAME);
-  });
-
-  it("keeps subscription message when REST empty and gRPC fails open", async () => {
-    proxyAwareFetch
-      .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...USER_PROFILE,
-          subscriptionTier: "XPremiumPlus",
-        }),
-      )
-      .mockResolvedValueOnce(binaryResponse(Buffer.alloc(0), 500));
+      .mockResolvedValueOnce(jsonResponse({ config: {} }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...USER_PROFILE,
+        subscriptionTier: "XPremiumPlus",
+      }));
 
     const usage = await getUsageForProvider({
       provider: "grok-cli",
       accessToken: "test-token",
     });
 
-    expect(usage.plan).toBe("XPremiumPlus");
-    expect(usage.message).toMatch(/active.*numeric included quota/i);
-    expect(usage.quotas).toEqual({});
-  });
-
-  it("does not throw when gRPC network fails after empty REST quotas", async () => {
-    proxyAwareFetch
-      .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          ...USER_PROFILE,
-          subscriptionTier: "XPremiumPlus",
-        }),
-      )
-      .mockRejectedValueOnce(new Error("network down"));
-
-    const usage = await getUsageForProvider({
-      provider: "grok-cli",
-      accessToken: "test-token",
-    });
-
+    expect(usage.plan).toBe("X Premium Plus");
     expect(usage.message).toMatch(/active.*numeric included quota/i);
     expect(usage.quotas).toEqual({});
   });
@@ -405,22 +391,21 @@ describe("parseQuotaData(grok-cli)", () => {
     const rows = parseQuotaData("grok-cli", {
       plan: "Grok Code",
       quotas: {
-        "On-demand": {
-          used: 35,
+        "Grok Build": {
+          used: 45,
           total: 100,
-          remaining: 65,
-          remainingPercentage: 65,
-          resetAt: "2026-07-15T00:00:00.000Z",
+          remainingPercentage: 55,
+          resetAt: "2026-07-17T00:00:00.000Z",
         },
       },
     });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      name: "On-demand",
-      used: 35,
+      name: "Grok Build",
+      used: 45,
       total: 100,
-      remainingPercentage: 65,
+      remainingPercentage: 55,
     });
   });
 });
