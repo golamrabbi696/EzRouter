@@ -1,7 +1,7 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
+import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { projectCompletionToClientFormat } from "../../translator/response/completionProjector.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
@@ -9,12 +9,66 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { logToolSemantics } from "../../utils/toolSemanticsTrace.js";
+import { applyReasoningVisibility } from "../../utils/reasoningVisibility.js";
+
+function parseToolArguments(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function openAICompletionToClaudeMessage(responseBody) {
+  if (!responseBody?.choices?.[0]) return responseBody;
+  const choice = responseBody.choices[0];
+  const message = choice.message || {};
+  const content = [];
+
+  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
+  if (reasoning) {
+    content.push({ type: "thinking", thinking: reasoning });
+  }
+  if (typeof message.content === "string" && message.content.length > 0) {
+    content.push({ type: "text", text: message.content });
+  }
+  for (const toolCall of message.tool_calls || []) {
+    const fn = toolCall.function || {};
+    content.push({
+      type: "tool_use",
+      id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
+      name: fn.name || toolCall.name || "",
+      input: parseToolArguments(fn.arguments || toolCall.arguments),
+    });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+
+  const usage = responseBody.usage || {};
+  return {
+    id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+    type: "message",
+    role: "assistant",
+    model: responseBody.model || "unknown",
+    content,
+    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+    stop_sequence: null,
+    usage: {
+      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+    },
+  };
+}
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
+  if (targetFormat === sourceFormat) return responseBody;
+  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
+    return openAICompletionToClaudeMessage(responseBody);
+  }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
@@ -185,16 +239,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const preservesNativeResponse = sourceFormat === targetFormat && sourceFormat !== FORMATS.OPENAI;
-  const openAIResponse = preservesNativeResponse
-    ? translateNonStreamingResponse(responseBody, targetFormat)
-    : (needsTranslation(targetFormat, FORMATS.OPENAI)
-      ? translateNonStreamingResponse(responseBody, targetFormat)
-      : responseBody);
+  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
+    : responseBody;
+  const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
-  if (openAIResponse?.choices?.[0]) {
-    const choice = openAIResponse.choices[0];
+  if (translatedResponse?.choices?.[0]) {
+    const choice = translatedResponse.choices[0];
     const msg = choice.message;
     const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
     if (hasToolCalls && choice.finish_reason !== "tool_calls") {
@@ -203,35 +255,28 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   // Ensure OpenAI-required fields
-  if (!openAIResponse.object) openAIResponse.object = "chat.completion";
-  if (!openAIResponse.created) openAIResponse.created = Math.floor(Date.now() / 1000);
+  if (!isClaudeMessageResponse) {
+    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  }
 
   // Strip Azure-specific fields
-  delete openAIResponse.prompt_filter_results;
-  if (openAIResponse?.choices) {
-    for (const choice of openAIResponse.choices) delete choice.content_filter_results;
-  }
-
-  if (openAIResponse?.usage) {
-    openAIResponse.usage = addBufferToUsage(openAIResponse.usage);
-  }
-
-  // Strip reasoning_content only when content is non-empty.
-  // When content is empty (e.g. thinking models that used all tokens for reasoning),
-  // reasoning_content is the only useful output and must be preserved.
-  if (openAIResponse?.choices) {
-    for (const choice of openAIResponse.choices) {
-      if (choice?.message?.reasoning_content && choice.message.content) {
-        delete choice.message.reasoning_content;
-      }
+  if (!isClaudeMessageResponse) {
+    delete translatedResponse.prompt_filter_results;
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) delete choice.content_filter_results;
     }
   }
 
-  const translatedResponse = preservesNativeResponse ? responseBody : projectCompletionToClientFormat(openAIResponse, sourceFormat);
   if (translatedResponse?.usage) {
-    translatedResponse.usage = filterUsageForFormat(translatedResponse.usage, sourceFormat);
+    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
-  logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "non-stream", requestBody: body, translatedBody, providerBody: responseBody, clientBody: translatedResponse });
+
+  // reasoning_content is kept by default; only an explicit opt-out drops it.
+  // Claude-format responses carry thinking as a content block and are untouched.
+  if (!isClaudeMessageResponse) {
+    applyReasoningVisibility(translatedResponse, clientRawRequest);
+  }
 
   reqLogger.logConvertedResponse(translatedResponse);
 
