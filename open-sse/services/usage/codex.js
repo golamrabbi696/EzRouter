@@ -222,3 +222,18 @@ export async function consumeCodexRateLimitResetCredit(accessToken, redeemReques
     raw: data,
   };
 }
+
+export async function getCodexModels(accessToken, proxyOptions = null, providerSpecificData = null, idToken = null) {
+  const url = new URL(U("codex").modelsUrl || "https://chatgpt.com/backend-api/codex/models");
+  if (U("codex").clientVersion) url.searchParams.set("client_version", U("codex").clientVersion);
+  const headers = buildCodexHeaders(accessToken, providerSpecificData, {}, idToken);
+
+  const response = await proxyAwareFetch(url, { method: "GET", headers }, proxyOptions);
+  if (!response.ok) return [];
+
+  const data = await response.json();
+  const models = Array.isArray(data?.models) ? data.models : [];
+  return models
+    .filter((model) => model?.supported_in_api !== false && typeof model?.slug === "string" && model.slug)
+    .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
+}
