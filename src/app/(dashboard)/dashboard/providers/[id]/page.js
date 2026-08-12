@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal, Pagination } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
@@ -14,29 +14,17 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-import { mergeModelCatalogs } from "@/shared/utils/mergeModelCatalogs";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
 import ConnectionRow from "./ConnectionRow";
+import { CONNECTIONS_PER_PAGE, CONNECTIONS_MAX_PAGE_SIZE, computeConnectionPagination } from "./connectionsPagination";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
-
-// These providers use an account-specific catalog in /v1/models. Keep their
-// dashboard model controls on the same catalog so Disable All remains complete.
-const LIVE_CATALOG_PROVIDER_IDS = new Set([
-  "cursor",
-  "github",
-  "kiro",
-  "qoder",
-  "kimchi",
-  "clinepass",
-  "grok-cli",
-]);
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -53,6 +41,8 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
+  const [connectionPage, setConnectionPage] = useState(1);
+  const [pageSize, setPageSize] = useState(CONNECTIONS_PER_PAGE);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -71,9 +61,6 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
-  const [testingAllModels, setTestingAllModels] = useState(false);
-  const [testAllSummary, setTestAllSummary] = useState(null);
-  const [lastTestedModelIds, setLastTestedModelIds] = useState([]);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -93,7 +80,6 @@ export default function ProviderDetailPage() {
   const [oneByOneCurrentConnectionId, setOneByOneCurrentConnectionId] = useState(null);
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
-  const [refreshingAllProfiles, setRefreshingAllProfiles] = useState(false);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
@@ -160,15 +146,12 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
-  const supportsProfileRefresh = providerInfo?.features?.profileRefresh === true;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor"
-    ? (liveModels.length > 0 ? liveModels : staticModels)
-    : LIVE_CATALOG_PROVIDER_IDS.has(providerId)
-      ? mergeModelCatalogs(staticModels, liveModels)
-      : staticModels;
+  const models = providerId === "cursor" && liveModels.length > 0
+    ? liveModels
+    : staticModels;
   const providerAlias = getProviderAlias(providerId);
-  
+
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
@@ -312,7 +295,7 @@ export default function ProviderDetailPage() {
   const fetchConnections = useCallback(async () => {
     try {
       const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
+        fetch("/api/providers?provider=${encodeURIComponent(providerId)}", { cache: "no-store" }),
         fetch("/api/provider-nodes", { cache: "no-store" }),
         fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
         fetch("/api/settings", { cache: "no-store" }),
@@ -322,8 +305,7 @@ export default function ProviderDetailPage() {
       const proxyPoolsData = await proxyPoolsRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
-        const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
-        setConnections(filtered);
+        setConnections(connectionsData.connections || []);
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
@@ -477,11 +459,11 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Account-specific catalog providers can expose models outside the static
-  // registry. Fetch the same active-connection catalog used for discovery so
-  // model controls and Disable All can manage every exposed model.
+  // Cursor's model availability is account-specific and changes frequently.
+  // Load the active account's live catalog for the dashboard; the static
+  // registry remains the fallback while the request is pending or unavailable.
   useEffect(() => {
-    if (!LIVE_CATALOG_PROVIDER_IDS.has(providerId)) {
+    if (providerId !== "cursor") {
       setLiveModels([]);
       return;
     }
@@ -505,52 +487,12 @@ export default function ProviderDetailPage() {
     return () => { cancelled = true; };
   }, [providerId, connections]);
 
-  const handleRefreshProfile = async (connectionId) => {
-    try {
-      const res = await fetch(`/api/providers/${connectionId}/refresh-profile`, {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        console.warn("Profile refresh request failed");
-        return;
-      }
-      if (data.connection) {
-        setConnections((prev) =>
-          prev.map((c) => (c.id === connectionId ? { ...c, ...data.connection } : c)),
-        );
-      } else {
-        await fetchConnections();
-      }
-    } catch {
-      console.warn("Profile refresh request failed");
-    }
-  };
-
-  const handleRefreshAllProfiles = async () => {
-    if (!supportsProfileRefresh || refreshingAllProfiles) return;
-    const targets = connections.filter((c) => c.authType === "oauth");
-    if (targets.length === 0) return;
-    setRefreshingAllProfiles(true);
-    try {
-      for (const conn of targets) {
-        await handleRefreshProfile(conn.id);
-      }
-    } finally {
-      setRefreshingAllProfiles(false);
-    }
-  };
-
   // Fetch suggested models from provider's public API (if configured)
-  const modelsFetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
-  // Provider-specific copy for the suggestion list and the Add Custom Model dialog
-  // (e.g. Frontier: a named model only applies once the user turns hints on).
-  const suggestedModelsLabel = modelsFetcher?.label;
-  const suggestedModelsNotice = modelsFetcher?.notice;
   useEffect(() => {
-    if (!modelsFetcher) return;
-    fetchSuggestedModels(modelsFetcher).then(setSuggestedModels);
-  }, [modelsFetcher]);
+    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+    if (!fetcher) return;
+    fetchSuggestedModels(fetcher).then(setSuggestedModels);
+  }, [providerId]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -643,7 +585,7 @@ export default function ProviderDetailPage() {
       for (const model of models) {
         const modelId = model.id || model.name;
         if (!modelId) continue;
-        
+
         // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
         const cleanModelId = modelId.replace(/^qoder\//, "");
         const alreadyExists = customModels.some(
@@ -656,7 +598,7 @@ export default function ProviderDetailPage() {
         await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
         importedCount += 1;
       }
-      
+
       if (importedCount === 0) {
         alert(translate("All models already exist, no new models added"));
       } else {
@@ -902,22 +844,12 @@ export default function ProviderDetailPage() {
   };
 
   const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
-  const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
-
   const toggleSelectConnection = (connectionId) => {
     setSelectedConnectionIds((prev) => (
       prev.includes(connectionId)
         ? prev.filter((id) => id !== connectionId)
         : [...prev, connectionId]
     ));
-  };
-
-  const toggleSelectAllConnections = () => {
-    if (allSelected) {
-      setSelectedConnectionIds([]);
-      return;
-    }
-    setSelectedConnectionIds(connections.map((conn) => conn.id));
   };
 
   const clearSelection = () => {
@@ -999,10 +931,34 @@ export default function ProviderDetailPage() {
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
+  const { currentPage: connectionPageClamped, items: pagedConnections, start: pagedStart } = computeConnectionPagination(connections, connectionPage, pageSize);
+
+  const handlePageSizeChange = (nextPageSize) => {
+    setPageSize(nextPageSize);
+    setConnectionPage(1);
+  };
+
+  // Select-all operates on the visible page only; selections persist across pages.
+  const pagedConnectionIds = new Set(pagedConnections.map((conn) => conn.id));
+  const allSelected = pagedConnections.length > 0 && pagedConnections.every((conn) => selectedConnectionIds.includes(conn.id));
+
+  const toggleSelectAllConnections = () => {
+    if (allSelected) {
+      setSelectedConnectionIds((prev) => prev.filter((id) => !pagedConnectionIds.has(id)));
+      return;
+    }
+    setSelectedConnectionIds((prev) => {
+      const next = new Set(prev);
+      for (const id of pagedConnectionIds) next.add(id);
+      return [...next];
+    });
+  };
+
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {connections
-        .map((conn, index) => (
+      {pagedConnections.map((conn, pageIndex) => {
+        const index = pagedStart + pageIndex;
+        return (
           <div key={conn.id} className="flex min-w-0 items-stretch">
             <div className="flex shrink-0 items-center pl-1 sm:pl-2">
               <input
@@ -1054,7 +1010,19 @@ export default function ProviderDetailPage() {
               />
             </div>
           </div>
-        ))}
+        );
+      })}
+      {connections.length > CONNECTIONS_PER_PAGE && (
+        <Pagination
+          currentPage={connectionPageClamped}
+          pageSize={pageSize}
+          totalItems={connections.length}
+          onPageChange={setConnectionPage}
+          onPageSizeChange={handlePageSizeChange}
+          allowCustomPageSize
+          maxPageSize={CONNECTIONS_MAX_PAGE_SIZE}
+        />
+      )}
     </div>
   );
 
@@ -1116,14 +1084,10 @@ export default function ProviderDetailPage() {
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: `${providerStorageAlias}/${modelId}`,
-          connectionId: connections.find((connection) => connection.isActive !== false)?.id || null,
-        }),
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      const status = data.ok ? "ok" : Number(data.status) === 429 ? "rate_limited" : Number(data.status) === 504 ? "slow" : "error";
-      setModelTestResults((prev) => ({ ...prev, [modelId]: status }));
+      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
@@ -1131,107 +1095,6 @@ export default function ProviderDetailPage() {
     } finally {
       setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
     }
-  };
-
-  const getVisibleTestModelIds = () => {
-    if (isCompatible) {
-      return [...new Set(getProviderCustomModelRows({
-        customModels,
-        modelAliases,
-        providerAlias: providerStorageAlias,
-        type: "llm",
-      }).map((model) => model.id).filter((modelId) => modelId && !disabledModelIds.includes(modelId)))];
-    }
-
-    const allModels = [
-      ...models,
-      ...kiloFreeModels.filter((freeModel) => !models.some((model) => model.id === freeModel.id)),
-    ].filter((model) => {
-      const kind = getModelKind(model);
-      return !kind || kind === "llm";
-    });
-    const disabledSet = new Set(disabledModelIds);
-    const customModelIds = getProviderCustomModelRows({
-      customModels,
-      modelAliases,
-      providerAlias: providerStorageAlias,
-      builtInModels: models,
-      type: "llm",
-    }).map((model) => model.id);
-
-    return [...new Set([
-      ...customModelIds,
-      ...allModels.filter((model) => !disabledSet.has(model.id)).map((model) => model.id),
-    ].filter(Boolean))];
-  };
-
-  const handleTestAllModels = async () => {
-    if (testingAllModels) return;
-    const modelIds = getVisibleTestModelIds();
-    const activeConnection = connections.find((connection) => connection.isActive !== false);
-
-    if (!activeConnection) {
-      setModelsTestError("Add an active connection before testing all models.");
-      return;
-    }
-    if (modelIds.length === 0) {
-      setModelsTestError("No visible models are available to test.");
-      return;
-    }
-
-    setTestingAllModels(true);
-    setModelsTestError("");
-    setTestAllSummary(null);
-    setLastTestedModelIds(modelIds);
-    setModelTestResults({});
-
-    try {
-      const res = await fetch(`/api/providers/${activeConnection.id}/test-models`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelIds, respectRateLimit: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Model batch test failed");
-
-      const results = data.results || [];
-      const resultMap = Object.fromEntries(results.map((result) => [result.modelId, result.status || (result.ok ? "ok" : "error")]));
-      const untestedIds = modelIds.filter((modelId) => !resultMap[modelId]);
-      untestedIds.forEach((modelId) => { resultMap[modelId] = "not_tested"; });
-      setModelTestResults(resultMap);
-      setTestAllSummary(data.summary || null);
-      if (data.stoppedEarly) {
-        setModelsTestError("Testing stopped early after repeated rate limits. Untested models were left unchanged.");
-      }
-    } catch (error) {
-      setModelsTestError(error.message || "Network error while testing models.");
-    } finally {
-      setTestingAllModels(false);
-    }
-  };
-
-  const handleDisableFailedModels = () => {
-    const failedIds = lastTestedModelIds.filter((modelId) => modelTestResults[modelId] === "error");
-    if (failedIds.length === 0) return;
-
-    setConfirmState({
-      title: "Disable failed models",
-      message: `Disable ${failedIds.length} persistent model failure(s)? Rate-limited and slow models will stay enabled.`,
-      onConfirm: async () => {
-        const res = await fetch("/api/models/disabled", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ providerAlias: providerStorageAlias, ids: failedIds }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setModelsTestError(data.error || "Failed to disable failed models.");
-          return;
-        }
-        await fetchDisabledModels();
-        setConfirmState(null);
-      },
-    });
   };
 
   const renderModelsSection = () => {
@@ -1250,10 +1113,6 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
-          onTestModel={handleTestModel}
-          externalTestResults={modelTestResults}
-          externalTestingModelIds={testingModelIds}
-          disabledModelIds={disabledModelIds}
         />
       );
     }
@@ -1270,7 +1129,7 @@ export default function ProviderDetailPage() {
       customModels,
       modelAliases,
       providerAlias: providerStorageAlias,
-      builtInModels: allModels,
+      builtInModels: models,
       type: "llm",
     });
 
@@ -1366,15 +1225,7 @@ export default function ProviderDetailPage() {
           if (notAdded.length === 0) return null;
           return (
             <div className="w-full mt-2">
-              {suggestedModelsNotice && (
-                <p className="text-xs text-text-muted mb-2 flex items-start gap-1.5">
-                  <span className="material-symbols-outlined text-[13px] shrink-0 mt-px">info</span>
-                  <span>{suggestedModelsNotice}</span>
-                </p>
-              )}
-              <p className="text-xs text-text-muted mb-2">
-                {suggestedModelsLabel || "Suggested free models (≥200k context):"}
-              </p>
+              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
                   <button
@@ -1383,11 +1234,7 @@ export default function ProviderDetailPage() {
                       await handleAddCustomModel(m.id, "llm", providerStorageAlias);
                     }}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={
-                      m.contextLength
-                        ? `${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`
-                        : m.name
-                    }
+                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
                   >
                     <span className="material-symbols-outlined text-[13px]">add</span>
                     {m.id.split("/").pop()}
@@ -1617,44 +1464,14 @@ export default function ProviderDetailPage() {
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
-                    <>
-                      {selectedConnections.some((c) => c.isActive !== false) && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          icon="block"
-                          onClick={() => {
-                            const ids = [...selectedConnectionIds];
-                            ids.forEach((id) => handleUpdateConnectionStatus(id, false));
-                            setSelectedConnectionIds([]);
-                          }}
-                        >
-                          Disable Selected ({selectedConnectionIds.length})
-                        </Button>
-                      )}
-                      {selectedConnections.some((c) => c.isActive === false) && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          icon="check_circle"
-                          onClick={() => {
-                            const ids = [...selectedConnectionIds];
-                            ids.forEach((id) => handleUpdateConnectionStatus(id, true));
-                            setSelectedConnectionIds([]);
-                          }}
-                        >
-                          Enable Selected ({selectedConnectionIds.length})
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        icon="delete"
-                        onClick={handleBulkDelete}
-                      >
-                        Delete Selected ({selectedConnectionIds.length})
-                      </Button>
-                    </>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      icon="delete"
+                      onClick={handleBulkDelete}
+                    >
+                      Delete Selected ({selectedConnectionIds.length})
+                    </Button>
                   )}
                   <Button
                     size="sm"
@@ -1665,17 +1482,6 @@ export default function ProviderDetailPage() {
                   >
                     {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
                   </Button>
-                  {supportsProfileRefresh && connections.some((c) => c.authType === "oauth") && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={refreshingAllProfiles ? "progress_activity" : "sync"}
-                      onClick={handleRefreshAllProfiles}
-                      disabled={refreshingAllProfiles}
-                    >
-                      {refreshingAllProfiles ? "刷新中..." : "全部刷新"}
-                    </Button>
-                  )}
                   {oneByOneRunning && (
                     <Button
                       size="sm"
@@ -1876,27 +1682,6 @@ export default function ProviderDetailPage() {
               </select>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {testAllSummary && (
-              <span className="text-xs text-text-muted">
-                {testAllSummary.working} of {testAllSummary.total} working
-              </span>
-            )}
-            {testAllSummary && lastTestedModelIds.some((modelId) => modelTestResults[modelId] === "error") && (
-              <Button size="sm" variant="danger" icon="block" onClick={handleDisableFailedModels} disabled={testingAllModels}>
-                Disable Failed
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={testingAllModels ? "progress_activity" : "science"}
-              onClick={handleTestAllModels}
-              disabled={testingAllModels || connections.every((connection) => connection.isActive === false)}
-            >
-              {testingAllModels ? "Testing Models..." : "Test All Models"}
-            </Button>
-          </div>
           {!isCompatible && (() => {
             const allIds = [
               ...models,
@@ -1932,6 +1717,12 @@ export default function ProviderDetailPage() {
         <KiroOAuthWrapper
           isOpen={showOAuthModal}
           providerInfo={providerInfo}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowOAuthModal(false)}
+        />
+      ) : providerId === "cursor" ? (
+        <CursorAuthModal
+          isOpen={showOAuthModal}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
         />
@@ -1998,7 +1789,6 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
-          notice={suggestedModelsNotice}
           onSave={async (modelId) => {
             await handleAddCustomModel(modelId, "llm", providerStorageAlias);
             setShowAddCustomModel(false);
