@@ -6,9 +6,9 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { inspectComboPreaction } from "./comboPreaction.js";
-import { annotateComboResponse } from "./routeAttribution.js";
-import { estimateInputTokens } from "../utils/usageTracking.js";
+import { saveErrorLog } from "@/lib/usageDb.js";
+
+const ENDPOINT_COMBO = "/v1/chat/completions";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -17,87 +17,16 @@ const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
-const DEFAULT_OUTPUT_BUDGET = 4096;
-const CONTEXT_BUFFER_TOKENS = 2000;
-
-function requestedOutputBudget(body) {
-  const values = [
-    body?.max_output_tokens,
-    body?.max_completion_tokens,
-    body?.max_tokens,
-    body?.generationConfig?.maxOutputTokens,
-    body?.request?.generationConfig?.maxOutputTokens,
-  ]
-    .map(Number)
-    .filter((value) => Number.isFinite(value) && value >= 0);
-  return values.length > 0 ? Math.max(...values) : DEFAULT_OUTPUT_BUDGET;
-}
-
-/**
- * Remove Combo members whose known context window cannot fit the estimated
- * request budget. Unknown capability metadata stays eligible for backwards
- * compatibility, but must not contribute to public Combo metadata.
- *
- * This is a conservative preflight guard, not exact tokenizer proof: providers
- * use different tokenizers and estimateInputTokens is intentionally format
- * neutral. The public minimum Combo context window remains the portable client
- * contract.
- */
-export function selectContextEligibleModels(
-  models,
-  body,
-  {
-    resolveCapabilities = getCapabilitiesForModel,
-    estimateTokens = estimateInputTokens,
-    bufferTokens = CONTEXT_BUFFER_TOKENS,
-  } = {},
-) {
-  if (!Array.isArray(models) || models.length === 0) {
-    return { models, skipped: [], requiredTokens: null };
-  }
-  const estimatedInput = Number(estimateTokens(body));
-  if (!Number.isFinite(estimatedInput) || estimatedInput <= 0) {
-    return { models, skipped: [], requiredTokens: null };
-  }
-  const normalizedBuffer = Number.isFinite(Number(bufferTokens))
-    ? Math.max(0, Number(bufferTokens))
-    : CONTEXT_BUFFER_TOKENS;
-  const requiredTokens = Math.ceil(
-    estimatedInput + requestedOutputBudget(body) + normalizedBuffer,
-  );
-  const eligible = [];
-  const skipped = [];
-
-  for (const modelId of models) {
-    const slash = typeof modelId === "string" ? modelId.indexOf("/") : -1;
-    const provider = slash > 0 ? modelId.slice(0, slash) : "";
-    const model = slash > 0 ? modelId.slice(slash + 1) : modelId;
-    const capabilities = resolveCapabilities(provider, model);
-    const contextWindow = Number(capabilities?.contextWindow);
-    if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
-      eligible.push(modelId);
-    } else if (contextWindow >= requiredTokens) {
-      eligible.push(modelId);
-    } else {
-      skipped.push({ model: modelId, contextWindow });
-    }
-  }
-
-  return { models: eligible, skipped, requiredTokens };
-}
 
 // Flatten tool turns into prose so panel models keep the context but can't loop
-// on tools: drop the request's tools, turn tool/function results into user
+// on tools: drop the request's tools, turn tool/function results into assistant
 // text, and inline assistant tool_calls names instead of the structured field.
-// Tool results become user turns (matching the claude-to-openai translator's
-// ROLE.TOOL → USER mapping): a trailing assistant turn is rejected by Anthropic
-// as unsupported prefill on newer Claude models.
 function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
       if (msg.role === "tool" || msg.role === "function") {
-        return { role: "user", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
+        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
       }
       if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
         const { tool_calls, ...rest } = msg;
@@ -132,31 +61,6 @@ function flattenToolHistory(messages) {
     });
 }
 
-// Remove trailing assistant messages so the conversation ends on a user turn.
-// Anthropic/Claude reject requests whose last message is from the assistant
-// ("conversation must end with a user message"). When a client echoes a partial
-// assistant reply into the next request, trim those trailing assistant roles. #2876
-export function trimTrailingAssistant(messages) {
-  if (!Array.isArray(messages) || messages.length === 0) return messages;
-  const out = messages.slice();
-  while (out.length > 0 && out[out.length - 1]?.role === "assistant") {
-    out.pop();
-  }
-  // If we stripped everything (all-assistant input), keep at least the last user-ish
-  // msg by falling back to the original so we never send an empty array.
-  return out.length > 0 ? out : messages;
-}
-
-// Anthropic rejects conversations that end on an assistant turn ("assistant
-// message prefill") for newer Claude models. Panel bodies are synthesized
-// requests, so close any trailing assistant/model turn (client prefill, or an
-// assistant tool_call inlined by flattenToolHistory) with a user turn.
-function ensureTrailingUserTurn(messages) {
-  const last = messages[messages.length - 1];
-  if (last?.role !== "assistant" && last?.role !== "model") return messages;
-  return [...messages, { role: "user", content: "Continue from where the previous assistant message left off." }];
-}
-
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
 // Tier 0: satisfies all hard + all soft. Tier 1: all hard only. Tier 2: rest.
 export function reorderByCapabilities(models, required) {
@@ -174,17 +78,11 @@ export function reorderByCapabilities(models, required) {
   };
 
   // Stable sort by tier (Array.prototype.sort is stable in modern engines).
-  const reordered = models
+  return models
     .map((m, i) => ({ m, i, t: tierOf(m) }))
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .map((x) => x.m);
-
-  // Preserve identity when no reordering occurred (all models same tier / no match).
-  const unchanged = reordered.every((m, i) => m === models[i]);
-  return unchanged ? models : reordered;
 }
-
-const EMPTY_TOOL_STREAM_STATUS = 502;
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -211,32 +109,15 @@ export function detectRequiredCapabilities(body) {
   const required = new Set();
   if (!body || typeof body !== "object") return required;
 
-  const addByMime = (mime) => {
-    if (typeof mime !== "string") return;
-    if (mime.startsWith("image/")) required.add("vision");
-    else if (mime === "application/pdf") required.add("pdf");
-    else if (mime.startsWith("audio/")) required.add("audioInput");
-    else if (mime.startsWith("video/")) required.add("videoInput");
-  };
-
   const scanBlock = (b) => {
     if (!b || typeof b !== "object") return;
     const t = b.type;
     if (t === "image_url" || t === "image" || t === "input_image") required.add("vision");
-    if (t === "input_audio" || t === "audio_url" || t === "audio") required.add("audioInput");
-    if (t === "input_video" || t === "video_url" || t === "video") required.add("videoInput");
-    if (t === "file" || t === "document" || t === "input_file") {
-      // Infer modality from embedded mime when available; fall back to pdf for generic files.
-      let fmime = null;
-      if (b.input_audio?.format) fmime = `audio/${b.input_audio.format}`;
-      else if (b.file?.file_data) fmime = String(b.file.file_data).match(/^data:([^;,]+)/)?.[1];
-      else if (b.source?.media_type) fmime = b.source.media_type;
-      else if (b.source?.data) fmime = String(b.source.data).match(/^data:([^;,]+)/)?.[1];
-      if (fmime) addByMime(fmime);
-      else required.add("pdf");
-    }
+    if (t === "file" || t === "document" || t === "input_file") required.add("pdf");
     // gemini parts: inlineData/fileData carry a mime
-    addByMime(b.inlineData?.mimeType || b.fileData?.mimeType);
+    const mime = b.inlineData?.mimeType || b.fileData?.mimeType;
+    if (typeof mime === "string" && mime.startsWith("image/")) required.add("vision");
+    if (mime === "application/pdf") required.add("pdf");
   };
 
   const scanContent = (content) => {
@@ -249,13 +130,7 @@ export function detectRequiredCapabilities(body) {
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
 
-  // search: tools carry the request-wide "search" capability (e.g. OpenAI web_search).
-  if (Array.isArray(body.tools)) {
-    for (const t of body.tools) {
-      const toolType = typeof t === "string" ? t : (t && t.type);
-      if (toolType === "web_search" || toolType === "search") required.add("search");
-    }
-  }
+  // search: temporarily disabled in auto-switch (feature not wired yet).
 
   return required;
 }
@@ -328,129 +203,17 @@ export function resetComboRotation(comboName) {
  * @param {Array|Object} combosData - Array of combos or object with combos
  * @returns {string[]|null} Array of models or null if not a combo
  */
-export function getComboModelsFromData(modelStr, arrayOrObject) {
-  if (!modelStr || typeof modelStr !== "string") return null;
-
-  // Combos may be referenced with a provider prefix (e.g. `openrouter/lordx.1` when
-  // the client registers the combo under a provider namespace). Strip it so we can
-  // match the combo by its bare name, and also try the full string as a fallback.
-  const candidates = modelStr.includes("/")
-    ? [modelStr.split("/").pop(), modelStr]
-    : [modelStr];
-
+export function getComboModelsFromData(modelStr, combosData) {
+  // Don't check if it's in provider/model format
+  if (modelStr.includes("/")) return null;
+  
   // Handle both array and object formats
-  const combos = Array.isArray(arrayOrObject)
-    ? arrayOrObject
-    : (arrayOrObject?.combos || []);
-
-  for (const name of candidates) {
-    const combo = combos.find((c) => c.name === name);
-    if (combo && combo.models && combo.models.length > 0) {
-      return combo.models;
-    }
+  const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
+  
+  const combo = combos.find(c => c.name === modelStr);
+  if (combo && combo.models && combo.models.length > 0) {
+    return combo.models;
   }
-  return null;
-}
-
-function requestHasTools(body) {
-  return Array.isArray(body?.tools) && body.tools.length > 0;
-}
-
-function isInspectableSseResponse(response) {
-  const contentType = response?.headers?.get?.("content-type") || "";
-  return response?.ok && response?.body && typeof response.clone === "function" && contentType.includes("text/event-stream");
-}
-
-function parseSsePayloads(text) {
-  const messages = String(text || "").split(/\r?\n\r?\n/);
-  const payloads = [];
-
-  for (const msg of messages) {
-    if (!msg.trim()) continue;
-    const eventMatch = msg.match(/^event:\s*(.+)$/m);
-    const dataMatch = msg.match(/^data:\s*(.+)$/m);
-    if (!dataMatch) continue;
-
-    const data = dataMatch[1].trim();
-    if (!data || data === "[DONE]") continue;
-
-    try {
-      payloads.push({ event: eventMatch?.[1]?.trim() || "", data: JSON.parse(data) });
-    } catch {
-      payloads.push({ event: eventMatch?.[1]?.trim() || "", malformed: true });
-    }
-  }
-
-  return payloads;
-}
-
-function payloadHasVisibleOutput({ event, data }) {
-  if (!data || typeof data !== "object") return false;
-
-  const choice = data.choices?.[0];
-  const delta = choice?.delta;
-  if (delta?.content || delta?.reasoning_content) return true;
-  if (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) return true;
-  if (choice?.message?.content) return true;
-  if (Array.isArray(choice?.message?.tool_calls) && choice.message.tool_calls.length > 0) return true;
-
-  if (data.type === "content_block_start" && data.content_block?.type === "tool_use") return true;
-  if (data.type === "content_block_delta" && (data.delta?.text || data.delta?.partial_json || data.delta?.thinking)) return true;
-  if (event === "response.output_text.delta" && data.delta) return true;
-  if (event === "response.reasoning_summary_text.delta" && data.delta) return true;
-  if (event === "response.output_item.added" && (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) return true;
-  if ((event === "response.function_call_arguments.delta" || event === "response.custom_tool_call_input.delta") && data.delta) return true;
-
-  return false;
-}
-
-async function inspectToolStreamForFallback(response) {
-  if (!isInspectableSseResponse(response)) return null;
-
-  const clone = response.clone();
-  const reader = clone.body?.getReader?.();
-  if (!reader) return null;
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let sawMalformedPayload = false;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split(/\r?\n\r?\n/);
-      buffer = parts.pop() || "";
-
-      for (const payload of parseSsePayloads(parts.join("\n\n"))) {
-        if (payload.malformed) sawMalformedPayload = true;
-        if (payloadHasVisibleOutput(payload)) {
-          reader.cancel().catch(() => { });
-          return null;
-        }
-      }
-    }
-  } catch (error) {
-    return { shouldFallback: false, reason: `stream inspection failed: ${error.message || String(error)}` };
-  }
-
-  const remaining = buffer + decoder.decode();
-  const payloads = parseSsePayloads(remaining);
-  const hasVisibleOutput = payloads.some(payloadHasVisibleOutput);
-  const hasMalformedPayload = sawMalformedPayload || payloads.some(p => p.malformed);
-
-  // #1382: Some OpenAI-compatible backends return HTTP 200 SSE streams for
-  // tool-heavy Claude requests but emit no client-visible text/tool calls. Treat
-  // those as transient upstream failures so combos can try the next model.
-  if (!hasVisibleOutput) {
-    return {
-      shouldFallback: true,
-      reason: hasMalformedPayload ? "malformed tool stream with no visible output" : "empty tool stream with no visible output"
-    };
-  }
-
   return null;
 }
 
@@ -466,18 +229,7 @@ async function inspectToolStreamForFallback(response) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({
-  body,
-  models,
-  handleSingleModel,
-  log,
-  comboName,
-  comboStrategy,
-  comboStickyLimit = 1,
-  autoSwitch = true,
-  resolveCapabilities = getCapabilitiesForModel,
-  estimateTokens = estimateInputTokens,
-}) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -491,39 +243,6 @@ export async function handleComboChat({
       }
       rotatedModels = reordered;
     }
-  }
-
-  const contextEligibility = selectContextEligibleModels(rotatedModels, body, {
-    resolveCapabilities,
-    estimateTokens,
-  });
-  if (contextEligibility.skipped.length > 0) {
-    log.info(
-      "COMBO",
-      `context preflight skipped ${contextEligibility.skipped.length} undersized model(s)`,
-      { requiredTokensEstimate: contextEligibility.requiredTokens },
-    );
-  }
-  rotatedModels = contextEligibility.models;
-  if (rotatedModels.length === 0 && contextEligibility.skipped.length > 0) {
-    const largestContextWindow = Math.max(
-      ...contextEligibility.skipped.map(({ contextWindow }) => contextWindow),
-    );
-    log.warn("COMBO", "No model passed context preflight", {
-      requiredTokensEstimate: contextEligibility.requiredTokens,
-      largestContextWindow,
-    });
-    return new Response(
-      JSON.stringify({
-        error: {
-          code: "combo_context_window_exceeded",
-          message: "No Combo member has a known context window large enough for this request.",
-          required_tokens_estimate: contextEligibility.requiredTokens,
-          largest_context_window: largestContextWindow,
-        },
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
   }
   
   let lastError = null;
@@ -539,19 +258,8 @@ export async function handleComboChat({
       
       // Success (2xx) - return response
       if (result.ok) {
-        const inspected = (comboStrategy === "fallback" || requestHasTools(body)) ? await inspectComboPreaction(result, body) : result;
-        if (inspected) {
-          log.info("COMBO", `Model ${modelStr} succeeded`);
-          return annotateComboResponse({
-            comboName: comboName || body?.model,
-            selectedModel: modelStr,
-            attemptedModels: rotatedModels.slice(0, i + 1),
-          }, inspected);
-        }
-        lastError = "Response ended before its first actionable event";
-        if (!lastStatus) lastStatus = 502;
-        log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
-        continue;
+        log.info("COMBO", `Model ${modelStr} succeeded`);
+        return result;
       }
 
       // Extract error info from response
@@ -596,6 +304,26 @@ export async function handleComboChat({
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      const provider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : "unknown";
+      const failedModel = modelStr.includes("/") ? modelStr.slice(modelStr.indexOf("/") + 1) : modelStr;
+      saveErrorLog({
+        endpoint: ENDPOINT_COMBO,
+        provider,
+        model: failedModel,
+        connectionId: `combo-${comboName || modelStr}`,
+        comboName: comboName || null,
+        statusCode: result.status,
+        errorMessage: errorText || result.statusText,
+        request: null,
+        providerRequest: null,
+        providerResponse: null,
+        meta: {
+          fallback: true,
+          retryAfter,
+          retryAfterHuman: retryAfter ? formatRetryAfter(retryAfter) : null,
+          latency: {}
+        }
+      }).catch(() => {});
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
@@ -808,19 +536,14 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   log.info("FUSION", `Combo "${comboName}" | panel=${panel.length} [${panel.join(", ")}] | judge=${judge} | quorum=${minPanel}`);
 
   // 1. Fan out to the panel in parallel: non-streaming, tools stripped (we want prose).
-  const { tools, tool_choice, stream_options, ...rest } = body;
-  // Fusion runs panel models non-streaming; drop stream_options too, or providers
-  // like DeepSeek reject it with "stream_options should be set along with stream = true".
-  // See issue #3024.
+  const { tools, tool_choice, ...rest } = body;
   const panelBody = { ...rest, stream: false };
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
-  if (Array.isArray(panelBody.messages)) {
-    panelBody.messages = ensureTrailingUserTurn(flattenToolHistory(panelBody.messages));
+    panelBody.messages = flattenToolHistory(panelBody.messages);
   } else if (Array.isArray(panelBody.input)) {
-    panelBody.input = ensureTrailingUserTurn(flattenToolHistory(panelBody.input));
-  }
+    panelBody.input = flattenToolHistory(panelBody.input);
   }
 
   const t0 = Date.now();

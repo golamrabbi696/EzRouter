@@ -73,6 +73,11 @@ export {
   recordTokenSaverEvent, getTokenSaverStats,
 } from "./repos/tokenSaverRepo.js";
 
+// Error logs
+export {
+  saveErrorLog, getErrorLogs, getErrorLogById, getDistinctErrorProviders,
+} from "./repos/errorLogsRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();

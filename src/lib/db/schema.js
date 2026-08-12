@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -152,26 +152,30 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
-  convoyRules: {
+  errorLogs: {
     columns: {
       id: "TEXT PRIMARY KEY",
-      name: "TEXT NOT NULL",
-      enabled: "INTEGER DEFAULT 1",
-      priority: "INTEGER DEFAULT 0",
-      matchType: "TEXT NOT NULL DEFAULT 'literal'",
-      action: "TEXT NOT NULL DEFAULT 'replace'",
-      pattern: "TEXT NOT NULL",
-      replacement: "TEXT DEFAULT ''",
-      caseSensitive: "INTEGER DEFAULT 1",
-      providerIds: "TEXT DEFAULT '[]'",
-      createdAt: "TEXT NOT NULL",
-      updatedAt: "TEXT NOT NULL",
+      timestamp: "TEXT NOT NULL",
+      endpoint: "TEXT",
+      provider: "TEXT",
+      model: "TEXT",
+      connectionId: "TEXT",
+      comboName: "TEXT",
+      statusCode: "TEXT",
+      errorMessage: "TEXT",
+      request: "TEXT",
+      providerRequest: "TEXT",
+      providerResponse: "TEXT",
+      meta: "TEXT",
     },
     indexes: [
-      "CREATE INDEX IF NOT EXISTS idx_cr_enabled ON convoyRules(enabled)",
-      "CREATE INDEX IF NOT EXISTS idx_cr_priority ON convoyRules(enabled, priority)",
+      "CREATE INDEX IF NOT EXISTS idx_el_ts ON errorLogs(timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_el_provider ON errorLogs(provider)",
+      "CREATE INDEX IF NOT EXISTS idx_el_model ON errorLogs(model)",
+      "CREATE INDEX IF NOT EXISTS idx_el_conn ON errorLogs(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_el_combo ON errorLogs(comboName)",
     ],
-  }
+  },
 };
 
 export function buildCreateTableSql(name, def) {
