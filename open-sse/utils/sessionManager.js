@@ -136,7 +136,7 @@ function extractAntigravitySession(body) {
 
 function extractClientSessionId(headers, body, scope = "") {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
-    if (claude) return `claude:${claude}`;
+    if (claude) return scope === "claude" ? claude : `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
     if (antigravity) return `antigravity:${antigravity}`;
     for (const key of SESSION_HEADER_KEYS) {
@@ -151,10 +151,6 @@ function extractClientSessionId(headers, body, scope = "") {
         normalizeSessionId(body?.conversation_id) ||
         (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
     return fromBody || null;
-}
-
-export function resolveClientSessionId({ headers, body, scope = "" } = {}) {
-    return extractClientSessionId(headers, body, scope);
 }
 
 function requestMessages(body) {

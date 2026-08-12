@@ -1,14 +1,8 @@
-import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
-import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
-import {
-  buildClientIdentityHeaders,
-  shouldStripClaudeIdentityHeaders,
-} from "../shared/clientIdentityHeaders.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
@@ -42,65 +36,27 @@ function applyAuth(headers, desc, credentials) {
   if (desc.anthropicVersion && !headers["anthropic-version"]) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
 }
 
-// OpenAI's newer Chat Completions models reject the legacy max_tokens field.
-// Keep this scoped to the first-party OpenAI provider: other OpenAI-compatible
-// providers may still require max_tokens for models with similar names.
-function usesOpenAIMaxCompletionTokens(model) {
-  return /^(?:gpt-5(?:[.-]|$)|o[134](?:[.-]|$))/i.test(model || "");
-}
-
-const OPENAI_TOOL_CALL_ID_MAX_LENGTH = 64;
-const OPENAI_TOOL_CALL_ID_PREFIX_LENGTH = 20;
-
-// OpenAI Chat Completions rejects tool-call IDs longer than 64 characters.
-// Normalize each distinct overlong ID once per request so assistant calls and
-// their tool results always keep the same relationship. A full SHA-256 digest
-// keeps IDs collision-resistant even when their retained prefixes are equal.
-function normalizeOpenAIToolCallIds(body) {
-  if (!Array.isArray(body?.messages)) return body;
-
-  const normalizedIds = new Map();
-  const normalize = (id) => {
-    if (typeof id !== "string" || id.length <= OPENAI_TOOL_CALL_ID_MAX_LENGTH) return id;
-    if (normalizedIds.has(id)) return normalizedIds.get(id);
-
-    const prefix = id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, OPENAI_TOOL_CALL_ID_PREFIX_LENGTH) || "call";
-    const digest = createHash("sha256").update(id).digest("base64url");
-    const normalized = `${prefix}_${digest}`;
-    normalizedIds.set(id, normalized);
-    return normalized;
-  };
-
-  for (const message of body.messages) {
-    if (message?.role === "assistant" && Array.isArray(message.tool_calls)) {
-      for (const toolCall of message.tool_calls) {
-        if (toolCall && Object.hasOwn(toolCall, "id")) toolCall.id = normalize(toolCall.id);
-      }
-    }
-    if (message?.role === "tool" && Object.hasOwn(message, "tool_call_id")) {
-      message.tool_call_id = normalize(message.tool_call_id);
-    }
-  }
-
-  return body;
-}
-
-// GPT-5.6 Luna rejects function tools when reasoning is enabled on the Chat
-// Completions transport. Keep this compatibility override limited to the
-// first-party provider and to requests that declare current function tools.
-function normalizeLunaFunctionToolReasoning(model, body, sourceFormat) {
-  if (sourceFormat === "openai-responses") return;
-  if (model !== "gpt-5.6-luna") return;
-  if (!Array.isArray(body?.tools) || !body.tools.some((tool) => tool?.type === "function")) return;
-  body.reasoning_effort = "none";
-}
-
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
+  claudeOverlay: (h) => {
+    const cached = getCachedClaudeHeaders();
+    if (!cached) return;
+    for (const lcKey of Object.keys(cached)) {
+      const titleKey = lcKey.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
+      if (lcKey === "anthropic-beta") {
+        const staticBetaStr = h[titleKey] || h[lcKey] || "";
+        const flags = new Set(staticBetaStr.split(",").map(f => f.trim()).filter(Boolean));
+        for (const f of cached[lcKey].split(",").map(f => f.trim()).filter(Boolean)) flags.add(f);
+        cached[lcKey] = Array.from(flags).join(",");
+      }
+      if (titleKey !== lcKey && h[titleKey] !== undefined) delete h[titleKey];
+    }
+    Object.assign(h, cached);
+  },
 };
 
 // Config-driven OAuth refresh grants — derived from registry oauth.refresh.
@@ -126,33 +82,10 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body, stream, credentials, sourceFormat) {
+  transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
-      // The official OpenAI transport is force-streamed even for JSON clients.
-      // Keep the actual upstream body aligned with the executor's resolved mode;
-      // the chat core still converts the SSE response back to JSON for those clients.
-      if (this.provider === "openai" && stream === true) {
-        const clientRequestedStreaming = transformed.stream === true;
-        transformed.stream = true;
-        if (!clientRequestedStreaming) {
-          transformed.stream_options = {
-            ...transformed.stream_options,
-            include_usage: true,
-          };
-        }
-      }
-      if (this.provider === "openai" && usesOpenAIMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
-        if (transformed.max_completion_tokens === undefined) {
-          transformed.max_completion_tokens = transformed.max_tokens;
-        }
-        delete transformed.max_tokens;
-      }
-      if (this.provider === "openai") {
-        normalizeOpenAIToolCallIds(transformed);
-        normalizeLunaFunctionToolReasoning(model, transformed, sourceFormat);
-      }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
@@ -160,9 +93,6 @@ export class DefaultExecutor extends BaseExecutor {
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
-    // reasoning_content is an OpenAI compatibility field. Anthropic Messages
-    // transports preserve thinking blocks directly and may reject this extra key.
-    if (credentials?.runtimeTransport?.format === "claude") return transformed;
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
   }
 
@@ -173,7 +103,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (rf?.type !== "json_schema" || !rf.json_schema?.schema) return body;
 
     const schemaJson = JSON.stringify(rf.json_schema.schema, null, 2);
-    const prompt = `You must respond with valid JSON that strictly follows this JSON schema:\n\`\`\`json\n${schemaJson}\n\`\`\`\nRespond ONLY with the JSON object, no other text and no markdown code fences.`;
+    const prompt = `You must respond with valid JSON that strictly follows this JSON schema:\n\`\`\`json\n${schemaJson}\n\`\`\`\nRespond ONLY with the JSON object, no other text.`;
 
     const messages = Array.isArray(body.messages) ? body.messages.map(m => ({ ...m })) : [];
     const sys = messages.find(m => m.role === "system");
@@ -195,7 +125,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
+      const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -231,41 +161,29 @@ export class DefaultExecutor extends BaseExecutor {
     return BEARER;
   }
 
-  buildHeaders(credentials, stream = true, url, model) {
+  buildHeaders(credentials, stream = true) {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
-    // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
+    // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
-    const identityConfig = credentials?.providerSpecificData || {};
-    const identityHeaders = buildClientIdentityHeaders(identityConfig);
-    Object.assign(headers, identityHeaders);
-
-    const authHeaders = {};
-    applyAuth(authHeaders, desc, credentials);
-    Object.assign(headers, authHeaders);
-
-    if (this.provider === "claude" && model) {
-      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
-    }
-    if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
-      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic && credentials.apiKey && !headers["Authorization"]) {
-        headers["Authorization"] = `Bearer ${credentials.apiKey}`;
-      }
+    applyAuth(headers, desc, credentials);
+    if (this.provider === "claude" && credentials?._clientSessionId) {
+      delete headers["x-claude-code-session-id"];
+      headers["X-Claude-Code-Session-Id"] = credentials._clientSessionId;
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
-    if (shouldStripClaudeIdentityHeaders({
-      provider: this.provider,
-      baseUrl: credentials?.providerSpecificData?.baseUrl || "",
-      clientIdentityProfile: identityConfig.clientIdentityProfile,
-      identityHeaders,
-    })) {
+    if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
       if (!isOfficialAnthropic) {
+        // Some third-party Anthropic-compatible gateways require Bearer auth in
+        // addition to x-api-key. Send both (x-api-key already set above) so
+        // gateways that read either header succeed.
+        if (credentials.apiKey && !headers["Authorization"]) {
+          headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+        }
         delete headers["anthropic-dangerous-direct-browser-access"];
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];
@@ -308,16 +226,15 @@ export class DefaultExecutor extends BaseExecutor {
     const refreshers = {
       claude: () => this.refreshFromGrant(credentials, proxyOptions),
       codex: () => this.refreshFromGrant(credentials, proxyOptions),
+      qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }, proxyOptions),
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
-      xai: () => this.refreshFromGrant(credentials, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       kimi: () => this.refreshKimi(credentials, proxyOptions),
       "kimi-coding": () => this.refreshKimi(credentials, proxyOptions),
-      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions),
-      "codebuddy-cn": () => this.refreshCodebuddy(credentials.refreshToken, proxyOptions),
+      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
     };
 
     const refresher = refreshers[this.provider];
@@ -419,37 +336,6 @@ export class DefaultExecutor extends BaseExecutor {
   async refreshKilocode(refreshToken, proxyOptions = null) {
     // Kilocode uses device code flow, no refresh token support
     return null;
-  }
-
-  async refreshCodebuddy(refreshToken, proxyOptions = null) {
-    if (!refreshToken) return null;
-    const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
-    try {
-      const response = await proxyAwareFetch(oauth.refreshUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "User-Agent": oauth.userAgent,
-          "X-Requested-With": "XMLHttpRequest",
-          "X-Domain": "copilot.tencent.com",
-          "X-Refresh-Token": refreshToken,
-          "X-Auth-Refresh-Source": "plugin",
-          "X-Product": "SaaS",
-        },
-        body: "{}",
-      }, proxyOptions);
-      if (!response.ok) return null;
-      const data = await response.json();
-      if (data.code !== 0 || !data.data?.accessToken) return null;
-      return {
-        accessToken: data.data.accessToken,
-        refreshToken: data.data.refreshToken || refreshToken,
-        expiresIn: data.data.expiresIn,
-      };
-    } catch {
-      return null;
-    }
   }
 }
 
