@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { getThinkingLevels, supportsThinkingLevel } from "../../open-sse/providers/thinkingLevels.js";
+import { supportsThinkingLevel } from "../../open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 
 describe("getThinkingLevels", () => {
   it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("adds max for %s on codex", (model) => {
@@ -7,10 +8,7 @@ describe("getThinkingLevels", () => {
     expect(levels).toContain("max");
     expect(levels).toContain("xhigh");
     expect(levels).not.toContain("ultra");
-  });
-
-  it.each(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("adds max for %s on OpenAI", (model) => {
-    expect(supportsThinkingLevel("openai", model, "max")).toBe(true);
+    expect(supportsThinkingLevel("codex", model, "max")).toBe(true);
   });
 
   it("does not add max for other codex models", () => {
@@ -18,11 +16,7 @@ describe("getThinkingLevels", () => {
     expect(levels).toEqual(["low", "medium", "high", "xhigh"]);
   });
 
-  it.each([
-    ["codex", "gpt-5.5"],
-    ["openai", "gpt-5.5"],
-    ["kiro", "gpt-5.6-sol"],
-  ])("does not add max for %s/%s", (provider, model) => {
-    expect(supportsThinkingLevel(provider, model, "max")).toBe(false);
+  it.each(["openai", "kiro"])("does not add codex-only max for %s", (provider) => {
+    expect(supportsThinkingLevel(provider, "gpt-5.6-sol", "max")).toBe(false);
   });
 });

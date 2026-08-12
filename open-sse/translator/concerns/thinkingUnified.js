@@ -2,9 +2,8 @@
 // Config-driven: thinking format/limits come from capabilities.js + registry transport,
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
-import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getCapabilitiesForModel, supportsThinkingLevel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { supportsThinkingLevel } from "../../providers/thinkingLevels.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -97,24 +96,6 @@ export function extractThinking(body) {
     return { mode: "auto" };
   }
 
-  // Kiro shape (post-translation). The kiro translators map thinking intent onto
-  // additionalModelRequestFields rather than a top-level field, so a translated
-  // kiro payload carries no shape any branch above recognizes:
-  //   output_config.effort → modern Claude models
-  //   reasoning.effort     → GPT-5.6
-  // Checked last so a client body that also sets a canonical field keeps its
-  // existing precedence (resolveKiroThinkingBudget reads source bodies too).
-  const amrf = body.additionalModelRequestFields;
-  if (amrf && typeof amrf === "object") {
-    const amrfEffort = amrf.output_config?.effort ?? (typeof amrf.reasoning === "object" ? amrf.reasoning?.effort : null);
-    if (typeof amrfEffort === "string" && amrfEffort) {
-      const e = amrfEffort.toLowerCase();
-      if (e === "none" || e === "off") return { mode: "none" };
-      if (e === "auto") return { mode: "auto" };
-      return { mode: "level", level: e };
-    }
-  }
-
   return null;
 }
 
@@ -124,8 +105,6 @@ export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
-  // OpenAI-compatible nodes reject provider-native thinking fields.
-  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) return "openai";
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -158,20 +137,6 @@ function toLevel(cfg) {
 function toGeminiThinkingLevel(cfg) {
   const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
   return effortToThinkingLevel(raw);
-}
-
-// Unified level → Anthropic's output_config.effort enum [low medium high xhigh max].
-// "auto" (think, level unspecified) and "minimal" are valid unified intents with no
-// value in that enum, and an unmapped value is not ignored — Anthropic rejects the
-// whole request (400 invalid_reasoning_effort) — so they resolve to the nearest
-// supported level, as the gemini-level and kimi branches already do for auto.
-function toClaudeAdaptiveEffort(cfg) {
-  const level = toLevel(cfg);
-  if (level === "auto") return "high";
-  if (level === "minimal") return "low";
-  // Pre-existing downgrade: kept until xhigh is verified across the 4.6+ line.
-  if (level === "xhigh") return "high";
-  return level;
 }
 
 function toKimiReasoningEffort(cfg) {
@@ -258,16 +223,8 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      // OpenAI-format support is model-specific; older models still reject max.
+      // Clamp max unless target provider/model metadata explicitly supports it.
       if (level) body.reasoning_effort = level === "max" && !supportsThinkingLevel(provider, model, "max") ? "xhigh" : level;
-      break;
-    }
-    case "qoder": {
-      // Qoder (intl + CN) accepts the full effort enum none..max verbatim — pure
-      // passthrough, do NOT clamp "max".
-      if (none && canDisable) { body.reasoning_effort = "none"; break; }
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
       break;
     }
     case "claude-adaptive": {
@@ -278,7 +235,8 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
       // shims (e.g. GitHub Copilot /v1/messages) default thinking off even for
       // Sonnet 5. Send both fields — the documented adaptive-thinking shape.
       body.thinking = { type: "adaptive" };
-      body.output_config = { effort: toClaudeAdaptiveEffort(eff) };
+      const level = toLevel(eff);
+      body.output_config = { effort: level === "xhigh" ? "high" : level };
       break;
     }
     case "claude-budget": {
