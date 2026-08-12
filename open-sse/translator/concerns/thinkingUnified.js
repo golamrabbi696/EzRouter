@@ -3,8 +3,8 @@
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
-import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { supportsThinkingLevel } from "../../providers/thinkingLevels.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -38,7 +38,6 @@ export function parseSuffix(model) {
   const raw = m[2].trim().toLowerCase();
   if (raw === "none" || raw === "off") return { cleanModel, override: { mode: "none" } };
   if (raw === "auto") return { cleanModel, override: { mode: "auto" } };
-  if (raw === "ultra") return { cleanModel, override: { mode: "level", level: raw } };
   if (/^\d+$/.test(raw)) return { cleanModel, override: { mode: "budget", budget: Number(raw) } };
   if (LEVEL_TO_BUDGET[raw] !== undefined) return { cleanModel, override: { mode: "level", level: raw } };
   return { cleanModel, override: null };
@@ -108,11 +107,10 @@ export const captureThinking = extractThinking;
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
+  if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
-  const fmt = providerFmt || caps.thinkingFormat || FORMAT_TO_NATIVE[targetFormat] || "openai";
-  // Responses endpoints require the OpenAI reasoning object, not the Chat
-  // Completions-only top-level reasoning_effort field.
-  return targetFormat === "openai-responses" && fmt === "openai" ? "openai-responses" : fmt;
+  if (caps.thinkingFormat) return caps.thinkingFormat;
+  return FORMAT_TO_NATIVE[targetFormat] || "openai";
 }
 
 // Convert unified config to a budget number (for budget-based formats).
@@ -135,13 +133,6 @@ function toLevel(cfg) {
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";
   return null;
-}
-
-function normalizeOpenAILevel(level, supportedLevels) {
-  if (level !== "max" && level !== "ultra") return level;
-  if (supportedLevels?.includes(level)) return level;
-  if (level === "ultra" && supportedLevels?.includes("max")) return "max";
-  return "xhigh";
 }
 
 function toGeminiThinkingLevel(cfg) {
@@ -223,7 +214,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels) {
+function applyFormat(fmt, body, cfg, caps, provider, model) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -233,12 +224,8 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
-      break;
-    }
-    case "openai-responses": {
-      const level = none && canDisable ? "none" : toLevel(eff);
-      if (level) body.reasoning = { ...body.reasoning, effort: normalizeOpenAILevel(level, supportedLevels) };
+      // OpenAI-format support is model-specific; older models still reject max.
+      if (level) body.reasoning_effort = level === "max" && !supportsThinkingLevel(provider, model, "max") ? "xhigh" : level;
       break;
     }
     case "claude-adaptive": {
@@ -316,15 +303,6 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
-    case "tokenrouter": {
-      // TokenRouter's reasoning_effort enum is low/medium/high/xhigh/max — it rejects
-      // "none"/"auto" with a 400 and supports "max" natively (no clamp like openai).
-      // "none" → omit the field so the upstream default applies; pass levels through.
-      if (none || eff.mode === "auto") break;
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
-      break;
-    }
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
@@ -352,14 +330,7 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!cfg) return body;
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
-  const supportedLevels = getThinkingLevels(provider, cleanModel);
-  // Preserve Responses-only reasoning options such as summary and mode while
-  // normalizing the effort field to the endpoint's nested wire shape.
-  const responsesReasoning = fmt === "openai-responses" && body.reasoning && typeof body.reasoning === "object"
-    ? body.reasoning
-    : null;
   stripAll(body);
-  if (responsesReasoning) body.reasoning = responsesReasoning;
-  applyFormat(fmt, body, cfg, caps, supportedLevels);
+  applyFormat(fmt, body, cfg, caps, provider, cleanModel);
   return body;
 }

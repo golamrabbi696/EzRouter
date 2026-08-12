@@ -8,11 +8,10 @@ import {
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
-import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { resolveCodexAccountId } from "../utils/codexIdentity.js";
+import { supportsThinkingLevel } from "../providers/thinkingLevels.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -57,24 +56,13 @@ function convertSystemToDeveloperRole(body) {
 }
 
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
-export function stripStoredItemReferences(body) {
+function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
       if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
-      // Codex /responses rejects replayed tool-call history when function/custom
-      // tool call items carry a client-supplied `id` (it expects server-assigned IDs
-      // and 400s on collisions / unresolvable refs when store=false). Drop the
-      // optional `id` but keep `call_id` so the output can still pair to its call. #2930
-      const TOOL_CALL_TYPES = new Set([
-        "function_call", "function_call_output",
-        "custom_tool_call", "custom_tool_call_output",
-      ]);
-      if (TOOL_CALL_TYPES.has(item.type) && item.id !== undefined) {
-        delete item.id;
-      }
     }
     return true;
   });
@@ -137,12 +125,8 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(model, value) {
-  const supportedLevels = getThinkingLevels("codex", model);
-  if (supportedLevels?.includes(value)) return value;
-  if (value === "ultra" && supportedLevels?.includes("max")) return "max";
-  if (value === "max" || value === "ultra") return "xhigh";
-  return value;
+function normalizeReasoningEffort(value, model) {
+  return value === "max" && !supportsThinkingLevel("codex", model, "max") ? "xhigh" : value;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -221,7 +205,10 @@ export class CodexExecutor extends BaseExecutor {
     // older/custom rows may use workspaceId/accountId. Prefer explicit workspaceId
     // but fall back to chatgptAccountId so requests don't cross-bind to the wrong
     // OpenAI account and surface as token_invalid after adding another account.
-    const accountId = resolveCodexAccountId(credentials);
+    const accountId =
+      credentials?.providerSpecificData?.workspaceId ||
+      credentials?.providerSpecificData?.chatgptAccountId ||
+      credentials?.providerSpecificData?.accountId;
     if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-ID"]) {
       headers["ChatGPT-Account-ID"] = accountId;
     }
@@ -441,7 +428,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -454,10 +441,10 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || 'low');
+      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low', body.model);
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.model, body.reasoning.effort);
+      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort, body.model);
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;
