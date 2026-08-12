@@ -16,6 +16,7 @@ import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDeta
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { createEmptyRetryStream } from "./chatCore/emptyStreamGuard.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
@@ -36,7 +37,8 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, apiKeyReservation = 0, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomToken, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, clientRawRequest, connectionId, userAgent, apiKey, apiKeyReservation = 0, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomToken, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onUpstreamEmptyExhausted, clientRawRequest, connectionId, userAgent, apiKey, apiKeyReservation = 0, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomToken, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -380,6 +382,67 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     return createErrorResult(statusCode, errMsg, resetsAtMs);
+  }
+
+  // Antigravity empty-stream guard — oh-my-pi parity
+  if (provider === "antigravity" && stream && providerResponse.body) {
+    const reexecute = async () => {
+      const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+      if (!retryResult.response.ok) {
+        const { statusCode, message } = await parseUpstreamError(retryResult.response, executor);
+        throw new Error(`[${statusCode}] ${message}`);
+      }
+      if (!retryResult.response.body) throw new Error("upstream returned no body");
+      return retryResult.response.body;
+    };
+    providerResponse = new Response(
+      createEmptyRetryStream({
+        body: providerResponse.body,
+        reexecute,
+        signal: streamController.signal,
+        log,
+        onExhausted: (reason, { upstreamError } = {}) => {
+          if (!onUpstreamEmptyExhausted) return;
+          const resetMs = executor.parseRetryFromErrorMessage?.(upstreamError?.message || reason);
+          return onUpstreamEmptyExhausted(
+            formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY),
+            resetMs ? Date.now() + resetMs : undefined
+          );
+        },
+      }),
+      { status: providerResponse.status, headers: providerResponse.headers }
+    );
+  }
+
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, apiKeyReservation, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  // Antigravity empty-stream guard — oh-my-pi parity
+  if (provider === "antigravity" && stream && providerResponse.body) {
+    const reexecute = async () => {
+      const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+      if (!retryResult.response.ok) {
+        const { statusCode, message } = await parseUpstreamError(retryResult.response, executor);
+        throw new Error(`[${statusCode}] ${message}`);
+      }
+      if (!retryResult.response.body) throw new Error("upstream returned no body");
+      return retryResult.response.body;
+    };
+    providerResponse = new Response(
+      createEmptyRetryStream({
+        body: providerResponse.body,
+        reexecute,
+        signal: streamController.signal,
+        log,
+        onExhausted: (reason, { upstreamError } = {}) => {
+          if (!onUpstreamEmptyExhausted) return;
+          const resetMs = executor.parseRetryFromErrorMessage?.(upstreamError?.message || reason);
+          return onUpstreamEmptyExhausted(
+            formatProviderError(new Error(reason), provider, model, HTTP_STATUS.BAD_GATEWAY),
+            resetMs ? Date.now() + resetMs : undefined
+          );
+        },
+      }),
+      { status: providerResponse.status, headers: providerResponse.headers }
+    );
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, apiKeyReservation, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };

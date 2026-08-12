@@ -1,7 +1,7 @@
 // Antigravity empty-stream guard — oh-my-pi parity: everything (thinking
 // included) streams live; empty attempts are retried in-stream by splicing the
 // retried upstream into the same client stream; exhaustion emits an in-stream
-// {error} event (#2188, #2229, #2250, #2259, #2431).
+// {error} event (#2188, #2229, #2250, #2259).
 import { describe, it, expect, vi } from "vitest";
 import { createEmptyRetryStream } from "../../open-sse/handlers/chatCore/emptyStreamGuard.js";
 import { translateResponse, initState } from "../../open-sse/translator/index.js";

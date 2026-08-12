@@ -106,7 +106,7 @@ function toClaudeUsage(usage) {
     output_tokens: outputTokens
   };
   if (cacheReadTokens > 0) claudeUsage.cache_read_input_tokens = cacheReadTokens;
-  if (cacheCreationTokens > 0) claudeUsage.cache_creation_tokens = cacheCreateTokens;
+  if (cacheCreateTokens > 0) claudeUsage.cache_creation_input_tokens = cacheCreateTokens;
 
   // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
   // No need to add separately as Claude expects total output_tokens
@@ -154,7 +154,7 @@ export function openaiToClaudeResponse(chunk, state) {
   const choice = chunk.choices[0];
   const delta = choice.delta;
 
-  // Track usage from OpenAI chunk if present
+  // Track usage from OpenAI chunk if available
   if (chunk.usage && typeof chunk.usage === "object") {
     state.usage = toClaudeUsage(chunk.usage);
   }
@@ -265,26 +265,7 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          const buffered = (state.toolArgBuffers.get(idx) || "") + tc.function.arguments;
-          state.toolArgBuffers.set(idx, buffered);
-
-          // If the accumulated args already form a complete JSON object, emit the
-          // sanitized input_json_delta now (so well-formed single-chunk tool args
-          // surface immediately). Partial args keep buffering to finish.
-          if (!toolInfo.emitted) {
-            try {
-              JSON.parse(buffered); // only emit once the JSON is complete
-              const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-              toolInfo.emitted = true;
-              results.push({
-                type: "content_block_delta",
-                index: toolInfo.blockIndex,
-                delta: { type: "input_json_delta", partial_json: sanitized }
-              });
-            } catch {
-              // incomplete JSON — keep buffering for the finish path
-            }
-          }
+          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
         }
       }
     }
@@ -300,21 +281,6 @@ export function openaiToClaudeResponse(chunk, state) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
     flushToolBlocks(state, results);
-    for (const [idx, toolInfo] of state.toolCalls) {
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered && !toolInfo.emitted) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
-    }
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
