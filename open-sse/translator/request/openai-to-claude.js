@@ -7,6 +7,7 @@ import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { decodeClaudeThinkingEnvelope } from "../concerns/claudeThinking.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -60,7 +61,7 @@ export function openaiToClaudeRequest(model, body, stream) {
 
     for (const msg of nonSystemMessages) {
       const newRole = (msg.role === ROLE.USER || msg.role === ROLE.TOOL) ? ROLE.USER : ROLE.ASSISTANT;
-      const blocks = getContentBlocksFromMessage(msg, toolNameMap);
+      const blocks = getContentBlocksFromMessage(msg, toolNameMap, model);
       const hasToolUse = blocks.some(b => b.type === CLAUDE_BLOCK.TOOL_USE);
       const hasToolResult = blocks.some(b => b.type === CLAUDE_BLOCK.TOOL_RESULT);
 
@@ -123,9 +124,9 @@ export function openaiToClaudeRequest(model, body, stream) {
 \`\`\`json
 ${schemaJson}
 \`\`\`
-Respond ONLY with the JSON object, no other text and no markdown code fences.`);
+Respond ONLY with the JSON object, no other text.`);
     } else if (responseFormat.type === "json_object") {
-      systemParts.push("You must respond with valid JSON. Respond ONLY with a JSON object, no other text and no markdown code fences.");
+      systemParts.push("You must respond with valid JSON. Respond ONLY with a JSON object, no other text.");
     }
   }
 
@@ -194,20 +195,11 @@ Respond ONLY with the JSON object, no other text and no markdown code fences.`);
     result._toolNameMap = toolNameMap;
   }
 
-  // Responses-API custom/freeform tool names ride along as translator metadata.
-  // openai-responses -> claude has no direct translator, so it pivots through
-  // this one; a fresh result object is built above, so the metadata has to be
-  // carried over explicitly or chatCore loses it and emits function_call
-  // instead of custom_tool_call for freeform tools.
-  if (body._customToolNames) {
-    result._customToolNames = body._customToolNames;
-  }
-
   return result;
 }
 
 // Get content blocks from single message
-function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
+function getContentBlocksFromMessage(msg, toolNameMap = new Map(), model = "") {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
@@ -262,10 +254,17 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
-    const hasThinkingBlock = Array.isArray(msg.content) && msg.content.some(part => part.type === CLAUDE_BLOCK.THINKING);
-    if (msg.reasoning_content && !hasThinkingBlock) {
-      blocks.push({ type: CLAUDE_BLOCK.THINKING, thinking: msg.reasoning_content });
-    }
+    const ownsToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+    const encrypted =
+      (typeof msg.encrypted_content === "string" && msg.encrypted_content) ||
+      (typeof msg.reasoning_encrypted_content === "string" && msg.reasoning_encrypted_content) ||
+      (typeof msg.reasoning?.encrypted_content === "string" && msg.reasoning.encrypted_content) ||
+      "";
+    const restoredThinking = ownsToolCalls
+      ? decodeClaudeThinkingEnvelope(encrypted, model)
+      : null;
+    if (restoredThinking) blocks.push(...restoredThinking);
+
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
@@ -273,7 +272,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
         } else if (part.type === CLAUDE_BLOCK.TOOL_USE) {
           // Tool name already has prefix from tool declarations, keep as-is
           blocks.push({ type: CLAUDE_BLOCK.TOOL_USE, id: part.id, name: part.name, input: part.input });
-        } else if (part.type === CLAUDE_BLOCK.THINKING) {
+        } else if ((part.type === CLAUDE_BLOCK.THINKING || part.type === CLAUDE_BLOCK.REDACTED_THINKING) && !restoredThinking) {
           // Include thinking block but strip cache_control (not allowed on thinking blocks)
           const { cache_control, ...thinkingBlock } = part;
           blocks.push(thinkingBlock);
