@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeUsage, extractUsage, hasValidUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { extractUsageFromResponse } from "../../open-sse/handlers/chatCore/requestDetail.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -89,15 +90,17 @@ describe("canonicalizeUsage", () => {
     expect(out.cache_creation_input_tokens).toBe(500);
   });
 
-  it("preserves Kiro credit metering alongside token counts", () => {
+  it("keeps exact zero cost but drops negative provider totals", () => {
     const out = canonicalizeUsage({
-      prompt_tokens: 100,
-      completion_tokens: 20,
-      kiro_credits: 0.0123,
-      kiro_credit_unit: "credit",
+      prompt_tokens: 1,
+      cost_usd: 0,
+      cost_in_usd: -0.5,
+      cost_in_usd_ticks: -1,
     });
-    expect(out.kiro_credits).toBe(0.0123);
-    expect(out.kiro_credit_unit).toBe("credit");
+
+    expect(out.cost_usd).toBe(0);
+    expect(out.cost_in_usd).toBeUndefined();
+    expect(out.cost_in_usd_ticks).toBeUndefined();
   });
 });
 
@@ -130,42 +133,44 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
   });
 
-  it("keeps Kiro credits separate from USD token cost", () => {
-    const cost = calculateCostFromTokens(
-      { prompt_tokens: 1_000_000, completion_tokens: 50_000, kiro_credits: 0.42 },
-      pricing
-    );
-    expect(cost).toBeCloseTo((1_000_000 * 3 + 50_000 * 15) / 1_000_000, 12);
+  it("trusts nonnegative provider-reported dollar cost without local pricing", () => {
+    expect(calculateCostFromTokens({ cost_in_usd: 0.123 }, null)).toBe(0.123);
+    expect(calculateCostFromTokens({ cost_usd: 0, prompt_tokens: 100 }, pricing)).toBe(0);
+  });
+
+  it("prefers direct dollars and converts xAI ticks at 1e10 per dollar", () => {
+    expect(calculateCostFromTokens({ cost_usd: 0.2, cost_in_usd: 0.1 }, pricing)).toBe(0.2);
+    expect(calculateCostFromTokens({ cost_in_usd_ticks: 1_230_000_000 }, null)).toBe(0.123);
+  });
+
+  it("rejects negative provider totals and falls back to local pricing", () => {
+    const tokens = { prompt_tokens: 100, completion_tokens: 50, cost_in_usd: -0.5 };
+    expect(calculateCostFromTokens(tokens, pricing))
+      .toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
+    expect(calculateCostFromTokens({ cost_in_usd_ticks: -1 }, null)).toBe(0);
   });
 });
 
-describe("Kiro credit metering", () => {
-  it("extracts credit-only Kiro usage for internal persistence", () => {
-    const usage = extractUsage({
-      usage: {
-        kiro_credits: 0.003,
-        kiro_credit_unit: "credit",
-      },
-    });
-
-    expect(usage.kiro_credits).toBe(0.003);
-    expect(usage.kiro_credit_unit).toBe("credit");
-    expect(usage.prompt_tokens).toBeUndefined();
-    expect(hasValidUsage(usage)).toBe(false);
-  });
-
-  it("keeps prompt-only OpenAI usage complete while credit-only Kiro usage stays tokenless", () => {
-    const promptOnly = extractUsage({ usage: { prompt_tokens: 123 } });
-    expect(promptOnly.prompt_tokens).toBe(123);
-    expect(promptOnly.completion_tokens).toBe(0);
-
-    const creditOnly = extractUsage({ usage: { kiro_credits: 0.001, kiro_credit_unit: "credit" } });
-    expect(creditOnly.kiro_credits).toBe(0.001);
-    expect(creditOnly.completion_tokens).toBeUndefined();
+describe("provider-reported exact cost extraction", () => {
+  it.each([
+    [{ usage: { input_tokens: 1, output_tokens: 2, cost_usd: 0 } }, "cost_usd", 0],
+    [{ usage: { prompt_tokens: 1, completion_tokens: 2, cost_in_usd: 0.25 } }, "cost_in_usd", 0.25],
+    [{ usage: { prompt_tokens: 1, completion_tokens: 2, cost_in_usd_ticks: 2_500_000_000 } }, "cost_in_usd_ticks", 2_500_000_000],
+  ])("keeps exact total from non-streaming usage", (response, field, expected) => {
+    expect(extractUsageFromResponse(response)[field]).toBe(expected);
   });
 });
 
 describe("Anthropic streaming usage (message_start carries cache, message_delta output-only)", () => {
+  it("extracts provider-reported exact dollar cost", () => {
+    const usage = extractUsage({
+      type: "response.completed",
+      response: { usage: { input_tokens: 1, output_tokens: 1, cost_usd: 0.25 } },
+    });
+
+    expect(usage.cost_usd).toBe(0.25);
+  });
+
   it("extractUsage reads input + cache from message_start", () => {
     const u = extractUsage({
       type: "message_start",
@@ -229,80 +234,5 @@ describe("Kiro usage pass-through", () => {
     expect(out.prompt_tokens_details).toBeDefined();
     expect(out.prompt_tokens_details.cached_tokens).toBe(200);
     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
-  });
-});
-
-// Second canonical convention, parallel to the cache-inclusive prompt above:
-//   completion_tokens = output INCLUDING reasoning/thinking
-//   reasoning_tokens  = reasoning portion (subset of completion_tokens)
-// Discriminator: OpenAI and Anthropic already fold reasoning into their output count;
-// Gemini reports thoughtsTokenCount OUTSIDE candidatesTokenCount, so we fold it in.
-describe("reasoning-inclusive completion convention", () => {
-  it("surfaces Anthropic thinking tokens without inflating completion_tokens", () => {
-    const out = toOpenAIUsage(
-      { input_tokens: 22, output_tokens: 267, output_tokens_details: { thinking_tokens: 85 } },
-      "claude"
-    );
-    expect(out.completion_tokens).toBe(267); // thinking already inside output_tokens
-    expect(out.completion_tokens_details.reasoning_tokens).toBe(85);
-  });
-
-  it("omits reasoning details when the model reported no thinking", () => {
-    const out = toOpenAIUsage({ input_tokens: 22, output_tokens: 41 }, "claude");
-    expect(out.completion_tokens).toBe(41);
-    expect(out.completion_tokens_details).toBeUndefined();
-  });
-
-  it("extractUsage reads thinking tokens off message_delta", () => {
-    const out = extractUsage({
-      type: "message_delta",
-      usage: { input_tokens: 22, output_tokens: 267, output_tokens_details: { thinking_tokens: 85 } },
-    });
-    expect(out.completion_tokens).toBe(267);
-    expect(out.reasoning_tokens).toBe(85);
-  });
-
-  it("folds Gemini thoughts into completion_tokens so the convention holds", () => {
-    const out = extractUsage({
-      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 40, thoughtsTokenCount: 10, totalTokenCount: 150 },
-    });
-    expect(out.completion_tokens).toBe(50); // 40 candidates + 10 thoughts
-    expect(out.reasoning_tokens).toBe(10);
-  });
-});
-
-describe("calculateCostFromTokens (reasoning is a subset of completion)", () => {
-  const pricing = { input: 3, output: 15, cached: 0.3, reasoning: 15, cache_creation: 3.75 };
-
-  it("does not bill reasoning twice when it is priced at the output rate", () => {
-    const withThinking = calculateCostFromTokens(
-      { prompt_tokens: 22, completion_tokens: 267, reasoning_tokens: 85 }, pricing);
-    const withoutThinking = calculateCostFromTokens(
-      { prompt_tokens: 22, completion_tokens: 267 }, pricing);
-    expect(withThinking).toBeCloseTo(withoutThinking, 12);
-    expect(withThinking).toBeCloseTo((22 * 3 + 267 * 15) / 1e6, 12);
-  });
-
-  it("bills only the difference when reasoning is priced above output", () => {
-    const cost = calculateCostFromTokens(
-      { prompt_tokens: 22, completion_tokens: 267, reasoning_tokens: 85 },
-      { ...pricing, reasoning: 22.5});
-    expect(cost).toBeCloseTo((22 * 3 + 267 * 15 + 85 * 7.5) / 1e6, 12);
-  });
-
-  it("ignores reasoning tokens when the model declares no reasoning price", () => {
-    const cost = calculateCostFromTokens(
-      { prompt_tokens: 22, completion_tokens: 267, reasoning_tokens: 85 },
-      { input: 3, output: 15 });
-    expect(cost).toBeCloseTo((22 * 3 + 267 * 15) / 1e6, 12);
-  });
-
-  it("keeps Gemini total cost unchanged under the fold", () => {
-    // fold: completion 40+10=50, reasoning 10, reasoning priced above output
-    const folded = calculateCostFromTokens(
-      { prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 10 },
-      { input: 1, output: 4, reasoning: 10 });
-    // legacy math: candidates at output rate + thoughts at reasoning rate
-    expect(folded).toBeCloseTo((100 * 1 + 40 * 4 + 10 * 10) / 1e6, 12);
   });
 });

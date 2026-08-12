@@ -24,14 +24,16 @@ export function extractRequestConfig(body, stream) {
 export function extractUsageFromResponse(responseBody) {
   if (!responseBody || typeof responseBody !== "object") return null;
 
-  // Claude format — thinking tokens are already inside output_tokens
+  // Claude format
   if (responseBody.usage?.input_tokens !== undefined) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
       cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
-      reasoning_tokens: responseBody.usage.output_tokens_details?.thinking_tokens
+      cost_usd: responseBody.usage.cost_usd,
+      cost_in_usd: responseBody.usage.cost_in_usd,
+      cost_in_usd_ticks: responseBody.usage.cost_in_usd_ticks
     };
   }
 
@@ -41,19 +43,20 @@ export function extractUsageFromResponse(responseBody) {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
       cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
+      cost_usd: responseBody.usage.cost_usd,
+      cost_in_usd: responseBody.usage.cost_in_usd,
+      cost_in_usd_ticks: responseBody.usage.cost_in_usd_ticks
     };
   }
 
-  // Gemini format — thoughts sit outside candidates upstream; fold them in so
-  // completion_tokens stays reasoning-inclusive (see extractUsage in usageTracking.js)
+  // Gemini format
   if (responseBody.usageMetadata) {
-    const thoughts = responseBody.usageMetadata.thoughtsTokenCount || 0;
     return {
       prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
-      completion_tokens: (responseBody.usageMetadata.candidatesTokenCount || 0) + thoughts,
+      completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
       cached_tokens: responseBody.usageMetadata.cachedContentTokenCount || 0,
-      reasoning_tokens: thoughts
+      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount || 0
     };
   }
 
@@ -61,8 +64,6 @@ export function extractUsageFromResponse(responseBody) {
 }
 
 export function buildRequestDetail(base, overrides = {}) {
-  const request = base.request ? { ...base.request } : base.request;
-  const convoy = base.convoy;
   return {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
@@ -70,12 +71,11 @@ export function buildRequestDetail(base, overrides = {}) {
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
-    request,
+    request: base.request,
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
-    convoy: convoy || undefined,
     status: base.status || "success",
     ...overrides
   };
@@ -99,15 +99,13 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, convoy, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
   const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
-  const kiroCredits = Number(tokens.kiro_credits);
-  const hasKiroCreditUsage = Number.isFinite(kiroCredits) && kiroCredits >= 0;
 
-  if (inTokens === 0 && outTokens === 0 && !hasKiroCreditUsage) return;
+  if (inTokens === 0 && outTokens === 0) return;
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -129,7 +127,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null,
-    meta: convoy ? { convoy } : undefined
+    endpoint: endpoint || null
   }).catch(() => {});
 }

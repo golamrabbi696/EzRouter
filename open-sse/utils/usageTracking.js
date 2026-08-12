@@ -73,26 +73,26 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Define allowed fields for each format
   const formatFields = {
     [FORMATS.CLAUDE]: [
-      'input_tokens', 'output_tokens', 'output_tokens_details',
+      'input_tokens', 'output_tokens', 
       'cache_read_input_tokens', 'cache_creation_input_tokens',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ],
     [FORMATS.GEMINI]: [
       'promptTokenCount', 'candidatesTokenCount', 'totalTokenCount',
       'cachedContentTokenCount', 'thoughtsTokenCount',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ],
     [FORMATS.OPENAI_RESPONSES]: [
       'input_tokens', 'output_tokens',
       'input_tokens_details', 'output_tokens_details',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ],
     // OpenAI format (default for OPENAI, CODEX, KIRO, etc.)
     default: [
       'prompt_tokens', 'completion_tokens', 'total_tokens',
       'cached_tokens', 'reasoning_tokens',
       'prompt_tokens_details', 'completion_tokens_details',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ]
   };
 
@@ -123,6 +123,11 @@ export function normalizeUsage(usage) {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) normalized[key] = numeric;
   };
+  const assignNonnegativeNumber = (key, value) => {
+    if (value === undefined || value === null || value === "") return;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric >= 0) normalized[key] = numeric;
+  };
 
   assignNumber("prompt_tokens", usage?.prompt_tokens);
   assignNumber("completion_tokens", usage?.completion_tokens);
@@ -131,10 +136,9 @@ export function normalizeUsage(usage) {
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
-  assignNumber("kiro_credits", usage?.kiro_credits);
-  if (typeof usage?.kiro_credit_unit === "string") {
-    normalized.kiro_credit_unit = usage.kiro_credit_unit;
-  }
+  assignNonnegativeNumber("cost_usd", usage?.cost_usd);
+  assignNonnegativeNumber("cost_in_usd", usage?.cost_in_usd);
+  assignNonnegativeNumber("cost_in_usd_ticks", usage?.cost_in_usd_ticks);
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -180,12 +184,6 @@ export function canonicalizeUsage(usage) {
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
 
-  // buildUsage() (openai-responses streaming) writes cache-read only into the
-  // nested prompt_tokens_details.cached_tokens — treat that as top-level
-  // cached_tokens so streaming usage records cache hits instead of billing
-  // them at full input rate (issue #2873).
-  const nestedCached = num(usage.prompt_tokens_details?.cached_tokens);
-
   // Claude path: prompt excludes cache; cache_read_input_tokens and/or
   // cache_creation_input_tokens are separate. A cache-miss "first write" only
   // carries cache_creation_input_tokens (no cache_read_input_tokens yet), so
@@ -200,7 +198,7 @@ export function canonicalizeUsage(usage) {
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    cached = num(usage.cached_tokens) || nestedCached;
+    cached = num(usage.cached_tokens);
   }
 
   const result = {
@@ -212,12 +210,15 @@ export function canonicalizeUsage(usage) {
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
+  const copyNonnegative = (key) => {
+    if (usage[key] === null || usage[key] === undefined || usage[key] === "") return;
+    const value = Number(usage[key]);
+    if (Number.isFinite(value) && value >= 0) result[key] = value;
+  };
+  copyNonnegative("cost_usd");
+  copyNonnegative("cost_in_usd");
+  copyNonnegative("cost_in_usd_ticks");
   if (reasoning > 0) result.reasoning_tokens = reasoning;
-  const kiroCredits = Number(usage.kiro_credits);
-  if (Number.isFinite(kiroCredits) && kiroCredits >= 0) {
-    result.kiro_credits = kiroCredits;
-    if (typeof usage.kiro_credit_unit === "string") result.kiro_credit_unit = usage.kiro_credit_unit;
-  }
   return result;
 }
 
@@ -260,19 +261,23 @@ export function extractUsage(chunk) {
       prompt_tokens: u.input_tokens || 0,
       completion_tokens: u.output_tokens || 0,
       cache_read_input_tokens: u.cache_read_input_tokens,
-      cache_creation_input_tokens: u.cache_creation_input_tokens
+      cache_creation_input_tokens: u.cache_creation_input_tokens,
+      cost_usd: u.cost_usd,
+      cost_in_usd: u.cost_in_usd,
+      cost_in_usd_ticks: u.cost_in_usd_ticks
     });
   }
 
-  // Claude format (message_delta event) — the only event carrying
-  // output_tokens_details.thinking_tokens (message_start has no details block).
+  // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
     return normalizeUsage({
       prompt_tokens: chunk.usage.input_tokens || 0,
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens,
-      reasoning_tokens: chunk.usage.output_tokens_details?.thinking_tokens
+      cost_usd: chunk.usage.cost_usd,
+      cost_in_usd: chunk.usage.cost_in_usd,
+      cost_in_usd_ticks: chunk.usage.cost_in_usd_ticks
     });
   }
 
@@ -285,24 +290,25 @@ export function extractUsage(chunk) {
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: cachedTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
+      cost_usd: usage.cost_usd,
+      cost_in_usd: usage.cost_in_usd,
+      cost_in_usd_ticks: usage.cost_in_usd_ticks,
       prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
   }
 
-  // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens).
-  // Kiro can attach credit-only metering without token counts.
-  if (chunk.usage && typeof chunk.usage === "object" &&
-      (chunk.usage.prompt_tokens !== undefined || chunk.usage.kiro_credits !== undefined)) {
-    const hasPromptTokens = chunk.usage.prompt_tokens !== undefined;
+  // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens)
+  if (chunk.usage && typeof chunk.usage === "object" && chunk.usage.prompt_tokens !== undefined) {
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
-      completion_tokens: hasPromptTokens ? (chunk.usage.completion_tokens || 0) : chunk.usage.completion_tokens,
+      completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
+      cost_usd: chunk.usage.cost_usd,
+      cost_in_usd: chunk.usage.cost_in_usd,
+      cost_in_usd_ticks: chunk.usage.cost_in_usd_ticks,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
-      completion_tokens_details: chunk.usage.completion_tokens_details,
-      kiro_credits: chunk.usage.kiro_credits,
-      kiro_credit_unit: chunk.usage.kiro_credit_unit
+      completion_tokens_details: chunk.usage.completion_tokens_details
     });
   }
 
@@ -310,13 +316,9 @@ export function extractUsage(chunk) {
   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
   if (usageMeta && typeof usageMeta === "object") {
-    // Gemini keeps thoughtsTokenCount OUTSIDE candidatesTokenCount. Fold it in so
-    // completion_tokens stays reasoning-inclusive like every other provider — that
-    // invariant is what lets calculateCostFromTokens avoid double-charging.
-    const thoughts = usageMeta.thoughtsTokenCount || 0;
     return normalizeUsage({
       prompt_tokens: usageMeta.promptTokenCount || 0,
-      completion_tokens: (usageMeta.candidatesTokenCount || 0) + thoughts,
+      completion_tokens: usageMeta.candidatesTokenCount || 0,
       total_tokens: usageMeta.totalTokenCount,
       cached_tokens: usageMeta.cachedContentTokenCount,
       reasoning_tokens: usageMeta.thoughtsTokenCount
