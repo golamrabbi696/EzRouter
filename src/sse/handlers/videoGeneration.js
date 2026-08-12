@@ -200,7 +200,10 @@ export async function handleVideoGet(request, requestId) {
   let provider = DEFAULT_VIDEO_PROVIDER;
   if (preferredConnectionId) {
     const pinnedConnection = await getProviderConnectionById(preferredConnectionId);
-    if (pinnedConnection?.provider) provider = pinnedConnection.provider;
+    if (pinnedConnection?.provider && (getVideoConfig(pinnedConnection.provider) || isCustomVideoProvider(pinnedConnection.provider))) {
+      provider = pinnedConnection.provider;
+    }
+  }
   }
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
