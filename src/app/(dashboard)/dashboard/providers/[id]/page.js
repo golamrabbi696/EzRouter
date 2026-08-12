@@ -193,7 +193,7 @@ export default function ProviderDetailPage() {
     : "API Key";
   // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
   const resolveThinkingSuffix = (modelId) => {
-    if (!thinkingMode || thinkingMode === "auto") return null;
+    if (!thinkingMode || thinkingMode === "auto" || thinkingMode === "none") return null;
     const levels = getThinkingLevels(providerId, modelId);
     return levels && levels.includes(thinkingMode) ? thinkingMode : null;
   };
@@ -207,7 +207,7 @@ export default function ProviderDetailPage() {
       if (!modelId || seen.has(modelId)) return;
       seen.add(modelId);
       const lv = getThinkingLevels(providerId, modelId);
-      if (lv) lv.forEach((l) => { if (l !== "none") set.add(l); });
+      if (lv) lv.forEach((l) => set.add(l));
     };
     for (const m of models) addLevels(m.id);
     for (const m of kiloFreeModels) addLevels(m.id);
@@ -216,7 +216,9 @@ export default function ProviderDetailPage() {
       if ((entry.kind || entry.type || "llm") !== "llm") continue;
       addLevels(entry.id);
     }
-    return set.size ? ["auto", ...[...set]] : null;
+    if (!set.size) return null;
+    const rest = [...set].filter((l) => l !== "none");
+    return ["auto", "none", ...rest];
   })();
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)

@@ -15,6 +15,7 @@ import {
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { getConsistentMachineId } from "../shared/machineId.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 // Server-generated item id prefixes that /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -452,6 +453,11 @@ export class GrokCliExecutor extends BaseExecutor {
     stripStoredItemReferences(body);
     normalizeGrokCliTools(body);
 
+    // xAI cli-chat-proxy enforces a maximum of 200 tools per request
+    if (Array.isArray(body.tools) && body.tools.length > 200) {
+      body.tools = body.tools.slice(0, 200);
+    }
+
     // Turn index after input is finalized (user-message count, monotonic per session)
     this._currentTurnIdx = resolveGrokCliTurnIdx(this._currentSessionId, body.input, requestKey);
 
@@ -472,25 +478,30 @@ export class GrokCliExecutor extends BaseExecutor {
     body.model = resolvedModel;
     this._currentModel = resolvedModel;
 
-    // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high.
-    // grok-build and Composer reject reasoningEffort but still accept summary/encrypted continuity.
+    // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high
+    // Non-reasoning models (grok-composer-2.5-fast, grok-build) must not send reasoning
+    const caps = getCapabilitiesForModel("grok-cli", resolvedModel);
     const supportsReasoningEffort = supportsGrokCliReasoningEffort(resolvedModel);
-    if (!body.reasoning || typeof body.reasoning !== "object") {
-      body.reasoning = { summary: "concise" };
-      if (supportsReasoningEffort) {
-        body.reasoning.effort = normalizeGrokCliEffort(body.reasoning_effort || modelEffort);
+    if (caps.reasoning !== false) {
+      if (!body.reasoning || typeof body.reasoning !== "object") {
+        body.reasoning = { summary: "concise" };
+        if (supportsReasoningEffort) {
+          body.reasoning.effort = normalizeGrokCliEffort(body.reasoning_effort || modelEffort);
+        }
+      } else {
+        if (supportsReasoningEffort) {
+          body.reasoning.effort = normalizeGrokCliEffort(
+            body.reasoning.effort || body.reasoning_effort || modelEffort,
+          );
+        } else {
+          delete body.reasoning.effort;
+        }
+        if (!body.reasoning.summary) body.reasoning.summary = "concise";
       }
     } else {
-      if (supportsReasoningEffort) {
-        body.reasoning.effort = normalizeGrokCliEffort(
-          body.reasoning.effort || body.reasoning_effort || modelEffort,
-        );
-      } else {
-        delete body.reasoning.effort;
-      }
-      if (!body.reasoning.summary) body.reasoning.summary = "concise";
+      delete body.reasoning;
     }
-    delete body.reasoning_effort;
+delete body.reasoning_effort;
 
     // Encrypted reasoning for multi-turn continuity (CLI always requests this)
     if (body.reasoning && body.reasoning.effort !== "none") {
