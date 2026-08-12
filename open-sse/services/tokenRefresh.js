@@ -17,6 +17,7 @@ import {
   refreshTraeToken,
   refreshZedToken,
   refreshWindsurfToken,
+
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
@@ -37,6 +38,7 @@ export {
   refreshTraeToken,
   refreshZedToken,
   refreshWindsurfToken,
+
   classifyOAuthRefreshError,
 };
 
@@ -133,6 +135,7 @@ function vertexRefreshHandler(c, log) {
 }
 
 const REFRESH_HANDLERS = {
+  "frontier-for-all": (c, log) => refreshFrontierForAllToken(c.refreshToken, log),
   "gemini-cli": (c, log) => refreshGoogleToken(c.refreshToken, PROVIDERS["gemini-cli"].clientId, PROVIDERS["gemini-cli"].clientSecret, log),
   antigravity: (c, log) => refreshGoogleToken(c.refreshToken, PROVIDERS.antigravity.clientId, PROVIDERS.antigravity.clientSecret, log),
   claude: (c, log) => refreshClaudeOAuthToken(c.refreshToken, log),
@@ -150,6 +153,7 @@ const REFRESH_HANDLERS = {
   trae: (c, log) => refreshTraeToken(c.refreshToken, c, log),
   zed: () => refreshZedToken(),
   windsurf: (c, log) => refreshWindsurfToken(c, log),
+
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
   kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),
   "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),

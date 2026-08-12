@@ -1,6 +1,6 @@
 {
   "alicode-intl": {
-    "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
+    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
     "headers": {},
     "quirks": {
       "preserveCacheControl": true
@@ -25,7 +25,7 @@
   },
   "antigravity": {
     "baseUrls": [
-      "https://daily-cloudcode-pa.googleapis.com"
+      "https://cloudcode-pa.googleapis.com"
     ],
     "format": "antigravity",
     "headers": {
@@ -115,7 +115,10 @@
       "oauth": {
         "header": "Authorization",
         "scheme": "bearer"
-      }
+      },
+      "hooks": [
+        "claudeOverlay"
+      ]
     },
     "usage": {
       "oauthUrl": "https://api.anthropic.com/api/oauth/usage",
@@ -545,6 +548,7 @@
     "headers": {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",
+      "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
       "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
       "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0"
     },
@@ -686,11 +690,6 @@
     "validateUrl": "https://api.studio.nebius.ai/v1/models",
     "format": "openai"
   },
-  "novita": {
-    "baseUrl": "https://api.novita.ai/openai/v1/chat/completions",
-    "validateUrl": "https://api.novita.ai/openai/v1/models",
-    "format": "openai"
-  },
   "nvidia": {
     "baseUrl": "https://integrate.api.nvidia.com/v1/chat/completions",
     "validateUrl": "https://integrate.api.nvidia.com/v1/models",
@@ -756,6 +755,12 @@
       "url": "https://openapi.qoder.sh/api/v2/quota/usage"
     },
     "format": "openai"
+  },
+  "qwen": {
+    "baseUrl": "https://portal.qwen.ai/v1/chat/completions",
+    "format": "openai",
+    "clientId": "f0304373b74a44d2b584a3fb70ca9e56",
+    "tokenUrl": "https://chat.qwen.ai/api/v1/oauth2/token"
   },
   "siliconflow": {
     "baseUrl": "https://api.siliconflow.com/v1/chat/completions",
@@ -876,104 +881,17 @@
     },
     "format": "openai"
   },
-  "codebuddy-intl": {
-    "baseUrl": "https://www.codebuddy.ai/v2/chat/completions",
-    "forceStream": true,
-    "thinkingFormat": "openai",
-    "headers": {
-      "User-Agent": "IDE/2.108.1 CodeBuddy/2.108.1",
-      "X-Product": "SaaS",
-      "X-IDE-Type": "IDE",
-      "X-IDE-Name": "IDE",
-      "x-requested-with": "XMLHttpRequest",
-      "x-codebuddy-request": "1"
-    },
-    "auth": {
-      "combined": true,
-      "header": "Authorization",
-      "scheme": "bearer"
-    },
-    "usage": {
-      "url": "https://www.codebuddy.ai/v2/billing/meter/get-user-resource"
+  "frontier-for-all": {
+    "baseUrl": "https://frontier-for-all.vercel.app/api/v1/chat/completions",
+    "validateUrl": "https://frontier-for-all.vercel.app/api/v1/models",
+    "retry": {
+      "429": {
+        "attempts": 3,
+        "delayMs": 3000
+      }
     },
     "format": "openai",
-    "tokenUrl": "https://www.codebuddy.ai/v2/plugin/auth/token"
-  },
-  "zed": {
-    "baseUrl": "https://cloud.zed.dev/completions",
-    "format": "openai",
-    "forceStream": true,
-    "headers": {
-      "content-type": "application/json"
-    },
-    "auth": {
-      "combined": true,
-      "header": "Authorization",
-      "scheme": "<user_id> <access_token>"
-    },
-    "usage": {
-      "url": "https://cloud.zed.dev/client/users/me"
-    },
-    "modelsUrl": "https://cloud.zed.dev/models"
-  },
-  "api-airforce": {
-    "baseUrl": "https://api.airforce/v1/chat/completions",
-    "validateUrl": "https://api.airforce/v1/models",
-    "headers": {
-      "HTTP-Referer": "https://endpoint-proxy.local",
-      "X-Title": "Endpoint Proxy"
-    },
-    "format": "openai"
-  },
-  "baidu": {
-    "baseUrl": "https://qianfan.baidubce.com/v2/chat/completions",
-    "validateUrl": "https://qianfan.baidubce.com/v2/models",
-    "format": "openai"
-  },
-  "bazaarlink": {
-    "baseUrl": "https://bazaarlink.ai/api/v1/chat/completions",
-    "validateUrl": "https://bazaarlink.ai/api/v1/models",
-    "format": "openai"
-  },
-  "bluesminds": {
-    "baseUrl": "https://api.bluesminds.com/v1/chat/completions",
-    "validateUrl": "https://api.bluesminds.com/v1/models",
-    "format": "openai"
-  },
-  "kilo-gateway": {
-    "baseUrl": "https://api.kilo.ai/api/gateway/chat/completions",
-    "validateUrl": "https://api.kilo.ai/api/gateway/models",
-    "format": "openai"
-  },
-  "llm7": {
-    "baseUrl": "https://api.llm7.io/v1/chat/completions",
-    "validateUrl": "https://api.llm7.io/v1/models",
-    "format": "openai"
-  },
-  "sambanova": {
-    "baseUrl": "https://api.sambanova.ai/v1/chat/completions",
-    "validateUrl": "https://api.sambanova.ai/v1/models",
-    "format": "openai"
-  },
-  "tencent": {
-    "baseUrl": "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
-    "validateUrl": "https://api.hunyuan.cloud.tencent.com/v1/models",
-    "format": "openai"
-  },
-  "morph": {
-    "baseUrl": "https://api.morphllm.com/v1/chat/completions",
-    "validateUrl": "https://api.morphllm.com/v1/models",
-    "format": "openai"
-  },
-  "poolside": {
-    "baseUrl": "https://inference.poolside.ai/v1/chat/completions",
-    "validateUrl": "https://inference.poolside.ai/v1/models",
-    "format": "openai"
-  },
-  "tokenrouter": {
-    "baseUrl": "https://api.tokenrouter.com/v1/chat/completions",
-    "validateUrl": "https://api.tokenrouter.com/v1/models",
-    "thinkingFormat": "openai",
-    "format": "openai"
+    "clientId": "07b329d7-59a0-429d-8037-0f036b7b1efb",
+    "tokenUrl": "https://frontier-for-all.vercel.app/token"
   }
 }

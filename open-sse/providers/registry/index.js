@@ -100,6 +100,7 @@ import p96 from "./xiaomi-mimo.js";
 import p97 from "./xiaomi-tokenplan.js";
 import p98 from "./youcom.js";
 import p99 from "./alims-intl.js";
+<<<<<<< HEAD
 import p100 from "./codebuddy-intl.js";
 // Temporarily hidden — no tool calling support (trae SOLO agent / windsurf gRPC skip ToolCallChunk).
 // Re-enable by uncommenting both the import and the array entry below.
@@ -121,6 +122,9 @@ import p116 from "./tokenrouter.js";
 import p117 from "./selfhosted-stt.js";
 import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
+=======
+import p100 from "./frontier-for-all.js";
+>>>>>>> pr-2851
 
 export default [
   pChenzk,
@@ -225,6 +229,7 @@ export default [
   p98,
   p99,
   p100,
+<<<<<<< HEAD
   // p102, // trae — hidden, no tool calling
   p103,
   p105,
@@ -243,5 +248,7 @@ export default [
   p117,
   p118,
   p119,
+=======
+>>>>>>> pr-2851
 ];
 

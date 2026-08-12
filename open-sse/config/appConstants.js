@@ -185,6 +185,13 @@ export const OAUTH_ENDPOINTS = {
   anthropic: { token: PROVIDER_OAUTH["claude"]?.tokenUrl, auth: "https://api.anthropic.com/v1/oauth/authorize" }, // ≠ claude.authorizeUrl (claude.ai login) — keep
   iflow:     { token: PROVIDER_OAUTH["iflow"]?.tokenUrl, auth: PROVIDER_OAUTH["iflow"]?.authorizeUrl },
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
+  "frontier-for-all": {
+    token: PROVIDER_OAUTH["frontier-for-all"]?.tokenUrl,
+    auth: PROVIDER_OAUTH["frontier-for-all"]?.deviceCodeUrl,
+    deviceCode: PROVIDER_OAUTH["frontier-for-all"]?.deviceCodeUrl,
+    deviceToken: PROVIDER_OAUTH["frontier-for-all"]?.deviceTokenUrl,
+    revoke: PROVIDER_OAUTH["frontier-for-all"]?.revokeUrl,
+  },
 };
 
 let _appVersion;
