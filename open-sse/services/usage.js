@@ -34,7 +34,7 @@ const USAGE_HANDLERS = {
   "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
   antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
-  codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
+  codex: (c) => getCodexUsage(c.accessToken, c.providerSpecificData, c.proxyOptions, c.idToken),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   qoder: async (c) => {
     // PAT (pt-...) connections must be exchanged to a job token before the
@@ -57,7 +57,7 @@ const USAGE_HANDLERS = {
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const { provider, accessToken, apiKey, providerSpecificData, projectId, idToken } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -65,5 +65,5 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
 
   const handler = USAGE_HANDLERS[provider];
   if (!handler) return { message: `Usage API not implemented for ${provider}` };
-  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
+  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions, idToken });
 }
