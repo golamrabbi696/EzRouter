@@ -325,20 +325,55 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
   }
 }
 
-export function formatHeadroomLog(stats) {
+
+export function classifyHeadroomDiagnostic(diagnostics, stats, enabled) {
+  if (stats) return "compressed";
+  if (!enabled) return "disabled";
+
+  const reason = String(diagnostics?.reason || "").toLowerCase();
+  if (reason.includes("missing proxy url")) return "missing-proxy-url";
+  if (reason.includes("timeout") || reason.includes("abort")) return "timeout";
+  if (reason.includes("proxy returned http")) return "http-error";
+  if (reason.includes("openai-responses tool/reasoning")) return "unsafe-responses-input";
+  if (reason.includes("did not translate") || reason.includes("translate to messages")) return "translation-failed";
+  if (reason.includes("unsupported") || reason.includes("did not project")) return "unsupported-shape";
+  if (reason.includes("proxy response")) return "invalid-proxy-response";
+  if (reason.includes("unexpected error")) return "unexpected-error";
+  return "other-skip";
+}
+
+export function formatHeadroomLog(stats, diagnostics = null) {
   if (!stats) return null;
   const before = stats.tokens_before || 0;
   const after = stats.tokens_after || 0;
   const delta = stats.tokens_saved || 0;
   const pct = before > 0 ? ((delta / before) * 100).toFixed(1) : "0";
-  return `reported token delta=${delta} before=${before}${after ? ` after=${after}` : ""} (${pct}%)`.trim();
+  const sizeLine = formatHeadroomSizeLog(diagnostics);
+  return `reported token delta=${delta} before=${before}${after ? ` after=${after}` : ""} (${pct}%)${sizeLine ? ` | ${sizeLine}` : ""}`.trim();
 }
 
 export function formatHeadroomSizeLog(diagnostics) {
   const before = diagnostics?.before;
   const after = diagnostics?.after;
   if (!before || !after) return "";
-  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B`;
+  const parts = [];
+  if (before.bodyBytes != null && after.bodyBytes != null) {
+    parts.push(`body=${before.bodyBytes}B→${after.bodyBytes}B`);
+  }
+  if (before.messageBytes != null && after.messageBytes != null) {
+    parts.push(`messages=${before.messageBytes}B→${after.messageBytes}B`);
+  }
+  if (before.toolSchemaBytes != null && after.toolSchemaBytes != null) {
+    parts.push(`tools=${before.toolSchemaBytes}B→${after.toolSchemaBytes}B`);
+  }
+  if (before.toolHistoryBytes != null && after.toolHistoryBytes != null) {
+    parts.push(`toolHistory=${before.toolHistoryBytes}B→${after.toolHistoryBytes}B`);
+  }
+  if (before.bodyBytes > 0 && after.bodyBytes > 0) {
+    const pct = (((before.bodyBytes - after.bodyBytes) / before.bodyBytes) * 100).toFixed(1);
+    parts.push(`effective=${pct}%`);
+  }
+  return parts.join(" ");
 }
 
 export function isHeadroomPhantomSavings(stats, diagnostics, minShrinkRatio = 0.05) {

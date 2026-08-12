@@ -121,7 +121,7 @@ import p116 from "./tokenrouter.js";
 import p117 from "./selfhosted-stt.js";
 import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
-import p120 from "./frontier-for-all.js";
+import pFrontierForAll from "./frontier-for-all.js";
 
 export default [
   pChenzk,
@@ -226,7 +226,6 @@ export default [
   p98,
   p99,
   p100,
-  p100,
   // p102, // trae — hidden, no tool calling
   p103,
   p105,
@@ -245,6 +244,6 @@ export default [
   p117,
   p118,
   p119,
-  p120,
+  pFrontierForAll,
 ];
 
