@@ -459,6 +459,48 @@ export class CodexExecutor extends BaseExecutor {
     if (isCompact) delete body.stream;
     else body.stream = true;
 
+    // Extract system messages from input[] and merge into instructions field
+    // Codex does not accept role=system in input[], only via the instructions field
+    if (Array.isArray(body.input)) {
+      const systemItems = body.input.filter(
+        (item) => item.role === "system"
+      );
+      if (systemItems.length > 0) {
+        body.input = body.input.filter(
+          (item) => item.role !== "system"
+        );
+        const systemText = systemItems
+          .map((item) => {
+            if (typeof item.content === "string")
+              return item.content;
+            if (Array.isArray(item.content))
+              return item.content
+                .map((c) => c.text || c.output || "")
+                .filter(Boolean)
+                .join("\n");
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n\n");
+        // Prepend to existing instructions (if any), or set new
+        body.instructions = body.instructions
+          ? `${systemText}\n\n${body.instructions}`
+          : systemText;
+      }
+
+      // Normalize content type for assistant messages:
+      // Codex only accepts "output_text" (not "input_text") for role=assistant
+      for (const item of body.input) {
+        if (item.role === "assistant" && Array.isArray(item.content)) {
+          item.content = item.content.map((c) => {
+            if (c.type === "input_text")
+              return { ...c, type: "output_text" };
+            return c;
+          });
+        }
+      }
+    }
+
     // If no instructions provided, inject default Codex instructions
     if (!responsesLite && !isCompact && (!body.instructions || body.instructions.trim() === "")) {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
