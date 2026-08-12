@@ -71,11 +71,7 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
-  // Claude Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
-  "claude-opus-5":     { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
-  "claude-opus-5-thinking": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
-  "claude-opus-5-agentic": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
-  "claude-opus-5-thinking-agentic": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  // Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "claude-opus-4.6":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4.7":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4-7":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
@@ -108,10 +104,6 @@ export const MODEL_CAPABILITIES = {
   "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
-
-  // Grok CLI non-reasoning coding models (cli-chat-proxy rejects reasoningEffort)
-  "grok-composer-2.5-fast": { vision: true, reasoning: false, search: false, thinkingFormat: null, contextWindow: 200000, maxOutput: 30000 },
-  "grok-build":            { vision: true, reasoning: false, search: false, thinkingFormat: null, contextWindow: 512000, maxOutput: 30000 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -120,6 +112,13 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+
+// The 4.6+ Claude generation: adaptive thinking, 1M context, 128k output. Shared by the
+// patterns below so an unlisted variant (claude-opus-4.8-fast, anthropic/claude-sonnet-5,
+// …) inherits the family's real limits instead of dropping to the 200k/64k floor —
+// maxOutput is a clamp ceiling (translator/formats/claude.js), so a stale value silently
+// caps these models at half their output budget.
+const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
@@ -178,11 +177,6 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
-  // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
-  "poolside": {
-    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
-    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
-  },
 };
 
 /**
@@ -193,23 +187,27 @@ export const PROVIDER_CAPABILITIES = {
  */
 export const PATTERN_CAPABILITIES = [
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
-  { pattern: "*claude*opus-5*",     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*opus-4.7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*opus-4.8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-4.6*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-4.7*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.6*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-4.7*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-4.8*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-5*",     caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-4.6*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-4.7*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-5*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  // fable / mythos are newer than 4.6, so they follow the 4.6+ adaptive rule above.
+  // Anthropic rejects thinking.type "enabled" on them outright ("... is not supported
+  // for this model. Use thinking.type.adaptive and output_config.effort"), so a budget
+  // format makes every thinking request 400.
+  { pattern: "*claude*fable*",  caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*mythos*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
-  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
   { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
 
   // ── Gemini (all 2.0+ multimodal + google_search grounding, 1M ctx) ─
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
-  { pattern: "*gemini-3.6*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3*pro*",  caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65535 } },
   { pattern: "*gemini-3*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-2.5*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-budget", thinkingRange: { min: 0, max: 24576 }, contextWindow: 1048576, maxOutput: 65536 } },
@@ -237,9 +235,6 @@ export const PATTERN_CAPABILITIES = [
 
   // ── Grok (vision + Live Search) ──────────────────────────────────
   { pattern: "*grok*image*",    caps: { imageOutput: true } },
-  // Grok Composer / Build (Grok CLI): no client-controlled reasoningEffort (xAI 400 if sent).
-  { pattern: "*grok-composer*", caps: { vision: true, reasoning: false, search: false, thinkingFormat: null, contextWindow: 200000, maxOutput: 30000 } },
-  { pattern: "*grok-build*",    caps: { vision: true, reasoning: false, search: false, thinkingFormat: null, contextWindow: 512000, maxOutput: 30000 } },
   { pattern: "*grok-code*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 256000 } },
   // Grok 4.5 (Grok CLI / Grok Build): 500k context per cli-chat-proxy /v1/models
   { pattern: "*grok-4.5*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 64000 } },
@@ -287,7 +282,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*minimax*",       caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 } },
 
   // ── Xiaomi MiMo (vision, 1M / 262K ctx) ──────────────────────────
-  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*mimo*v2.5*",     caps: { vision: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 } },
   { pattern: "*mimo*",          caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
 
@@ -308,13 +303,6 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*sonar*",         caps: { search: true, contextWindow: 128000 } },
   { pattern: "*pplx*",          caps: { search: true, contextWindow: 128000 } },
   { pattern: "*perplexity*",    caps: { search: true, contextWindow: 128000 } },
-
-  // ── Poolside Laguna (resellers: openrouter/nvidia/kilocode/vercel/...) ──
-  // Free tiers cap S 2.1 well below the paid 1M window → match the free suffix
-  // (":free" or "-free", depending on reseller) before the plain id.
-  { pattern: "*laguna-s-2.1*free*", caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
-  { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 } },
-  { pattern: "*laguna*",        caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
 
   // ── Others ───────────────────────────────────────────────────────
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
@@ -358,53 +346,4 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
-}
-
-const COMBO_BOOLEAN_CAPABILITIES = [
-  "vision", "pdf", "audioInput", "videoInput", "imageOutput", "audioOutput",
-  "search", "tools", "reasoning", "thinkingCanDisable",
-];
-const COMBO_LIMIT_CAPABILITIES = ["contextWindow", "maxOutput"];
-
-export function aggregateComboCapabilities(
-  models,
-  { comboLookup = {}, resolveCapabilities = () => null } = {},
-) {
-  if (!Array.isArray(models) || models.length === 0) return null;
-  const flatten = (members, stack = new Set()) => {
-    const leaves = [];
-    for (const member of members) {
-      const nested = comboLookup[member];
-      if (!nested) {
-        leaves.push(member);
-        continue;
-      }
-      if (!Array.isArray(nested) || nested.length === 0 || stack.has(member)) return null;
-      const next = new Set(stack);
-      next.add(member);
-      const resolvedNested = flatten(nested, next);
-      if (!resolvedNested) return null;
-      leaves.push(...resolvedNested);
-    }
-    return leaves;
-  };
-  const leaves = flatten(models);
-  if (!leaves) return null;
-  const resolved = leaves.map(resolveCapabilities);
-  if (resolved.some((capabilities) => !capabilities || typeof capabilities !== "object")) return null;
-
-  const aggregate = {};
-  for (const field of COMBO_BOOLEAN_CAPABILITIES) {
-    const values = resolved.map((capabilities) => capabilities[field]);
-    if (values.every((value) => value === undefined)) continue;
-    if (!values.every((value) => typeof value === "boolean")) return null;
-    aggregate[field] = values.every(Boolean);
-  }
-  for (const field of COMBO_LIMIT_CAPABILITIES) {
-    const values = resolved.map((capabilities) => capabilities[field]);
-    if (values.every((value) => value === undefined)) continue;
-    if (!values.every((value) => Number.isFinite(value) && value > 0)) return null;
-    aggregate[field] = Math.min(...values);
-  }
-  return aggregate;
 }
