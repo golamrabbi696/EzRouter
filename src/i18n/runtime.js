@@ -54,6 +54,28 @@ export function onLocaleChange(callback) {
   };
 }
 
+function isTranslationSkipped(element) {
+  let current = element;
+  while (current) {
+    if (current.hasAttribute?.("data-i18n-skip")) return true;
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function processTranslatableAttributes(element) {
+  if (!element || isTranslationSkipped(element)) return;
+
+  const originals = element._i18nOriginalAttributes || (element._i18nOriginalAttributes = {});
+  for (const attribute of ["placeholder", "title", "aria-label"]) {
+    const current = element.getAttribute?.(attribute);
+    if (!current) continue;
+    if (!(attribute in originals)) originals[attribute] = current;
+    const translated = translate(originals[attribute]);
+    if (translated !== current) element.setAttribute(attribute, translated);
+  }
+}
+
 // Process text node
 function processTextNode(node) {
   if (!node.nodeValue || !node.nodeValue.trim()) return;
@@ -63,13 +85,7 @@ function processTextNode(node) {
   if (!parent) return;
   
   // Skip if parent or any ancestor has data-i18n-skip attribute
-  let element = parent;
-  while (element) {
-    if (element.hasAttribute && element.hasAttribute('data-i18n-skip')) {
-      return;
-    }
-    element = element.parentElement;
-  }
+  if (isTranslationSkipped(parent)) return;
   
   const tagName = parent.tagName?.toLowerCase();
   
@@ -90,16 +106,25 @@ function processTextNode(node) {
   // Use original text for translation
   const original = node._originalText;
   const translated = translate(original);
+  const leadingWhitespace = original.match(/^\s*/)?.[0] || "";
+  const trailingWhitespace = original.match(/\s*$/)?.[0] || "";
+  const translatedWithWhitespace = translated === original
+    ? original
+    : `${leadingWhitespace}${translated.trim()}${trailingWhitespace}`;
   
   // Only update if different to avoid unnecessary DOM mutations
-  if (translated !== node.nodeValue) {
-    node.nodeValue = translated;
+  if (translatedWithWhitespace !== node.nodeValue) {
+    node.nodeValue = translatedWithWhitespace;
   }
 }
 
 // Process all text nodes in element
 function processElement(element) {
   if (!element) return;
+
+  processTranslatableAttributes(element);
+  element.querySelectorAll?.("[placeholder], [title], [aria-label]")
+    .forEach(processTranslatableAttributes);
   
   const walker = document.createTreeWalker(
     element,
