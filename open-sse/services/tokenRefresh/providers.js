@@ -1,3 +1,4 @@
+import { CursorService } from "../../../src/lib/oauth/services/cursor.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
@@ -702,6 +703,87 @@ export async function refreshQoderDeviceToken(refreshToken, profileId = "intl", 
           message: e?.message || "Qoder refresh rejected",
         };
       }
+      return null;
+    }
+  }, log);
+}
+
+/**
+ * Frontier for All refresh — public client, form-encoded, no client_secret.
+ *
+ * Refresh tokens ROTATE: every refresh retires the one we sent. Replaying a
+ * retired token makes Frontier revoke the entire family (access + refresh +
+ * every descendant of the original grant), because it cannot tell a buggy retry
+ * from a stolen token. So: dedupRefresh keeps refreshes serial, and any
+ * invalid_grant is reported as unrecoverable so the caller re-authorizes
+ * instead of retrying with a token that is now poison.
+ */
+export async function refreshFrontierToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("frontier-for-all", refreshToken, async () => {
+    try {
+      const response = await fetch(OAUTH_ENDPOINTS["frontier-for-all"].token, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: PROVIDERS["frontier-for-all"].clientId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        const failure = classifyOAuthRefreshError(errorText, response.status);
+        if (failure.permanent) {
+          log?.error?.("TOKEN_REFRESH", "Frontier refresh token rotated or revoked. Re-login required.", {
+            status: response.status,
+            code: failure.code,
+          });
+          return { error: "unrecoverable_refresh_error", code: failure.code };
+        }
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh Frontier token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const tokens = await response.json();
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Frontier token", {
+        hasNewAccessToken: !!tokens.access_token,
+        hasNewRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+      });
+
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || refreshToken,
+        expiresIn: tokens.expires_in,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing Frontier token: ${error.message}`);
+      return null;
+    }
+  }, log);
+}
+
+export async function refreshCursorToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("cursor", refreshToken, async () => {
+    try {
+      const tokens = await new CursorService().refreshToken(refreshToken);
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Cursor token", {
+        hasNewAccessToken: !!tokens.accessToken,
+        hasNewRefreshToken: !!tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      });
+      return tokens;
+    } catch (error) {
+      log?.warn?.("TOKEN_REFRESH", `Cursor refresh failed: ${error?.message || error}`);
       return null;
     }
   }, log);

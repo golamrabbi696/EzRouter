@@ -153,6 +153,18 @@ export function resolveTransport(provider, sourceFormat) {
 // /v1/messages shim, and the catalog ships claude-* variants well before the registry
 // lists them). Providers opt in by exporting transport.resolveTargetFormat(model).
 // Returns null when the provider has no hook or the model isn't special-cased.
+
+const _transportCache = new Map();
+export function resolveTransportCached(provider, sourceFormat) {
+  const key = provider + "|" + sourceFormat;
+  let cached = _transportCache.get(key);
+  if (cached === undefined) {
+    cached = resolveTransport(provider, sourceFormat);
+    _transportCache.set(key, cached);
+  }
+  return cached;
+}
+
 export function resolveDynamicTargetFormat(provider, model) {
   const fn = PROVIDERS[provider]?.resolveTargetFormat;
   if (typeof fn !== "function") return null;

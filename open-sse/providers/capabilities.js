@@ -116,6 +116,7 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
 
 // Qoder private chat maps Chat `reasoning_effort` → `parameters.reasoning_effort`.
 // Without reasoning:true, applyThinking strips effort. Vision flags follow the
@@ -230,17 +231,18 @@ export const PROVIDER_CAPABILITIES = {
  */
 export const PATTERN_CAPABILITIES = [
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
-  { pattern: "*claude*opus-5*",     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*opus-4.7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*opus-4.8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-4.6*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
-  { pattern: "*claude*sonnet-4.7*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive" } },
+  { pattern: "*claude*opus-4.6*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-4.7*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-4.8*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*opus-5*",     caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-4.6*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-4.7*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*sonnet-5*",   caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*fable*",  caps: CLAUDE_4_6_PLUS_CAPABILITIES },
+  { pattern: "*claude*mythos*", caps: CLAUDE_4_6_PLUS_CAPABILITIES },
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
-  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
   { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
 

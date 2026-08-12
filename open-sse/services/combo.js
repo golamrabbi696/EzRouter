@@ -7,6 +7,9 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { saveErrorLog } from "@/lib/usageDb.js";
+import { inspectComboPreaction } from "./comboPreaction.js";
+import { annotateComboResponse } from "./routeAttribution.js";
+import { estimateInputTokens } from "../utils/usageTracking.js";
 
 const ENDPOINT_COMBO = "/v1/chat/completions";
 
@@ -21,12 +24,22 @@ const TOOL_RESULT_PREFIX = "[Tool result: ";
 // Flatten tool turns into prose so panel models keep the context but can't loop
 // on tools: drop the request's tools, turn tool/function results into assistant
 // text, and inline assistant tool_calls names instead of the structured field.
+function ensureTrailingUserTurn(messages) {
+  const last = messages[messages.length - 1];
+  if (last?.role !== "assistant" && last?.role !== "model") return messages;
+  return [...messages, { role: "user", content: "Continue from where the previous assistant message left off." }];
+}
+
+function requestHasTools(body) {
+  return Array.isArray(body?.tools) && body.tools.length > 0;
+}
+
 export function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
       if (msg.role === "tool" || msg.role === "function") {
-        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
+        return { role: "user", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
       }
       if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
         const { tool_calls, ...rest } = msg;
@@ -258,8 +271,20 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        const shouldInspect = comboStrategy === "fallback" || (comboStrategy === undefined && requestHasTools(body));
+        const inspected = shouldInspect ? await inspectComboPreaction(result, body) : result;
+        if (inspected) {
+          log.info("COMBO", `Model ${modelStr} succeeded`);
+          return annotateComboResponse({
+            comboName: comboName || body?.model,
+            selectedModel: modelStr,
+            attemptedModels: rotatedModels.slice(0, i + 1),
+          }, inspected);
+        }
+        lastError = "Response ended before its first actionable event";
+        if (!lastStatus) lastStatus = 502;
+        log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
+        continue;
       }
 
       // Extract error info from response
@@ -541,9 +566,9 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
-    panelBody.messages = flattenToolHistory(panelBody.messages);
+    panelBody.messages = ensureTrailingUserTurn(flattenToolHistory(panelBody.messages));
   } else if (Array.isArray(panelBody.input)) {
-    panelBody.input = flattenToolHistory(panelBody.input);
+    panelBody.input = ensureTrailingUserTurn(flattenToolHistory(panelBody.input));
   }
 
   const t0 = Date.now();
