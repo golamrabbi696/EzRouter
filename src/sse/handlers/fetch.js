@@ -2,8 +2,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  resolveClientApiKey,
 } from "../services/auth.js";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings, getCombos } from "@/lib/localDb";
@@ -41,8 +40,8 @@ export async function handleFetch(request) {
 
   log.request("POST", `${reqUrl.pathname} | ${providerInput}`);
 
-  // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  // Resolve client API key across all presented credentials (masked log)
+  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {
@@ -56,8 +55,7 @@ export async function handleFetch(request) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKeyValid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }

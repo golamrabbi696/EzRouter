@@ -1,3 +1,11 @@
+import "open-sse/index.js";
+
+import {
+  getProviderCredentials,
+  markAccountUnavailable,
+  clearAccountError,
+  resolveClientApiKey,
+} from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -5,7 +13,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, authErrorResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -13,7 +21,6 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
-import { saveErrorLog } from "@/lib/usageDb.js";
 
 /**
  * Handle chat completion request
@@ -44,12 +51,11 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
-  if (authHeader && apiKey) {
-    const masked = log.maskKey(apiKey);
-    log.debug("AUTH", `API Key: ${masked}`);
+  // Resolve client API key across all presented credentials (Authorization +
+  // x-api-key) — attribution uses the credential that actually validated.
+  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
+  if (apiKey) {
+    log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}${apiKeyValid ? "" : " (not recognized)"}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
@@ -59,12 +65,11 @@ export async function handleChat(request, clientRawRequest = null) {
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+      return authErrorResponse(clientRawRequest.endpoint, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKeyValid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+      return authErrorResponse(clientRawRequest.endpoint, "Invalid API key");
     }
   }
 
@@ -240,8 +245,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      customSystemPromptEnabled: !!chatSettings.customSystemPromptEnabled,
-      customSystemPrompt: chatSettings.customSystemPrompt || "",
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
@@ -273,28 +276,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
-
-      const errorBody = result.response ? await result.response.clone().json().catch(() => ({})) : {};
-      const errorMessage = errorBody?.error?.message || errorBody?.error?.message || errorBody?.message || result.error;
-      saveErrorLog({
-        endpoint: new URL(request.url).pathname,
-        provider,
-        model,
-        connectionId: credentials.connectionId,
-        comboName: null,
-        statusCode: result.status,
-        errorMessage,
-        request: clientRawRequest?.body || null,
-        providerRequest: null,
-        providerResponse: result.response ? errorBody : null,
-        meta: {
-          fallback: true,
-          retryAfter: result.resetsAtMs ? new Date(result.resetsAtMs).toISOString() : null,
-          retryAfterHuman: credentials.retryAfterHuman,
-          latency: {}
-        }
-      }).catch(() => {});
-
       continue;
     }
 
