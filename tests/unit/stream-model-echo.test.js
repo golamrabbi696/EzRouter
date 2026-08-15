@@ -71,4 +71,38 @@ describe("stream model echo", () => {
     expect(out).not.toContain('"model":"big-pickle"');
     expect(out).toContain("data: [DONE]");
   });
+
+  it("re-injects the listing prefix when the client sent a bare name", async () => {
+    const ctx = await setup();
+    cleanup = ctx.cleanup;
+
+    // Client sent the bare name; 9router resolves it to opencode and the echo
+    // must come back as the listing form (oc/big-pickle) so clients that
+    // validate the echoed model against /v1/models don't warn and fall back.
+    const body = { model: "big-pickle", messages: [{ role: "user", content: "hi" }] };
+    const stream = ctx.createPassthroughStreamWithLogger("opencode", null, "big-pickle", "conn-1", body, null);
+
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    const encoder = new TextEncoder();
+
+    let out = "";
+    const pump = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        out += new TextDecoder().decode(value);
+      }
+    })();
+
+    await writer.write(encoder.encode(
+      'data: {"id":"x","object":"chat.completion.chunk","created":1,"model":"big-pickle","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}\n\n'
+    ));
+    await writer.write(encoder.encode("data: [DONE]\n\n"));
+    await writer.close();
+    await pump;
+
+    expect(out).toContain('"model":"oc/big-pickle"');
+    expect(out).not.toContain('"model":"big-pickle"');
+  });
 });

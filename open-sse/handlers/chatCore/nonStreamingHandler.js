@@ -4,6 +4,7 @@ import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { canonicalEchoModel } from "../../services/model.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -295,13 +296,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   reqLogger.logConvertedResponse(translatedResponse);
 
-  // Echo the exact model the client requested instead of the upstream id.
+  // Echo a stable, listing-valid model name instead of the upstream id.
   // Passthrough providers (opencode free tier) return the bare resolved model
   // with the provider prefix stripped; clients that trust the echo re-send the
-  // bare name, which then mis-routes on the next hop. Rewriting keeps the
-  // round-trip name stable (OpenRouter-style proxy echo).
-  if (body?.model && translatedResponse && typeof translatedResponse === "object" && !Array.isArray(translatedResponse)) {
-    translatedResponse.model = body.model;
+  // bare name, which then mis-routes on the next hop. Prefixed requests keep
+  // their exact form; bare requests resolved to a connection-less catalog
+  // provider get the listing form re-injected (OpenRouter-style proxy echo).
+  const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+  if (echoModel && translatedResponse && typeof translatedResponse === "object" && !Array.isArray(translatedResponse)) {
+    translatedResponse.model = echoModel;
   }
 
   const totalLatency = Date.now() - requestStartTime;

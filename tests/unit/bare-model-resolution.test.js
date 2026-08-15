@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { resolveBareModelStaticOwner } from "open-sse/services/model.js";
+import { resolveBareModelStaticOwner, canonicalEchoModel } from "open-sse/services/model.js";
 
 const originalDataDir = process.env.DATA_DIR;
 
@@ -102,5 +102,32 @@ describe("bare model resolution", () => {
     const info = await ctx.getModelInfo("glm-5.2");
     expect(info.provider).toBe("opencode");
     expect(info.model).toBe("glm-5.2");
+  });
+});
+
+describe("canonicalEchoModel", () => {
+  it("re-injects the listing prefix for bare names on connection-less catalog providers", () => {
+    expect(canonicalEchoModel({ requestedModel: "big-pickle", provider: "opencode", model: "big-pickle" }))
+      .toBe("oc/big-pickle");
+    expect(canonicalEchoModel({ requestedModel: "deepseek-v4-flash-free", provider: "opencode", model: "deepseek-v4-flash-free" }))
+      .toBe("oc/deepseek-v4-flash-free");
+    expect(canonicalEchoModel({ requestedModel: "mimo-x", provider: "mimo-free", model: "mimo-x" }))
+      .toBe("mmf/mimo-x");
+  });
+
+  it("keeps prefixed requests and non-catalog bare names exactly as sent", () => {
+    expect(canonicalEchoModel({ requestedModel: "oc/big-pickle", provider: "opencode", model: "big-pickle" }))
+      .toBe("oc/big-pickle");
+    expect(canonicalEchoModel({ requestedModel: "opencode/big-pickle", provider: "opencode", model: "big-pickle" }))
+      .toBe("opencode/big-pickle");
+    expect(canonicalEchoModel({ requestedModel: "gpt-4o", provider: "openai", model: "gpt-4o" }))
+      .toBe("gpt-4o");
+    expect(canonicalEchoModel({ requestedModel: "combo-x", provider: null, model: "combo-x" }))
+      .toBe("combo-x");
+  });
+
+  it("passes through missing requested models", () => {
+    expect(canonicalEchoModel({ requestedModel: "", provider: "opencode", model: "big-pickle" })).toBe("");
+    expect(canonicalEchoModel({ requestedModel: undefined, provider: "opencode", model: "big-pickle" })).toBeUndefined();
   });
 });

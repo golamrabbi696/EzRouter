@@ -8,6 +8,7 @@ import {
   createResponsesAccumulator,
   reduceResponsesEvent
 } from "../translator/concerns/responsesAccumulator.js";
+import { canonicalEchoModel } from "../services/model.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -123,15 +124,16 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
-              // Echo the exact model the client requested instead of the
-              // upstream id. Passthrough providers (opencode free tier) echo
-              // the bare resolved model with the provider prefix stripped;
-              // clients that trust the echo re-send the bare name, which then
-              // mis-routes on the next hop. Rewriting keeps the round-trip
-              // name stable (OpenRouter-style proxy echo).
-              const requestedModel = body?.model;
-              if (typeof parsed.model === "string" && requestedModel && parsed.model !== requestedModel) {
-                parsed.model = requestedModel;
+              // Echo a stable, listing-valid model name instead of the upstream
+              // id. Passthrough providers (opencode free tier) echo the bare
+              // resolved model with the provider prefix stripped; clients that
+              // trust the echo re-send it on the next hop. Prefixed requests
+              // keep their exact form; bare requests resolved to a
+              // connection-less catalog provider get the listing form
+              // re-injected (OpenRouter-style proxy echo).
+              const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+              if (typeof parsed.model === "string" && echoModel && parsed.model !== echoModel) {
+                parsed.model = echoModel;
                 fieldsInjected = true;
               }
               if (parsed.choices !== undefined) {

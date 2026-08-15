@@ -22,6 +22,31 @@ const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
 
+// Connection-less catalog providers (noAuth + live modelsFetcher) strip their
+// provider prefix upstream and echo the bare id back. The listing emits their
+// models as `${alias}/${id}`, so the response echo must use the same form for
+// clients that validate the echo against /v1/models.
+const CONNECTIONLESS_CATALOG_ALIASES = new Map();
+for (const entry of REGISTRY) {
+  if (entry.noAuth && entry.modelsFetcher && entry.alias) {
+    CONNECTIONLESS_CATALOG_ALIASES.set(entry.id, entry.alias);
+  }
+}
+
+/**
+ * Model name a response should echo back to the client. Prefixed requests keep
+ * their exact form (already listing-valid). Bare requests that resolved to a
+ * connection-less catalog provider get the listing form re-injected — e.g.
+ * bare "big-pickle" → "oc/big-pickle" — so re-sending the echoed name routes
+ * again and passes listing validation instead of triggering client warnings.
+ */
+export function canonicalEchoModel({ requestedModel, provider, model }) {
+  if (!requestedModel || requestedModel.includes("/")) return requestedModel;
+  const alias = CONNECTIONLESS_CATALOG_ALIASES.get(provider);
+  if (alias) return `${alias}/${model}`;
+  return requestedModel;
+}
+
 /**
  * Resolve provider alias to provider ID
  */
