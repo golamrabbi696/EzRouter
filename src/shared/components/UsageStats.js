@@ -61,13 +61,27 @@ function RecentRequests({ requests = [] }) {
       {/* Header */}
       <div className="flex items-center justify-between px-1 py-2 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
-        <button
-          onClick={() => setShowPrefixed((v) => !v)}
-          title={showPrefixed ? "Show model name only" : "Show provider/model"}
-          className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${showPrefixed ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+        <div
+          className="relative grid grid-cols-2 items-center rounded-lg border border-border bg-bg-subtle p-0.5 text-[11px] font-medium"
+          title="Model ID shows the provider/model id (oc/big-pickle); Model Name shows the bare name (big-pickle)"
         >
-          {showPrefixed ? "provider/model" : "model"}
-        </button>
+          <span
+            aria-hidden
+            className={`absolute inset-y-0.5 rounded-md bg-primary shadow-sm transition-all duration-200 ease-in-out ${showPrefixed ? "left-1/2 right-0.5" : "left-0.5 right-1/2"}`}
+          />
+          <button
+            onClick={() => setShowPrefixed(true)}
+            className={`relative z-10 rounded-md px-2 py-0.5 transition-colors ${showPrefixed ? "text-white" : "text-text-muted hover:text-text"}`}
+          >
+            Model ID
+          </button>
+          <button
+            onClick={() => setShowPrefixed(false)}
+            className={`relative z-10 rounded-md px-2 py-0.5 transition-colors ${showPrefixed ? "text-text-muted hover:text-text" : "text-white"}`}
+          >
+            Model Name
+          </button>
+        </div>
       </div>
 
       {!requests.length ? (
