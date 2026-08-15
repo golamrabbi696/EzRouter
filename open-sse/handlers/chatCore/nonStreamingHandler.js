@@ -295,6 +295,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   reqLogger.logConvertedResponse(translatedResponse);
 
+  // Echo the exact model the client requested instead of the upstream id.
+  // Passthrough providers (opencode free tier) return the bare resolved model
+  // with the provider prefix stripped; clients that trust the echo re-send the
+  // bare name, which then mis-routes on the next hop. Rewriting keeps the
+  // round-trip name stable (OpenRouter-style proxy echo).
+  if (body?.model && translatedResponse && typeof translatedResponse === "object" && !Array.isArray(translatedResponse)) {
+    translatedResponse.model = body.model;
+  }
+
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

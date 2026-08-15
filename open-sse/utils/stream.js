@@ -123,6 +123,17 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
+              // Echo the exact model the client requested instead of the
+              // upstream id. Passthrough providers (opencode free tier) echo
+              // the bare resolved model with the provider prefix stripped;
+              // clients that trust the echo re-send the bare name, which then
+              // mis-routes on the next hop. Rewriting keeps the round-trip
+              // name stable (OpenRouter-style proxy echo).
+              const requestedModel = body?.model;
+              if (typeof parsed.model === "string" && requestedModel && parsed.model !== requestedModel) {
+                parsed.model = requestedModel;
+                fieldsInjected = true;
+              }
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
