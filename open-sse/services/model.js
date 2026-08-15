@@ -123,6 +123,11 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 }
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
+// NOTE: the deepseek rule is a fallback that only fires for bare deepseek-*
+// names that are NOT captured by the live custom-models scan in
+// src/sse/services/model.js (resolveBareModelToProvider). Dynamically
+// discovered custom models (opencode free tier, mimo, etc.) resolve there
+// first; names that genuinely belong to openrouter hit this rule.
 const MODEL_PREFIX_PROVIDERS = [
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],

@@ -1,6 +1,7 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
-import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import { getModelAliases, getCustomModels, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore, resolveProviderAlias } from "open-sse/services/model.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -77,7 +78,39 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
+  // Bare (provider-less) model name: resolve to whichever provider actually
+  // serves it via the live custom-models registry, before the generic
+  // prefix-inference fallback can blind-route it to the wrong provider.
+  const dynamic = await resolveBareModelToProvider(parsed.model);
+  if (dynamic) {
+    return dynamic;
+  }
+
   return getModelInfoCore(modelStr, getModelAliases);
+}
+
+/**
+ * Dynamic fallback for bare (provider-less) model names: scan the live
+ * custom-models registry and route to whichever provider actually serves the
+ * exact model id. This replaces the brittle hardcoded prefix→provider inference
+ * for opencode free tier, mimo, and any other connection-less/providerless
+ * provider — a bare name resolves to the real owner instead of being
+ * blind-routed to a provider that will reject it.
+ */
+export async function resolveBareModelToProvider(modelStr) {
+  try {
+    const custom = await getCustomModels();
+    const hit = custom.find(
+      (m) => m && m.id === modelStr && (m.type === "llm" || !m.type)
+    );
+    if (hit && hit.providerAlias) {
+      const provider = resolveProviderAlias(hit.providerAlias);
+      return { provider, model: hit.id };
+    }
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+  return null;
 }
 
 /**
