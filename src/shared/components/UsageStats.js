@@ -67,7 +67,7 @@ function RecentRequests({ requests = [] }) {
         >
           <span
             aria-hidden
-            className={`absolute inset-y-0.5 rounded-md bg-primary shadow-sm transition-all duration-200 ease-in-out ${showPrefixed ? "left-1/2 right-0.5" : "left-0.5 right-1/2"}`}
+            className={`absolute inset-y-0.5 rounded-md bg-primary shadow-sm transition-all duration-200 ease-in-out ${showPrefixed ? "left-0.5 right-1/2" : "left-1/2 right-0.5"}`}
           />
           <button
             onClick={() => setShowPrefixed(true)}
