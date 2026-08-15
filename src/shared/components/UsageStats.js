@@ -4,12 +4,26 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { USAGE_PERIOD_OPTIONS } from "@/lib/usagePeriods.js";
+import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
   const p = AI_PROVIDERS[id];
   if (!p?.serviceKinds) return true;
   return p.serviceKinds.includes("llm");
+}
+
+// Both display forms for a recent-request row. The resolved `model` is the bare
+// name; the prefixed form is whatever the client actually sent when it was
+// prefixed (e.g. `oc/big-pickle`), derived from the provider alias otherwise.
+function requestModelForms(r) {
+  const bare = r.model || r.requestedModel || "—";
+  const prefixed = r.requestedModel && r.requestedModel.includes("/")
+    ? r.requestedModel
+    : r.model && r.provider
+      ? `${PROVIDER_ID_TO_ALIAS[r.provider] || r.provider}/${r.model}`
+      : bare;
+  return { bare, prefixed };
 }
 import Badge from "./Badge";
 import Card from "./Card";
@@ -41,11 +55,19 @@ function TimeAgo({ timestamp }) {
 }
 
 function RecentRequests({ requests = [] }) {
+  const [showPrefixed, setShowPrefixed] = useState(false);
   return (
     <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
       {/* Header */}
-      <div className="px-1 py-2 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-1 py-2 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
+        <button
+          onClick={() => setShowPrefixed((v) => !v)}
+          title={showPrefixed ? "Show model name only" : "Show provider/model"}
+          className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${showPrefixed ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+        >
+          {showPrefixed ? "provider/model" : "model"}
+        </button>
       </div>
 
       {!requests.length ? (
@@ -65,12 +87,14 @@ function RecentRequests({ requests = [] }) {
             <tbody className="divide-y divide-border/50">
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
+                const { bare, prefixed } = requestModelForms(r);
+                const shown = showPrefixed ? prefixed : bare;
                 return (
                   <tr key={i} className="hover:bg-bg-subtle transition-colors">
                     <td className="py-1.5">
                       <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
                     </td>
-                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
+                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={showPrefixed ? bare : prefixed}>{shown}</td>
                     <td className="py-1.5 text-center">
                       {r.convoy?.applied ? (
                         <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-500" title={r.convoy.hits?.map((hit) => hit.ruleName).join(", ")}>

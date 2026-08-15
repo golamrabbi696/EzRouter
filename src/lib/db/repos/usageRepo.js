@@ -208,6 +208,27 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
   scheduleStatsEvent("pending");
 }
 
+/**
+ * Recent-request row: the resolved model and the client-sent form carried
+ * separately (plus provider), so the UI renders either the bare model name or
+ * the prefixed provider/model form without server-side string joining. Rows
+ * come from the in-memory ring (parsed tokens/meta) or usageHistory rows
+ * (JSON strings) — handle both.
+ */
+export function buildRecentRequestRow(e) {
+  const t = typeof e.tokens === "string" ? parseJson(e.tokens, {}) : (e.tokens || {});
+  const requestedModel = e.requestedModel || (e.meta ? (parseJson(e.meta, {}).requestedModel || null) : null);
+  return {
+    timestamp: e.timestamp,
+    model: e.model || "",
+    requestedModel: requestedModel || null,
+    provider: e.provider || "",
+    promptTokens: t.prompt_tokens || t.input_tokens || 0,
+    completionTokens: t.completion_tokens || t.output_tokens || 0,
+    status: e.status || "ok",
+  };
+}
+
 export async function getActiveRequests() {
   const activeRequests = [];
   const connectionMap = await getConnectionMapCached();
@@ -230,21 +251,12 @@ export async function getActiveRequests() {
   const seen = new Set();
   const recentRequests = [...recentRing.items]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .map((e) => {
-      const t = e.tokens || {};
-      const requestedModel = e.requestedModel || (e.meta ? (parseJson(e.meta, {}).requestedModel || null) : null);
-      return {
-        timestamp: e.timestamp,
-        model: (requestedModel && requestedModel !== e.model) ? `${requestedModel} → ${e.model}` : (e.model || ""),
-        provider: e.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: e.status || "ok",
-      };
-    })
+    .map(buildRecentRequestRow)
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
+      // Dedupe on the resolved model so the same request sent as `oc/big-pickle`
+      // vs bare `big-pickle` collapses to one row instead of two.
       const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -387,19 +399,10 @@ export async function getUsageStats(period = "all") {
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status, meta FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
-    .map((r) => {
-      const t = parseJson(r.tokens, {}) || {};
-      return {
-        timestamp: r.timestamp, model: r.model, provider: r.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
-        status: r.status || "ok",
-      };
-    })
+    .map(buildRecentRequestRow)
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
