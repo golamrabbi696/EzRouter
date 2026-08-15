@@ -19,6 +19,12 @@ for (const entry of REGISTRY) {
 
 const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
+  // opencode free tier (oc/): the upstream response echoes the resolved model
+  // name with the provider prefix stripped, so clients that trust the echo
+  // re-send the bare name. Without this alias, prefix-inference sends
+  // bare deepseek-* to openrouter (which rejects the free model) instead of
+  // opencode (which accepts it). Map the bare name to the oc/ route.
+  "deepseek-v4-flash-free": "oc/deepseek-v4-flash-free",
 };
 
 /**
