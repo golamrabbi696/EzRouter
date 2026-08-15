@@ -16,6 +16,8 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -244,10 +246,12 @@ export async function buildModelsList(kindFilter, options = {}) {
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
+  let connectionsFailed = false;
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
+    connectionsFailed = true;
     console.log("Could not fetch providers, returning all models");
   }
 
@@ -315,13 +319,26 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
+    // No configured connections. When the DB itself is unavailable we degrade
+    // to the full static catalog; when the DB is healthy but empty (fresh
+    // install) only connection-less noAuth providers are listed — those work
+    // with zero setup — so clients auto-detecting models don't see hundreds of
+    // entries that would all reject their requests.
     const aliasToProviderId = Object.fromEntries(
       Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
     );
+    const noAuthProviderIds = new Set();
+    if (!connectionsFailed) {
+      for (const entry of REGISTRY) {
+        if (entry.noAuth === true || entry.transport?.noAuth === true) {
+          noAuthProviderIds.add(entry.id);
+        }
+      }
+    }
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = aliasToProviderId[alias] || alias;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
+      if (!connectionsFailed && !noAuthProviderIds.has(providerId)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
