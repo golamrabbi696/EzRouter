@@ -524,6 +524,60 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
+  // Custom models on connection-less providers (e.g. opencode's noAuth free
+  // tier, bazaarlink aliases) never enter the per-connection loop above —
+  // they route fine (ACC:Public / passthroughModels) but vanish from
+  // /v1/models, so OpenAI-compatible clients that validate against the
+  // listing reject or warn on them. Surface them here, once, after the
+  // dedupe pass so connection-backed duplicates collapse naturally.
+  if (kindFilter.includes(LLM_KIND)) {
+    const connectedAliases = new Set();
+    for (const conn of connections) {
+      const providerId = conn.provider;
+      const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+      const outputAlias = (
+        conn?.providerSpecificData?.prefix
+        || getProviderAlias(providerId)
+        || staticAlias
+      ).trim();
+      connectedAliases.add(outputAlias);
+      connectedAliases.add(staticAlias);
+      connectedAliases.add(providerId);
+    }
+
+    for (const customModel of customModels) {
+      if (!customModel?.id) continue;
+      const kind = getModelKind(customModel) || LLM_KIND;
+      // imageToText custom models are vision-capable chat models — include
+      // in the LLM list, same as the per-connection branch above.
+      const allowAsLlm = kind === "imageToText";
+      if (!kindFilter.includes(kind) && !allowAsLlm) continue;
+      const providerAlias = customModel.providerAlias;
+      if (!providerAlias) continue;
+      // Skip providers already handled by the per-connection loop (their
+      // custom models are merged there); only backfill the connection-less.
+      if (connectedAliases.has(providerAlias)) continue;
+
+      const modelId = String(customModel.id).trim();
+      if (!modelId || isDisabled(providerAlias, modelId)) continue;
+
+      const id = `${providerAlias}/${modelId}`;
+      if (seenModelIds.has(id)) continue;
+      seenModelIds.add(id);
+
+      const model = {
+        id,
+        object: "model",
+        owned_by: providerAlias,
+      };
+      const caps = getCapabilitiesForModel(providerAlias, modelId);
+      if (caps) model.capabilities = caps;
+      if (Number.isFinite(caps?.contextWindow)) model.context_length = caps.contextWindow;
+      if (Number.isFinite(caps?.maxOutput)) model.max_completion_tokens = caps.maxOutput;
+      dedupedModels.push(model);
+    }
+  }
+
   const apiKey = options.apiKey;
   const allowedModels = apiKey?.allowedModels;
   if (!Array.isArray(allowedModels) || allowedModels.length === 0) return dedupedModels;
