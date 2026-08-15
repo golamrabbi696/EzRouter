@@ -73,6 +73,30 @@ describe("bare model resolution", () => {
     expect(deep.model).toBe("deepseek-v4-flash-free");
   });
 
+  it("keeps -free names on opencode when the catalog is unreachable", async () => {
+    // Fetch failure must not fall through to prefix inference, which would
+    // blind-route deepseek-v4-flash-free to openrouter and mimo-v2.5-free to
+    // openai — the "similar model" fallback the clients were warning about.
+    const ctx = await setupDb();
+    cleanup = ctx.cleanup;
+
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("network unreachable");
+    });
+
+    const deep = await ctx.getModelInfo("deepseek-v4-flash-free");
+    expect(deep.provider).toBe("opencode");
+    expect(deep.model).toBe("deepseek-v4-flash-free");
+
+    const mimo = await ctx.getModelInfo("mimo-v2.5-free");
+    expect(mimo.provider).toBe("opencode");
+    expect(mimo.model).toBe("mimo-v2.5-free");
+
+    const pickle = await ctx.getModelInfo("big-pickle");
+    expect(pickle.provider).toBe("opencode");
+    expect(pickle.model).toBe("big-pickle");
+  });
+
   it("routes bare static-registry names without hitting the catalog", async () => {
     const ctx = await setupDb();
     cleanup = ctx.cleanup;

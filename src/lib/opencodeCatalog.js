@@ -58,6 +58,14 @@ export async function lookupBareModel(modelStr) {
   const models = await fetchCatalog();
   const hit = models.find((m) => m && m.id === modelStr);
   if (hit) return { provider: "opencode", model: hit.id };
+  // Catalog unreachable (network/timeout) or the id isn't listed yet. The
+  // "-free" suffix is opencode's free-tier id convention (big-pickle is the one
+  // exception), so keep owning those names instead of falling through to prefix
+  // inference — which would blind-route e.g. deepseek-v4-flash-free to
+  // openrouter and mimo-v2.5-free to openai (the "similar model" fallback).
+  if (modelStr === "big-pickle" || String(modelStr).endsWith("-free")) {
+    return { provider: "opencode", model: modelStr };
+  }
   return null;
 }
 

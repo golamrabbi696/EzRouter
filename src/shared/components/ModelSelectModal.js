@@ -475,12 +475,6 @@ export default function ModelSelectModal({
     return filtered;
   }, [groupedModels, searchQuery, addedModelValues]);
 
-  // Chips show the bare model name. Some model names carry the provider prefix
-  // (user-added models, node aliases); strip it for display only — the full
-  // `<alias>/<model>` value is what gets selected and sent to the backend.
-  const displayModelName = (group, model) =>
-    model.name?.startsWith(`${group.alias}/`) ? model.name.slice(group.alias.length + 1) : model.name;
-
   const handleSelect = (model) => {
     const value = model?.value || model?.name || model;
     const isAdded = addedModelValues.includes(value);
@@ -629,7 +623,7 @@ export default function ModelSelectModal({
                         </>
                       ) : (
                         <>
-                          {displayModelName(group, model)}
+                          {model.value}
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       )}

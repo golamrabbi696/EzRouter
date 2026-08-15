@@ -7,7 +7,6 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import BashSetupButton from "./BashSetupButton";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
-import { getProviderAlias } from "@/shared/constants/providers";
 
 export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -27,14 +26,6 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const [selectedModels, setSelectedModels] = useState([]);
   const [activeModel, setActiveModel] = useState("");
   const selectedModelsRef = useRef([]);
-
-  // Selected values are the full `<alias>/<model>` ids the backend resolves;
-  // strip the known provider prefix for display only.
-  const aliases = new Set((activeProviders || []).map((p) => getProviderAlias(p.provider)));
-  const displayModel = (value) => {
-    const slash = value?.indexOf("/");
-    return slash > 0 && aliases.has(value.slice(0, slash)) ? value.slice(slash + 1) : value;
-  };
 
   useEffect(() => {
     selectedModelsRef.current = selectedModels;
@@ -368,7 +359,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                             title={model === activeModel ? "Click to clear active model" : "Click to set as active"}
                           >
                             {model === activeModel && <span className="material-symbols-outlined text-[10px]">star</span>}
-                            {displayModel(model)}
+                            {model}
                             <button
                               onClick={async (e) => {
                                 e.stopPropagation();
@@ -398,7 +389,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                       <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
                       <span className="text-xs text-text-muted">
                         {selectedModels.length > 0 && activeModel ? (
-                          <>Active: <span className="text-primary">{displayModel(activeModel)}</span></>
+                          <>Active: <span className="text-primary">{activeModel}</span></>
                         ) : selectedModels.length > 0 ? (
                           <span className="text-yellow-500">Click a model to set/clear active</span>
                         ) : (
