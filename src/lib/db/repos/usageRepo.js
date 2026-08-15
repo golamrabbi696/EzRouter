@@ -136,12 +136,13 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
-    recentRing.items = rows.reverse().map((r) => ({
-      timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
-      apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
-      tokens: parseJson(r.tokens, {}),
-    }));
+    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, meta FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+        recentRing.items = rows.reverse().map((r) => ({
+          timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
+          apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
+          tokens: parseJson(r.tokens, {}),
+          requestedModel: r.meta ? (parseJson(r.meta, {}).requestedModel || null) : null,
+        }));
   } catch {}
 }
 
@@ -231,8 +232,11 @@ export async function getActiveRequests() {
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
+      const requestedModel = e.requestedModel || (e.meta ? (parseJson(e.meta, {}).requestedModel || null) : null);
       return {
-        timestamp: e.timestamp, model: e.model, provider: e.provider || "",
+        timestamp: e.timestamp,
+        model: (requestedModel && requestedModel !== e.model) ? `${requestedModel} → ${e.model}` : (e.model || ""),
+        provider: e.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
         status: e.status || "ok",
@@ -298,7 +302,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson({ requestedModel: entry.requestedModel || null }),
         ]
       );
 
@@ -753,7 +757,7 @@ export async function getRecentLogs(limit = 200) {
   try {
     const db = await getAdapter();
     const rows = db.all(
-      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
+      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens, meta FROM usageHistory ORDER BY id DESC LIMIT ?`,
       [limit],
     );
     if (!rows.length) return [];
@@ -768,7 +772,9 @@ export async function getRecentLogs(limit = 200) {
     return rows.map((r) => {
       const ts = formatLogDate(new Date(r.timestamp));
       const p = r.provider?.toUpperCase() || "-";
-      const m = r.model || "-";
+      const meta = r.meta ? parseJson(r.meta, {}) : {};
+      const requestedModel = meta.requestedModel || null;
+      const m = (requestedModel && requestedModel !== r.model) ? `${requestedModel} → ${r.model}` : (r.model || "-");
       const account = connMap[r.connectionId] || (r.connectionId ? r.connectionId.slice(0, 8) : "-");
       const tk = r.tokens ? parseJson(r.tokens, {}) : {};
       const sent = r.promptTokens ?? tk.prompt_tokens ?? "-";
