@@ -30,6 +30,7 @@ const FORMAT_LEVELS = {
   minimax: L.onOff,
   hunyuan: L.base,
   step: L.base,
+  nous: L.base,
 };
 
 const GPT_56_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];

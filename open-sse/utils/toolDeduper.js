@@ -1,6 +1,11 @@
 /**
- * Strip built-in/duplicate tools when equivalent MCP tools are present.
- * Goal: reduce tool definitions token bloat for Claude clients.
+ * Tool normalization before dispatch:
+ * - MCP-equivalent built-in tool dedup (Claude clients only, reduces token bloat).
+ * - Exact same-name tool dedup for DeepSeek models — the DeepSeek upstream rejects
+ *   duplicate tool names with 400 "Tool names must be unique" on every endpoint
+ *   (verified live 2026-08-15 against api.deepseek.com, opencode.go and a LiteLLM
+ *   gateway; GLM/MiniMax/Kimi upstreams accept duplicates). First definition wins,
+ *   tool_choice and message-history references are by name/id so nothing breaks.
  */
 
 const DEDUP_RULES = [
@@ -30,20 +35,65 @@ function matches(name, pattern) {
   return pattern instanceof RegExp ? pattern.test(name) : false;
 }
 
-function dedupeTools(tools) {
+// "model(level)" is a 9router thinking override; strip before matching.
+function isDeepSeekModel(model) {
+  if (typeof model !== "string") return false;
+  return /^deepseek-/.test(model.replace(/\([^()]+\)\s*$/, "").trim());
+}
+
+/**
+ * @param {Array} tools - translated tools array
+ * @param {Object} [opts]
+ * @param {string|null} [opts.clientTool] - detected client ("claude" | "codex" | ...)
+ * @param {string|null} [opts.model] - model id, may carry a (level) thinking suffix
+ * @returns {{ tools: Array, stripped: Array<string> }}
+ */
+function dedupeTools(tools, opts = {}) {
   if (!Array.isArray(tools) || tools.length === 0) return { tools, stripped: [] };
-  const names = tools.map(getToolName);
-  const toStrip = new Set();
-  for (const rule of DEDUP_RULES) {
-    const hasTrigger = names.some((n) => rule.triggers.some((p) => matches(n, p)));
-    if (!hasTrigger) continue;
-    for (const n of names) {
-      if (rule.strip.some((p) => matches(n, p))) toStrip.add(n);
+
+  const clientTool = opts.clientTool ?? null;
+  const model = opts.model ?? null;
+  const stripped = [];
+  let current = tools;
+
+  // 1. MCP-equivalent built-in rules (Claude clients only).
+  if (clientTool === "claude") {
+    const names = current.map(getToolName);
+    const toStrip = new Set();
+    for (const rule of DEDUP_RULES) {
+      const hasTrigger = names.some((n) => rule.triggers.some((p) => matches(n, p)));
+      if (!hasTrigger) continue;
+      for (const n of names) {
+        if (rule.strip.some((p) => matches(n, p))) toStrip.add(n);
+      }
+    }
+    if (toStrip.size > 0) {
+      current = current.filter((t) => !toStrip.has(getToolName(t)));
+      stripped.push(...toStrip);
     }
   }
-  if (toStrip.size === 0) return { tools, stripped: [] };
-  const out = tools.filter((t) => !toStrip.has(getToolName(t)));
-  return { tools: out, stripped: Array.from(toStrip) };
+
+  // 2. Exact same-name dedup (DeepSeek models only). First definition wins.
+  if (isDeepSeekModel(model)) {
+    const seen = new Set();
+    const unique = [];
+    for (const t of current) {
+      const name = getToolName(t);
+      if (!name) {
+        unique.push(t);
+        continue;
+      }
+      if (seen.has(name)) {
+        stripped.push(name);
+        continue;
+      }
+      seen.add(name);
+      unique.push(t);
+    }
+    current = unique;
+  }
+
+  return { tools: current, stripped };
 }
 
 export { dedupeTools };

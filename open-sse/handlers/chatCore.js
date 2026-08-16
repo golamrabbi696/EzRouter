@@ -83,7 +83,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const isCompactRequest = body._compact === true;
   const clientRequestedStreaming = !isCompactRequest && (body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI);
   const providerRequiresStreaming = !isCompactRequest && PROVIDERS[provider]?.forceStream === true;
-  let stream = isCompactRequest ? false : (providerRequiresStreaming ? true : body.stream !== false);
+  let stream = isCompactRequest ? false : (providerRequiresStreaming ? true : body.stream === true);
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
@@ -138,6 +138,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...structuredClone(body), model: stripThinkingSuffix(upstreamModel) };
+    // Sync the negotiated stream flag into the upstream body. `stream` may differ
+    // from the client's body.stream (forceStream providers, Accept-header JSON
+    // preference): the client's stale `stream:false` must not reach a provider
+    // we just asked to stream — the response shape would disagree with the
+    // response-handling branch downstream.
+    if (translatedBody.stream !== stream) translatedBody.stream = stream;
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
@@ -149,11 +155,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
+    if (translatedBody.stream !== stream) {
+      translatedBody.stream = stream;
+    }
   }
 
-  // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
-  if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
-    const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
+  // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
+  // dedup for DeepSeek models (upstream rejects duplicate tool names on all endpoints).
+  if (Array.isArray(translatedBody.tools)) {
+    const { tools: deduped, stripped } = dedupeTools(translatedBody.tools, { clientTool, model });
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
       log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);

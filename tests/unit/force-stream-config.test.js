@@ -71,6 +71,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -104,7 +106,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 
 const FORCED = ["openai", "codex", "commandcode"];
 
-function makeOptions(bodyStream) {
+function makeOptions(bodyStream, provider = "openai", accept = "application/json") {
   const body = {
     model: "gpt-4.1",
     messages: [{ role: "user", content: "hello" }],
@@ -113,12 +115,12 @@ function makeOptions(bodyStream) {
 
   return {
     body,
-    modelInfo: { provider: "openai", model: "gpt-4.1" },
+    modelInfo: { provider, model: "gpt-4.1" },
     credentials: { apiKey: "sk-test" },
     clientRawRequest: {
       endpoint: "/v1/chat/completions",
       body,
-      headers: { accept: "application/json" },
+      headers: accept ? { accept } : {},
     },
     connectionId: "test-connection",
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -149,5 +151,16 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+    const sentBody = executeMock.mock.calls[0][0].body;
+    expect(sentBody.stream).toBe(true);
+  });
+
+  it("defaults to non-streaming for non-forced providers when client omits stream", async () => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+
+    await handleChatCore(makeOptions(undefined, "deepseek", null));
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(executeMock.mock.calls[0][0].stream).toBe(false);
   });
 });

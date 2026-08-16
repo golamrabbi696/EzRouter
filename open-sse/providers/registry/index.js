@@ -82,6 +82,7 @@ import providerMmf from "./mmf.js";
 import providerMorph from "./morph.js";
 import providerNanobanana from "./nanobanana.js";
 import providerNebius from "./nebius.js";
+import providerNous from "./nous.js";
 import providerNovita from "./novita.js";
 import providerNvidia from "./nvidia.js";
 import providerOllamaLocal from "./ollama-local.js";
@@ -208,6 +209,7 @@ export default [
   providerMorph,
   providerNanobanana,
   providerNebius,
+  providerNous,
   providerNovita,
   providerNvidia,
   providerOllamaLocal,

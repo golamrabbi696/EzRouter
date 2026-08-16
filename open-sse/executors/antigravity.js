@@ -277,7 +277,7 @@ export class AntigravityExecutor extends BaseExecutor {
         };
       }
       return c;
-    });
+    }).filter(c => c.parts && c.parts.length > 0);
 
     const contents =
       normalizeAntigravityContents(rawContents);

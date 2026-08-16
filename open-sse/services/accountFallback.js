@@ -76,6 +76,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     return { shouldFallback: false, cooldownMs: 0 };
   }
 
+  const terminalStatusRule = ERROR_RULES.find(rule => rule.status === status && rule.fallback === false);
+  if (terminalStatusRule) {
+    return { shouldFallback: false, cooldownMs: 0, newBackoffLevel: backoffLevel };
+  }
+
   for (const rule of ERROR_RULES) {
     // Regex rule: for phrases the model name sits inside, which a substring
     // cannot span ("Model does-not-exist-xyz is not supported").

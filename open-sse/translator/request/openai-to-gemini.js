@@ -237,17 +237,15 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
               let resp = toolResponses[fid];
               let parsedResp = tryParseJSON(resp);
-              if (parsedResp === null) {
-                parsedResp = { result: resp };
-              } else if (typeof parsedResp !== "object") {
-                parsedResp = { result: parsedResp };
+              if (parsedResp === null || typeof parsedResp !== "object" || Array.isArray(parsedResp)) {
+                parsedResp = { result: parsedResp !== null ? parsedResp : resp };
               }
 
               toolParts.push({
                 functionResponse: {
                   id: fid,
                   name: sanitizeGeminiFunctionName(name),
-                  response: { result: parsedResp }
+                  response: parsedResp
                 }
               });
             }

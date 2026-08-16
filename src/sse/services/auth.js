@@ -390,6 +390,20 @@ export async function clearAccountError(connectionId, currentConnection, model =
 }
 
 /**
+ * Clear project-resolution error state on connection when a valid project ID is set
+ */
+export async function clearProjectResolutionError(connectionId) {
+  if (!connectionId || connectionId === "noauth") return;
+  await updateProviderConnection(connectionId, {
+    testStatus: "active",
+    lastError: null,
+    errorCode: null,
+    lastErrorAt: null,
+    backoffLevel: 0
+  });
+}
+
+/**
  * Extract API key from request headers (first presented credential).
  */
 export function extractApiKey(request) {
