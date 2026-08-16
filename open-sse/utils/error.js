@@ -103,10 +103,11 @@ export async function parseUpstreamError(response, executor = null) {
         const message = parsed.message && parsed.message !== bodyText
           ? parsed.message
           : fallbackMessage;
+        const resetsAtMs = parsed.resetsAtMs ?? (response.status === 429 ? extractResetsAtMs(response, message) : null);
         return {
           statusCode: parsed.status || response.status,
           message,
-          resetsAtMs: parsed.resetsAtMs,
+          resetsAtMs,
           code: parsed.code ?? structuredCode,
         };
       }
