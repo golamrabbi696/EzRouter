@@ -81,6 +81,13 @@ const LOCAL_ONLY_PATHS = [
   "/api/pxpipe",
 ];
 
+// Authenticated dashboard may toggle tunnel from its same-origin host. Other
+// process/secret routes remain CLI-token or loopback-only.
+const REMOTE_BROWSER_LOCAL_ALLOWED_PATHS = [
+  "/api/tunnel/enable",
+  "/api/tunnel/disable",
+];
+
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 // Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
@@ -127,6 +134,17 @@ export function isLocalRequest(request) {
     } catch { return false; }
   }
   return true;
+}
+
+function isSameOriginBrowserRequest(request) {
+  const host = request.headers.get("host");
+  const origin = request.headers.get("origin");
+  if (!host || !origin) return false;
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 function isPublicLlmApi(pathname) {
@@ -185,6 +203,12 @@ async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && await isAuthenticated(request)) return true;
+  // Tunnel toggles are safe for an authenticated same-origin dashboard session.
+  if (
+    REMOTE_BROWSER_LOCAL_ALLOWED_PATHS.some((p) => request.nextUrl.pathname.startsWith(p)) &&
+    isSameOriginBrowserRequest(request) &&
+    await hasValidToken(request)
+  ) return true;
   return false;
 }
 
@@ -235,6 +259,7 @@ function formatPublicLlmAuthError(pathname) {
 
 export const __test__ = {
   isLocalRequest,
+  isSameOriginBrowserRequest,
   isPublicLlmApi,
   extractApiKey,
   extractApiKeyCandidates,
