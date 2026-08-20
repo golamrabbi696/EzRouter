@@ -65,6 +65,7 @@ import providerIflow from "./iflow.js";
 import providerInworld from "./inworld.js";
 import providerJinaAi from "./jina-ai.js";
 import providerJinaReader from "./jina-reader.js";
+import providerJoycode from "./joycode.js";
 import providerKiloGateway from "./kilo-gateway.js";
 import providerKilocode from "./kilocode.js";
 import providerKimchi from "./kimchi.js";
@@ -89,7 +90,9 @@ import providerOpenai from "./openai.js";
 import providerOpencodeGo from "./opencode-go.js";
 import providerOpencodeZen from "./opencode-zen.js";
 import providerOpencode from "./opencode.js";
+import providerOpenmodel from "./openmodel.js";
 import providerOpenrouter from "./openrouter.js";
+import providerOvh from "./ovh.js";
 import providerPerplexityAgent from "./perplexity-agent.js";
 import providerPerplexityWeb from "./perplexity-web.js";
 import providerPerplexity from "./perplexity.js";
@@ -97,6 +100,7 @@ import providerPlayht from "./playht.js";
 import providerPoolside from "./poolside.js";
 import providerQoder from "./qoder.js";
 import providerQoderworkCn from "./qoderwork-cn.js";
+import providerReasonix from "./reasonix.js";
 import providerRecraft from "./recraft.js";
 import providerRunwayml from "./runwayml.js";
 import providerSambanova from "./sambanova.js";
@@ -187,6 +191,7 @@ export default [
   providerInworld,
   providerJinaAi,
   providerJinaReader,
+  providerJoycode,
   providerKiloGateway,
   providerKilocode,
   providerKimchi,
@@ -211,7 +216,9 @@ export default [
   providerOpencodeGo,
   providerOpencodeZen,
   providerOpencode,
+  providerOpenmodel,
   providerOpenrouter,
+  providerOvh,
   providerPerplexityAgent,
   providerPerplexityWeb,
   providerPerplexity,
@@ -219,6 +226,7 @@ export default [
   providerPoolside,
   providerQoder,
   providerQoderworkCn,
+  providerReasonix,
   providerRecraft,
   providerRunwayml,
   providerSambanova,
