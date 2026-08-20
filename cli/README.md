@@ -33,24 +33,24 @@
 **Option 1 — npm (recommended for desktop):**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g @rabbi696/ezrouter
+ezrouter
 
 # Or run directly with npx
-npx 9router
+npx @rabbi696/ezrouter
 ```
 
 **Option 2 — Docker (server/VPS):**
 
 ```bash
-docker run -d --name 9router -p 20128:20128 \
+docker run -d --name ezrouter -p 20126:20126 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data \
   decolua/9router:latest
 ```
 
 Published images: [Docker Hub](https://hub.docker.com/r/decolua/9router) • [GHCR](https://github.com/decolua/9router/pkgs/container/9router) (multi-platform amd64/arm64).
 
-🎉 Dashboard opens at `http://localhost:20128`
+🎉 Dashboard opens at `http://localhost:20126`
 
 **2. Connect a FREE provider (no signup needed):**
 
@@ -60,7 +60,7 @@ Dashboard → Providers → Connect **Kiro AI** (free Claude unlimited) or **Ope
 
 ```
 Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
-  Endpoint: http://localhost:20128/v1
+  Endpoint: http://localhost:20126/v1
   API Key:  [copy from dashboard]
   Model:    kr/claude-sonnet-4.5
 ```
@@ -72,14 +72,14 @@ That's it! Start coding with FREE AI models.
 ## 🚀 CLI Options
 
 ```bash
-9router                    # Start with default settings
-9router --port 8080        # Custom port
-9router --no-browser       # Don't open browser
-9router --skip-update      # Skip auto-update check
-9router --help             # Show all options
+ezrouter                    # Start with default settings (port 20126)
+ezrouter --port 8080        # Custom port
+ezrouter --no-browser       # Don't open browser
+ezrouter --skip-update      # Skip auto-update check
+ezrouter --help             # Show all options
 ```
 
-**Dashboard**: `http://localhost:20128/dashboard`
+**Dashboard**: `http://localhost:20126/dashboard`
 
 ---
 

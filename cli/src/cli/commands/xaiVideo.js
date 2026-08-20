@@ -13,7 +13,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-const DEFAULT_PORT = 20128;
+const DEFAULT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 20126;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_MODEL = "xai/grok-imagine-video";
 const DEFAULT_TIMEOUT_SEC = 600;

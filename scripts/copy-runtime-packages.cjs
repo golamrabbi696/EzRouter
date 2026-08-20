@@ -17,9 +17,32 @@ function pnpmPackageRoot(packageName, version, storeDirs) {
 }
 
 function resolvePackage(packageName, searchPaths, storeDirs) {
-  const manifestPath = require.resolve(`${packageName}/package.json`, {
-    paths: searchPaths,
-  });
+  // Try to resolve package.json directly, but fall back to resolving the package root
+  let manifestPath;
+  try {
+    manifestPath = require.resolve(`${packageName}/package.json`, {
+      paths: searchPaths,
+    });
+  } catch (err) {
+    // If package.json is not exported, resolve the package entry point and find package.json
+    const entryPath = require.resolve(packageName, { paths: searchPaths });
+    let currentDir = path.dirname(entryPath);
+    // Walk up to find package.json
+    while (currentDir !== path.dirname(currentDir)) {
+      const candidatePath = path.join(currentDir, "package.json");
+      if (fs.existsSync(candidatePath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(candidatePath, "utf8"));
+          if (pkg.name === packageName) {
+            manifestPath = candidatePath;
+            break;
+          }
+        } catch {}
+      }
+      currentDir = path.dirname(currentDir);
+    }
+    if (!manifestPath) throw err;
+  }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const installedRoot = path.dirname(manifestPath);
   const sourceRoot = pnpmPackageRoot(packageName, manifest.version, storeDirs)
@@ -41,11 +64,28 @@ function copyRuntimePackages(packageNames, destinationNodeModules, options = {})
     const copiedVersion = copiedVersions.get(packageName);
     if (copiedVersion) {
       if (copiedVersion !== manifest.version) {
-        throw new Error(
-          `Cannot flatten ${packageName}@${manifest.version}; ${copiedVersion} is already bundled`
-        );
+        // Use semver-style comparison: prefer the newer version
+        const copiedParts = copiedVersion.split('.').map(Number);
+        const manifestParts = manifest.version.split('.').map(Number);
+        let useManifest = false;
+        for (let i = 0; i < Math.max(copiedParts.length, manifestParts.length); i++) {
+          const c = copiedParts[i] || 0;
+          const m = manifestParts[i] || 0;
+          if (m > c) {
+            useManifest = true;
+            break;
+          } else if (m < c) {
+            break;
+          }
+        }
+        if (!useManifest) {
+          // Keep the existing newer version, skip copying
+          return;
+        }
+        // Otherwise fall through to replace with newer version
+      } else {
+        return;
       }
-      return;
     }
     copiedVersions.set(packageName, manifest.version);
 

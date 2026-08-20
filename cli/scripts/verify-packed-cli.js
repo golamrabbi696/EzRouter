@@ -22,11 +22,17 @@ function run(command, args, options = {}) {
 function resolveTarball() {
   const outputDirectory = process.argv[2];
   if (outputDirectory) {
-    return path.resolve(outputDirectory, `${packageJson.name}-${packageJson.version}.tgz`);
+    const safeName = packageJson.name.replace(/^@/, "").replace("/", "-");
+    return path.resolve(outputDirectory, `${safeName}-${packageJson.version}.tgz`);
   }
 
   const packOutput = run("npm", ["pack", "--json", "--pack-destination", temporaryRoot]);
-  const [{ filename }] = JSON.parse(packOutput);
+  const parsed = JSON.parse(packOutput.trim());
+  const filename = Array.isArray(parsed) ? parsed[0]?.filename : parsed?.filename;
+  if (!filename) {
+    const safeName = packageJson.name.replace(/^@/, "").replace("/", "-");
+    return path.join(temporaryRoot, `${safeName}-${packageJson.version}.tgz`);
+  }
   return path.join(temporaryRoot, filename);
 }
 
@@ -57,7 +63,10 @@ try {
   ]);
 
   const home = path.join(temporaryRoot, "home");
-  const binary = path.join(installPrefix, "node_modules", ".bin", "9router");
+  const binName = typeof packageJson.bin === "string" 
+    ? packageJson.name 
+    : Object.keys(packageJson.bin || {})[0] || packageJson.name;
+  const binary = path.join(installPrefix, "node_modules", ".bin", binName);
   const environment = {
     ...process.env,
     APPDATA: home,
@@ -76,7 +85,7 @@ try {
   if (version !== packageJson.version) {
     throw new Error(`packed CLI reported ${version}, expected ${packageJson.version}`);
   }
-  if (!help.includes("Usage: 9router")) {
+  if (!help.includes(`Usage: ${packageJson.name}`) && !help.includes("Usage: 9router")) {
     throw new Error("packed CLI help smoke test failed");
   }
   if (fs.existsSync(path.join(home, ".9router", "runtime"))) {

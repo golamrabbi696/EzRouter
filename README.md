@@ -26,7 +26,7 @@
 │  Your CLI   │  (Claude Code, Codex, OpenClaw, Cursor, Cline...)
 │   Tool      │
 └──────┬──────┘
-       │ http://localhost:20128/v1
+       │ http://localhost:20126/v1
        ↓
 ┌─────────────────────────────────────────────┐
 │           EzRouter (Smart Router)           │
@@ -49,7 +49,14 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-**1. Install from source:**
+**Option 1 — npm (recommended):**
+
+```bash
+npm install -g @rabbi696/ezrouter
+ezrouter
+```
+
+**Option 2 — From source:**
 
 ```bash
 git clone https://github.com/golamrabbi696/EzRouter.git
@@ -57,10 +64,10 @@ cd EzRouter
 cp .env.example .env
 npm install
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+PORT=20126 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20126 npm run start
 ```
 
-🎉 Dashboard opens at `http://localhost:20128`
+🎉 Dashboard opens at `http://localhost:20126`
 
 ---
 
@@ -385,7 +392,7 @@ Set `X-9Router-Token-Saver: off` to bypass all token savers for one chat request
 ### Chat Completions
 
 ```bash
-POST http://localhost:20128/v1/chat/completions
+POST http://localhost:20126/v1/chat/completions
 Authorization: Bearer your-api-key
 Content-Type: application/json
 
@@ -401,7 +408,7 @@ Content-Type: application/json
 ### List Models
 
 ```bash
-GET http://localhost:20128/v1/models
+GET http://localhost:20126/v1/models
 Authorization: Bearer your-api-key
 
 → Returns all models + combos in OpenAI format
