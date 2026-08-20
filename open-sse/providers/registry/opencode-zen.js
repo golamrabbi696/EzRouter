@@ -76,13 +76,5 @@ export default {
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", targetFormat: "claude" },
     { id: "qwen3.5-plus", name: "Qwen 3.5 Plus", targetFormat: "claude" },
-    { id: "big-pickle", name: "Big Pickle" },
-    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash (Free)" },
-    { id: "mimo-v2.5-free", name: "MiMo V2.5 (Free)" },
-    { id: "ling-3.0-flash-free", name: "Ling 3.0 Flash (Free)" },
-    { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra (Free)" },
-    { id: "north-mini-code-free", name: "North Mini Code (Free)" },
-    { id: "laguna-s-2.1-free", name: "Laguna S 2.1 (Free)" },
-    { id: "longcat-2.0-free", name: "Longcat 2.0 (Free)" },
   ],
 };

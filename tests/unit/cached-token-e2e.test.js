@@ -141,5 +141,4 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     expect(after.totalPromptTokens - before.totalPromptTokens).toBe(77);
     expect(after.totalCompletionTokens - before.totalCompletionTokens).toBe(23);
   });
-  });
 });
