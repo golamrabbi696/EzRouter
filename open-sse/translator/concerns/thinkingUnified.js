@@ -347,7 +347,9 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
       // upstream default applies. No "max" — clamp max/ultra to "xhigh".
       const level = toLevel(eff);
       if (level === "none") break;
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, ["xhigh", "high", "medium", "low", "minimal"]);
+      if (level) {
+        body.reasoning_effort = (level === "max" || level === "ultra") ? "xhigh" : level;
+      }
       break;
     }
     case "kiro":

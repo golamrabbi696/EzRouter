@@ -233,7 +233,6 @@ export const PROVIDER_CAPABILITIES = {
     "muse-spark-1.2": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
     "muse-spark-1.1": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
   },
-  },
 };
 
 /**
