@@ -1,17 +1,18 @@
 /**
- * Claude usage handler
+ * Claude usage handler (Anthropic OAuth & API key)
+ * Supports:
+ * 1. OAuth usage endpoint (Claude Code consumer OAuth tokens)
+ * 2. Organization settings/usage API (API key / org admin users)
  */
 
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { ANTHROPIC_API_VERSION } from "../../providers/shared.js";
-import { U, parseResetTime } from "./shared.js";
+import { parseResetTime, ANTHROPIC_API_VERSION } from "./shared.js";
 
-// Claude API config (urls from registry, apiVersion is header logic kept here)
 const CLAUDE_CONFIG = {
-  oauthUsageUrl: U("claude").oauthUrl,
-  usageUrl: U("claude").orgUrl,
-  settingsUrl: U("claude").settingsUrl,
+  oauthUsageUrl: "https://api.anthropic.com/api/oauth/usage",
+  settingsUrl: "https://api.anthropic.com/api/organizations/current",
+  usageUrl: "https://api.anthropic.com/api/organizations/{org_id}/usage",
   apiVersion: ANTHROPIC_API_VERSION,
 };
 
@@ -179,17 +180,16 @@ async function fetchClaudeUsage(accessToken, proxyOptions, key) {
   }
 }
 
-export function getClaudeUsage(accessToken, proxyOptions = null) {
+export function getClaudeUsage(accessToken, proxyOptions = null, options = {}) {
+  const force = options?.force === true;
   const key = credentialKey(accessToken);
   const cached = usageCache.get(key);
   const now = Date.now();
-  if (cached && (now < cached.expiresAt || now < cached.retryAt)) {
+  if (!force && cached && (now < cached.expiresAt || now < cached.retryAt)) {
     return Promise.resolve(cached.value);
   }
-  if (inFlight.has(key)) return inFlight.get(key);
+  if (!force && inFlight.has(key)) return inFlight.get(key);
   if (inFlight.size >= CACHE_MAX) {
-    // ponytail: 128 active polls match current profile ceiling; add a bounded
-    // wait queue before increasing this ceiling.
     return Promise.resolve({ message: "Claude usage refresh is busy. Retry shortly." });
   }
 
@@ -264,12 +264,12 @@ async function getClaudeUsageLegacy(accessToken, proxyOptions = null) {
 
     return {
       cacheable: false,
-      value: { message: "Claude connected. Usage API requires admin permissions." },
+      value: { message: "Claude connected. Usage endpoint requires OAuth." },
     };
-  } catch {
+  } catch (error) {
     return {
       cacheable: false,
-      value: { message: "Claude connected. Unable to fetch usage." },
+      value: { message: `Claude connected. Error checking usage: ${error.message}` },
     };
   }
 }

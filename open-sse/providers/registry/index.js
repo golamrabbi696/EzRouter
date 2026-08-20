@@ -9,6 +9,7 @@
 import providerAlicodeIntl from "./alicode-intl.js";
 import providerAlicode from "./alicode.js";
 import providerAlimsIntl from "./alims-intl.js";
+import providerAlitpIntl from "./alitp-intl.js";
 import providerAnthropic from "./anthropic.js";
 import providerAntigravity from "./antigravity.js";
 import providerApiAirforce from "./api-airforce.js";
@@ -47,6 +48,7 @@ import providerFalAi from "./fal-ai.js";
 import providerFeatherless from "./featherless.js";
 import providerFirecrawl from "./firecrawl.js";
 import providerFireworks from "./fireworks.js";
+import providerFishAudio from "./fish-audio.js";
 import providerFrontierForAll from "./frontier-for-all.js";
 import providerGeminiCli from "./gemini-cli.js";
 import providerGemini from "./gemini.js";
@@ -137,6 +139,7 @@ export default [
   providerAlicodeIntl,
   providerAlicode,
   providerAlimsIntl,
+  providerAlitpIntl,
   providerAnthropic,
   providerAntigravity,
   providerApiAirforce,
@@ -175,6 +178,7 @@ export default [
   providerFeatherless,
   providerFirecrawl,
   providerFireworks,
+  providerFishAudio,
   providerFrontierForAll,
   providerGeminiCli,
   providerGemini,

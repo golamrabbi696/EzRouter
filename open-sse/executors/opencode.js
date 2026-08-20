@@ -1,9 +1,13 @@
 import crypto from "crypto";
+<<<<<<< HEAD
 import https from "https";
+=======
+>>>>>>> upstream/master
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+<<<<<<< HEAD
 import { applyOcEgress } from "../utils/ocEgress.js";
 
 // Machine's real public IPv4, discovered once (direct https — intentionally
@@ -56,6 +60,10 @@ function isPrivateIp(ip) {
 // as unidentified and gets FreeUsageLimitError/429 immediately. Keep the
 // version in sync with opencode releases when it bumps.
 const OPENCODE_UA = "opencode/latest/1.18.18/cli";
+=======
+
+const OPENCODE_UA = "opencode";
+>>>>>>> upstream/master
 const MESSAGES_MODELS = new Set();
 
 function generateRequestId() {
@@ -84,14 +92,19 @@ function resolveOpencodeSession(body, credentials) {
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
+    this._currentSessionId = null;
   }
 
   transformRequest(model, body, stream, credentials) {
+<<<<<<< HEAD
     // Stash the resolved session on the per-request credentials object instead
     // of an instance field: OpenCodeExecutor is a module-level singleton and
     // concurrent requests used to overwrite _currentSessionId between
     // transformRequest and buildHeaders, bleeding sessions across requests.
     if (credentials) credentials._ocSession = resolveOpencodeSession(body, credentials);
+=======
+    this._currentSessionId = resolveOpencodeSession(body, credentials);
+>>>>>>> upstream/master
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
@@ -102,6 +115,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       : `${base}/zen/v1/chat/completions`;
   }
 
+<<<<<<< HEAD
   // OpenCode Zen's free tier is rate-limited per real egress IP (daily
   // budget per IP, reset at UTC midnight). There is NO automatic switching:
   // when the current IP's budget is exhausted the gateway answers
@@ -116,6 +130,8 @@ export class OpenCodeExecutor extends BaseExecutor {
     return super.execute(args);
   }
 
+=======
+>>>>>>> upstream/master
   buildHeaders(credentials, stream = true) {
     const raw = credentials?.rawHeaders || {};
     const lower = {};
@@ -124,6 +140,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     const downstreamUa = lower["user-agent"] || "";
     const isOpencodeDownstream = downstreamUa.toLowerCase().includes("opencode");
 
+<<<<<<< HEAD
     // OpenCode Zen's free-tier IP rate limiter reads the x-real-ip request
     // header (ipRateLimiter.ts: rawIp = headers.get("x-real-ip") ?? "" →
     // ip = "unknown"; no header = ONE global bucket shared with every other
@@ -138,15 +155,23 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rawIp = (lower["x-9r-real-ip"] || lower["x-real-ip"] || "").trim();
     const clientIp = rawIp && !isPrivateIp(rawIp) ? rawIp : (rawIp ? discoverPublicIp() : "");
 
+=======
+>>>>>>> upstream/master
     return {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || "desktop",
+<<<<<<< HEAD
       "x-opencode-session": lower["x-opencode-session"] || credentials?._ocSession || generateSessionId(),
       "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-project": lower["x-opencode-project"] || "global",
       ...(clientIp ? { "x-real-ip": clientIp } : {}),
+=======
+      "x-opencode-session": lower["x-opencode-session"] || this._currentSessionId || generateSessionId(),
+      "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
+      "x-opencode-project": lower["x-opencode-project"] || "global",
+>>>>>>> upstream/master
       "Accept": stream ? "text/event-stream" : "*/*",
     };
   }
