@@ -122,6 +122,13 @@ export function detectRequiredCapabilities(body) {
   const required = new Set();
   if (!body || typeof body !== "object") return required;
 
+  const addByMime = (mime) => {
+    if (typeof mime !== "string") return;
+    if (mime.startsWith("image/")) required.add("vision");
+    else if (mime.startsWith("audio/")) required.add("audioInput");
+    else if (mime === "application/pdf") required.add("pdf");
+  };
+
   const scanBlock = (b) => {
     if (!b || typeof b !== "object") return;
     const t = b.type;

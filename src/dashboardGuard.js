@@ -42,8 +42,6 @@ const ALWAYS_PROTECTED = [
   "/api/settings/database",
   "/api/version/shutdown",
   "/api/version/update",
-  "/api/oauth/cursor/auto-import",
-  "/api/oauth/kiro/auto-import",
 ];
 
 // Require auth, but allow through if requireLogin is disabled
@@ -135,20 +133,36 @@ function isPublicLlmApi(pathname) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-function extractApiKey(request) {
+function extractApiKeyCandidates(request) {
+  const candidates = [];
+  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
+
   const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7).trim());
+
   const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) return apiKeyHeader;
+  if (apiKeyHeader) push(apiKeyHeader.trim());
+
   const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) return googleApiKeyHeader;
-  return request.nextUrl.searchParams?.get("key") || null;
+  if (googleApiKeyHeader) push(googleApiKeyHeader.trim());
+
+  const queryKey = request.nextUrl?.searchParams?.get("key");
+  if (queryKey) push(queryKey.trim());
+
+  return candidates;
+}
+
+function extractApiKey(request) {
+  return extractApiKeyCandidates(request)[0] || null;
 }
 
 async function hasValidApiKey(request) {
-  const apiKey = extractApiKey(request);
-  if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  const candidates = extractApiKeyCandidates(request);
+  if (candidates.length === 0) return false;
+  for (const key of candidates) {
+    if (await validateApiKey(key)) return true;
+  }
+  return false;
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -190,10 +204,28 @@ function isPublicApi(pathname) {
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function isMessagesEndpoint(pathname) {
+  return pathname === "/v1/messages" || pathname === "/api/v1/messages";
+}
+
+function formatPublicLlmAuthError(pathname) {
+  if (isMessagesEndpoint(pathname)) {
+    return {
+      type: "error",
+      error: {
+        type: "authentication_error",
+        message: "API key required for remote API access",
+      },
+    };
+  }
+  return { error: "API key required for remote API access" };
+}
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
   extractApiKey,
+  extractApiKeyCandidates,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
 };
@@ -234,7 +266,7 @@ export async function proxy(request) {
 
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    return NextResponse.json(formatPublicLlmAuthError(pathname), { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.

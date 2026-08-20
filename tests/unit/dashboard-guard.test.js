@@ -207,20 +207,18 @@ describe("dashboard guard always-protected auto-import routes", () => {
   });
 
   it("allows local auto-import without JWT when requireLogin=false", async () => {
-    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+    const response = await proxy(localRequest("/api/oauth/cursor/auto-import", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
-      realIp: "127.0.0.1",
     }));
 
     expect(response).toBe(mocks.nextResponse);
   });
 
   it("allows local kiro auto-import without JWT when requireLogin=false", async () => {
-    const response = await proxy(request("/api/oauth/kiro/auto-import", {
+    const response = await proxy(localRequest("/api/oauth/kiro/auto-import", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
-      realIp: "127.0.0.1",
     }));
 
     expect(response).toBe(mocks.nextResponse);
