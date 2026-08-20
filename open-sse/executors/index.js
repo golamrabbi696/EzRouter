@@ -1,104 +1,103 @@
-import { BaseExecutor } from "./base.js";
-import { DefaultExecutor } from "./default.js";
-import { ClaudeExecutor } from "./claude.js";
-import { GeminiExecutor } from "./gemini.js";
 import { AntigravityExecutor } from "./antigravity.js";
-import { KiroExecutor } from "./kiro.js";
+import { AzureExecutor } from "./azure.js";
+import { GeminiCLIExecutor } from "./gemini-cli.js";
+import { GithubExecutor } from "./github.js";
+import { IFlowExecutor } from "./iflow.js";
 import { QoderExecutor } from "./qoder.js";
+import { KiroExecutor } from "./kiro.js";
+import { KimchiExecutor } from "./kimchi.js";
 import { CodexExecutor } from "./codex.js";
 import { CursorExecutor } from "./cursor.js";
 import { VertexExecutor } from "./vertex.js";
 import { OpenCodeExecutor } from "./opencode.js";
-import { OpenCodeGoExecutor } from "./opencode-go.js";
 import { OpenCodeZenExecutor } from "./opencode-zen.js";
 import { GrokWebExecutor } from "./grok-web.js";
 import { GrokCliExecutor } from "./grok-cli.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
-import { PerplexityAgentExecutor } from "./perplexity-agent.js";
-import { KiloGatewayExecutor } from "./kilo-gateway.js";
-import { KilocodeExecutor } from "./kilocode.js";
-import { ClinepassExecutor } from "./clinepass.js";
-import { MmfExecutor } from "./mmf.js";
-import { TraeExecutor } from "./trae.js";
-import { WindsurfExecutor } from "./windsurf.js";
-import { VeniceExecutor } from "./venice.js";
-import { IflowExecutor } from "./iflow.js";
-import { DevinExecutor } from "./devin.js";
-import { MimoExecutor } from "./mimo.js";
+import { OllamaLocalExecutor } from "./ollama-local.js";
+import { CommandCodeExecutor } from "./commandcode.js";
+import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
-import { KimchiExecutor } from "./kimchi.js";
+import { CodeBuddyExecutor } from "./codebuddy-cn.js";
+import { CodeBuddyIntlExecutor } from "./codebuddy-intl.js";
+import TraeExecutor from "./trae.js";
+import ZedExecutor from "./zed.js";
+import WindsurfExecutor from "./windsurf.js";
+import { DefaultExecutor } from "./default.js";
+import { DevinCliExecutor } from "./devin-cli.js";
 
 const executors = {
-  claude: new ClaudeExecutor(),
-  gemini: new GeminiExecutor("gemini"),
-  "gemini-cli": new GeminiExecutor("gemini-cli"),
   antigravity: new AntigravityExecutor(),
-  ag: new AntigravityExecutor(), // Alias
-  kiro: new KiroExecutor(),
+  azure: new AzureExecutor(),
+  "gemini-cli": new GeminiCLIExecutor(),
+  github: new GithubExecutor(),
+  iflow: new IFlowExecutor(),
   qoder: new QoderExecutor(),
   "qoderwork-cn": new QoderExecutor("qoderwork-cn"),
+  kiro: new KiroExecutor(),
+  kimchi: new KimchiExecutor(),
   codex: new CodexExecutor(),
   cursor: new CursorExecutor(),
+  cu: new CursorExecutor(), // Alias for cursor
   vertex: new VertexExecutor("vertex"),
   "vertex-partner": new VertexExecutor("vertex-partner"),
   opencode: new OpenCodeExecutor(),
-  "opencode-go": new OpenCodeGoExecutor(),
   "opencode-zen": new OpenCodeZenExecutor(),
   "grok-web": new GrokWebExecutor(),
   "grok-cli": new GrokCliExecutor(),
   gcli: new GrokCliExecutor(), // Alias
+  gb: new GrokCliExecutor(), // Alias (Grok Build)
   "perplexity-web": new PerplexityWebExecutor(),
-  "perplexity-agent": new PerplexityAgentExecutor(),
-  "kilo-gateway": new KiloGatewayExecutor(),
-  kilocode: new KilocodeExecutor(),
-  clinepass: new ClinepassExecutor(),
-  mmf: new MmfExecutor(),
-  trae: new TraeExecutor(),
-  windsurf: new WindsurfExecutor(),
-  venice: new VeniceExecutor(),
-  iflow: new IflowExecutor(),
-  devin: new DevinExecutor(),
-  "devin-cli": new DevinExecutor(),
-  mimo: new MimoExecutor(),
+  "ollama-local": new OllamaLocalExecutor(),
+  commandcode: new CommandCodeExecutor(),
+  "xiaomi-tokenplan": new XiaomiTokenplanExecutor(),
   "mimo-free": new MimoFreeExecutor(),
-  kimchi: new KimchiExecutor(),
+  mmf: new MimoFreeExecutor(), // Alias for mimo-free
+  "codebuddy-cn": new CodeBuddyExecutor(),
+  "codebuddy-intl": new CodeBuddyIntlExecutor(),
+  trae: new TraeExecutor(),
+  zed: new ZedExecutor(),
+  windsurf: new WindsurfExecutor(),
+  "devin-cli": new DevinCliExecutor(),
 };
 
-/**
- * Get executor for a provider
- * @param {string} provider - Provider ID
- * @returns {BaseExecutor} Executor instance
- */
+const defaultCache = new Map();
+
 export function getExecutor(provider) {
-  return executors[provider] || new DefaultExecutor(provider);
+  if (executors[provider]) return executors[provider];
+  if (!defaultCache.has(provider)) defaultCache.set(provider, new DefaultExecutor(provider));
+  return defaultCache.get(provider);
+}
+
+export function hasSpecializedExecutor(provider) {
+  return !!executors[provider];
 }
 
 export { BaseExecutor } from "./base.js";
-export { ClaudeExecutor } from "./claude.js";
-export { GeminiExecutor } from "./gemini.js";
 export { AntigravityExecutor } from "./antigravity.js";
-export { KiroExecutor } from "./kiro.js";
+export { AzureExecutor } from "./azure.js";
+export { GeminiCLIExecutor } from "./gemini-cli.js";
+export { GithubExecutor } from "./github.js";
+export { IFlowExecutor } from "./iflow.js";
 export { QoderExecutor } from "./qoder.js";
+export { KiroExecutor } from "./kiro.js";
+export { KimchiExecutor } from "./kimchi.js";
 export { CodexExecutor } from "./codex.js";
 export { CursorExecutor } from "./cursor.js";
 export { VertexExecutor } from "./vertex.js";
 export { DefaultExecutor } from "./default.js";
 export { OpenCodeExecutor } from "./opencode.js";
-export { OpenCodeGoExecutor } from "./opencode-go.js";
 export { OpenCodeZenExecutor } from "./opencode-zen.js";
 export { GrokWebExecutor } from "./grok-web.js";
 export { GrokCliExecutor } from "./grok-cli.js";
 export { PerplexityWebExecutor } from "./perplexity-web.js";
-export { PerplexityAgentExecutor } from "./perplexity-agent.js";
-export { KiloGatewayExecutor } from "./kilo-gateway.js";
-export { KilocodeExecutor } from "./kilocode.js";
-export { ClinepassExecutor } from "./clinepass.js";
-export { MmfExecutor } from "./mmf.js";
-export { TraeExecutor } from "./trae.js";
-export { WindsurfExecutor } from "./windsurf.js";
-export { VeniceExecutor } from "./venice.js";
-export { IflowExecutor } from "./iflow.js";
-export { DevinExecutor } from "./devin.js";
-export { MimoExecutor } from "./mimo.js";
+export { OllamaLocalExecutor } from "./ollama-local.js";
+export { CommandCodeExecutor } from "./commandcode.js";
+export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 export { MimoFreeExecutor } from "./mimo-free.js";
-export { KimchiExecutor } from "./kimchi.js";
+export { CodeBuddyExecutor } from "./codebuddy-cn.js";
+export { CodeBuddyIntlExecutor } from "./codebuddy-intl.js";
+export { default as TraeExecutor } from "./trae.js";
+export { default as ZedExecutor } from "./zed.js";
+export { default as WindsurfExecutor } from "./windsurf.js";
+export { DevinCliExecutor } from "./devin-cli.js";

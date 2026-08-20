@@ -33,8 +33,6 @@ import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
-
 /**
  * Split domain filter into includes / excludes (excludes prefixed with "-").
  * @param {string[]} [domainFilter]

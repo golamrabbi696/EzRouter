@@ -204,7 +204,6 @@ export async function handleVideoGet(request, requestId) {
       provider = pinnedConnection.provider;
     }
   }
-  }
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {

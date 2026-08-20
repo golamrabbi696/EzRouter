@@ -255,6 +255,64 @@ export function normalizeClaudePassthrough(body, model = "") {
   return body;
 }
 
+// Put a 5m breakpoint on the last cache-eligible block of a message.
+// thinking/redacted_thinking blocks do not accept cache_control.
+function markLastCacheableBlock(msg) {
+  if (!Array.isArray(msg?.content)) return false;
+  for (let i = msg.content.length - 1; i >= 0; i--) {
+    const block = msg.content[i];
+    if (typeof block !== "object" || block === null) continue;
+    if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
+    block.cache_control = { type: "ephemeral" };
+    return true;
+  }
+  return false;
+}
+
+// Re-anchor cache breakpoints on a Claude passthrough body (same policy as
+// prepareClaudeRequest): last tool + last system block at 1h, last assistant at 5m.
+// The client's own markers point at pre-normalization offsets, so they are dropped.
+// Must run LAST, after every step that can reshape system/tools/messages
+// (normalize, tool dedupe, token savers) — otherwise the anchor drifts off the tail.
+export function anchorClaudeCache(body) {
+  if (!body || typeof body !== "object") return body;
+  if (Array.isArray(body.system)) {
+    const last = body.system.length - 1;
+    body.system.forEach((block, i) => {
+      if (typeof block !== "object" || block === null) return;
+      if (i === last) block.cache_control = { type: "ephemeral", ttl: "1h" };
+      else delete block.cache_control;
+    });
+  }
+  if (Array.isArray(body.tools)) {
+    const last = body.tools.length - 1;
+    body.tools.forEach((tool, i) => {
+      if (i === last) tool.cache_control = { type: "ephemeral", ttl: "1h" };
+      else delete tool.cache_control;
+    });
+  }
+  if (Array.isArray(body.messages)) {
+    let anchored = null;
+    for (let i = body.messages.length - 1; i >= 0; i--) {
+      const msg = body.messages[i];
+      if (!Array.isArray(msg.content)) continue;
+      for (const block of msg.content) delete block.cache_control;
+      // Prefer the last assistant turn: it ends a completed exchange, so the
+      // prefix up to it stays byte-stable across the following requests.
+      if (anchored || msg.role !== ROLE.ASSISTANT) continue;
+      anchored = markLastCacheableBlock(msg);
+    }
+    // First turn of a conversation has no assistant yet — anchor the final
+    // message instead, so the opening prompt is cached rather than paid twice.
+    if (!anchored) {
+      for (let i = body.messages.length - 1; i >= 0 && !anchored; i--) {
+        anchored = markLastCacheableBlock(body.messages[i]);
+      }
+    }
+  }
+  return body;
+}
+
 // Prepare request for Claude format endpoints
 // - Cleanup cache_control
 // - Filter empty messages

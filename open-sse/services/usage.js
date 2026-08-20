@@ -80,4 +80,3 @@ export async function getUsageForProvider(connection, proxyOptions = null, optio
     force: options.force === true,
   });
 }
-}

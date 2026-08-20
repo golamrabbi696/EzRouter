@@ -5,6 +5,8 @@
 import { PROVIDERS } from "../../providers/index.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 
+export const ANTHROPIC_API_VERSION = "2023-06-01";
+
 // usage endpoints: single source from registry transport.usage
 export const U = (id) => PROVIDERS[id]?.usage || {};
 
