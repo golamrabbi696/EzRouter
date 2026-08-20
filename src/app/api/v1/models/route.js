@@ -8,7 +8,6 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyByValue, getSettings } from "@/lib/localDb";
 import { extractApiKey } from "@/sse/services/auth.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
-import { getSettings } from "@/lib/db/repos/settingsRepo.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";

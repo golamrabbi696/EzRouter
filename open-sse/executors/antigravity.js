@@ -161,12 +161,19 @@ export class AntigravityExecutor extends BaseExecutor {
   parseError(response, bodyText) {
     if (response.status === 429 && bodyText) {
       const { resetsAtMs } = parseGoogleQuotaReset(bodyText);
-      if (resetsAtMs) {
-        let message = bodyText;
-        try {
-          message = JSON.parse(bodyText)?.error?.message || bodyText;
-        } catch { /* keep raw body */ }
-        return { status: 429, message, resetsAtMs };
+      let message = bodyText;
+      try {
+        message = JSON.parse(bodyText)?.error?.message || bodyText;
+      } catch { /* keep raw body */ }
+
+      let finalResetMs = resetsAtMs;
+      if (!finalResetMs) {
+        const retryMs = this.parseRetryFromErrorMessage(message);
+        if (retryMs) finalResetMs = Date.now() + retryMs;
+      }
+
+      if (finalResetMs) {
+        return { status: 429, message, resetsAtMs: finalResetMs };
       }
     }
     return super.parseError(response, bodyText);
@@ -432,52 +439,6 @@ export class AntigravityExecutor extends BaseExecutor {
     if (match[3]) totalMs += parseInt(match[3]) * 1000; // seconds
 
     return totalMs > 0 ? totalMs : null;
-  }
-
-  parseError(response, bodyText = "") {
-    let errorJson = null;
-    try {
-      errorJson = bodyText ? JSON.parse(bodyText) : null;
-    } catch {
-      // Keep the raw body as the fallback message.
-    }
-
-    const status = response?.status || errorJson?.error?.code || HTTP_STATUS.BAD_GATEWAY;
-    if (status !== HTTP_STATUS.RATE_LIMITED) return null;
-
-    const now = Date.now();
-    let resetsAtMs = null;
-    for (const detail of errorJson?.error?.details || []) {
-      const resetTimestamp = detail?.metadata?.quotaResetTimeStamp;
-      const parsedTimestamp = resetTimestamp ? Date.parse(resetTimestamp) : NaN;
-      if (Number.isFinite(parsedTimestamp) && parsedTimestamp > now) {
-        resetsAtMs = parsedTimestamp;
-        break;
-      }
-
-      const retryDelay = detail?.retryDelay || detail?.metadata?.quotaResetDelay;
-      const delayMatch = typeof retryDelay === "string"
-        ? retryDelay.match(/^(\d+(?:\.\d+)?)s$/)
-        : null;
-      if (delayMatch) {
-        const delayMs = Number(delayMatch[1]) * 1000;
-        if (Number.isFinite(delayMs) && delayMs > 0) {
-          resetsAtMs = now + delayMs;
-          break;
-        }
-      }
-    }
-
-    const message = errorJson?.error?.message
-      || errorJson?.message
-      || bodyText
-      || `Upstream error: ${status}`;
-    if (!resetsAtMs) {
-      const retryMs = this.parseRetryFromErrorMessage(message);
-      if (retryMs) resetsAtMs = now + retryMs;
-    }
-
-    return { status, message, resetsAtMs };
   }
 
   extractErrorMessage(errorJson, bodyText = "") {

@@ -1,10 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { parseDurationMs, parseGoogleQuotaReset } from "../../open-sse/utils/googleQuota.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { BACKOFF_CONFIG, COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS } from "../../open-sse/config/errorConfig.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 import { GeminiCLIExecutor } from "../../open-sse/executors/gemini-cli.js";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.parse("2026-08-02T12:03:46Z"));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 // Verbatim 429 body captured from cloudcode-pa.googleapis.com via the antigravity executor.
 const AG_QUOTA_BODY = JSON.stringify({

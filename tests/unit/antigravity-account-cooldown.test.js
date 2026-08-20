@@ -25,7 +25,9 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 
 vi.mock("@/shared/constants/providers.js", () => ({
   resolveProviderId: (provider) => provider,
+  resolveProviderRpm: () => 0,
   FREE_PROVIDERS: {},
+  FREE_TIER_PROVIDERS: {},
 }));
 
 vi.mock("../../src/sse/utils/logger.js", () => ({

@@ -42,8 +42,24 @@ export function isOverLimit(connectionId, limit, now = Date.now()) {
 }
 
 /** Count usage against an id: amount is 1 for a request, or a token count. */
-export function recordRequest(connectionId, amount = 1, now = Date.now()) {
+export function recordRequest(connectionId, amountOrNow = 1, maybeNow = undefined) {
   if (!connectionId) return;
+  let amount = 1;
+  let now = Date.now();
+
+  if (maybeNow !== undefined) {
+    amount = amountOrNow;
+    now = maybeNow;
+  } else if (typeof amountOrNow === "number") {
+    if (amountOrNow >= 1_000_000) {
+      amount = 1;
+      now = amountOrNow;
+    } else {
+      amount = amountOrNow;
+      now = Date.now();
+    }
+  }
+
   if (!(amount > 0)) return;
   const list = prune(connectionId, now);
   list.push({ t: now, n: amount });

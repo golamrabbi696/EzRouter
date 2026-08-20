@@ -76,7 +76,7 @@ export async function recordKeyUsage(apiKey, { tokens = 0, cost = 0 } = {}) {
     if (!apiKey) return;
     const record = await getApiKeyBySecret(apiKey);
     if (!record) return;
-    if (tokens > 0 && record.tpm > 0) recordRequest(tpmId(record.id), tokens);
+    if (tokens > 0 && record.tpm > 0) recordRequest(tpmId(record.id), tokens, Date.now());
     if (cost > 0) await addKeySpend(apiKey, cost);
   } catch {
     // accounting is best-effort
