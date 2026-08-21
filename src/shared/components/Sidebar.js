@@ -86,9 +86,15 @@ export default function Sidebar({ onClose }) {
         {/* Logo */}
         <div className="px-6 py-4 flex flex-col gap-2">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
-              <span className="material-symbols-outlined text-white text-[20px]">hub</span>
-            </div>
+            <img
+              src="/logo.png"
+              alt="EzRouter"
+              className="size-9 rounded-[10px] object-contain shadow-[var(--shadow-warm)]"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = "/favicon.svg";
+              }}
+            />
             <div className="flex flex-col">
               <h1 className="text-lg font-semibold tracking-tight text-text-main">
                 {APP_CONFIG.name}
