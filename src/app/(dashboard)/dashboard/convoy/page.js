@@ -42,30 +42,26 @@ export default function ConvoyPage() {
       setRules(data.items || []);
     } catch (e) {
       console.error("Failed to fetch rules", e);
-    } finally {
-      setLoading(false);
     }
   };
 
+  // Parallel fetch of rules and providers on mount
   useEffect(() => {
-    fetch("/api/convoy/rules")
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error("Failed to load rules")))
-      .then((data) => setRules(data.items || []))
-      .catch((e) => console.error("Failed to fetch rules", e))
-      .finally(() => setLoading(false));
-  }, []);
-  useEffect(() => {
-    fetch("/api/providers")
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error("Failed to load providers")))
-      .then((data) => {
+    Promise.all([
+      fetch("/api/convoy/rules").then((res) => res.ok ? res.json() : Promise.reject(new Error("Failed to load rules"))),
+      fetch("/api/providers").then((res) => res.ok ? res.json() : Promise.reject(new Error("Failed to load providers")))
+    ])
+      .then(([rulesData, providersData]) => {
+        setRules(rulesData.items || []);
         const seen = new Set();
-        setProviders((data.connections || []).filter((item) => {
+        setProviders((providersData.connections || []).filter((item) => {
           if (!item.provider || seen.has(item.provider)) return false;
           seen.add(item.provider);
           return true;
         }).map((item) => ({ id: item.provider, name: item.name || item.displayName || item.provider })));
       })
-      .catch(() => setProviders([]));
+      .catch((e) => console.error("Failed to fetch initial data", e))
+      .finally(() => setLoading(false));
   }, []);
 
   const resetForm = () => {

@@ -7,7 +7,6 @@ import {
   Handle,
   Position,
   Controls,
-  ControlButton,
   BaseEdge,
   getBezierPath,
 } from "@xyflow/react";
@@ -573,9 +572,8 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 
   const activeModelSet = rawActiveData.mSet;
 
-  // 3-way model display mode ("on" | "auto" | "off")
-  const [modelDisplayMode, setModelDisplayMode] = useState("auto");
-  const [activeView, setActiveView] = useState("providers");
+  // Default model display mode is auto
+  const modelDisplayMode = "auto";
 
   const { nodes, edges } = useMemo(
     () => buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode),
@@ -590,21 +588,15 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   const rfInstance = useRef(null);
   const containerRef = useRef(null);
 
-  const fitCurrentView = useCallback((view = activeView) => {
+  const fitCurrentView = useCallback(() => {
     if (!rfInstance.current || nodes.length === 0) return;
-    if (view === "providers") {
-      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
-      rfInstance.current.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: -0.15, duration: 300 });
-    } else {
-      rfInstance.current.fitView({ padding: 0.05, duration: 300 });
-    }
-  }, [nodes, activeView]);
+    rfInstance.current.fitView({ padding: 0.25, duration: 300 });
+  }, [nodes]);
 
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
     setTimeout(() => {
-      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
-      instance.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: -0.15, duration: 300 });
+      instance.fitView({ padding: 0.25, duration: 300 });
     }, 60);
   }, [nodes]);
 
@@ -612,109 +604,21 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      fitCurrentView(activeView);
+      fitCurrentView();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [fitCurrentView, activeView]);
+  }, [fitCurrentView]);
 
   useEffect(() => {
     if (rfInstance.current && nodes.length > 0) {
-      const id = setTimeout(() => fitCurrentView(activeView), 60);
+      const id = setTimeout(() => fitCurrentView(), 60);
       return () => clearTimeout(id);
     }
-  }, [nodes.length, activeView, fitCurrentView]);
-
-  const handleFitAllModels = useCallback(() => {
-    setActiveView("models");
-    fitCurrentView("models");
-  }, [fitCurrentView]);
-
-  const handleFitProvidersOnly = useCallback(() => {
-    setActiveView("providers");
-    fitCurrentView("providers");
-  }, [fitCurrentView]);
+  }, [nodes.length, fitCurrentView]);
 
   return (
     <div ref={containerRef} className="relative h-[380px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[540px]">
-      {/* Floating Control Bar */}
-      {providers.length > 0 && (
-        <div className="absolute top-3 right-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-border/80 bg-bg/90 p-1.5 backdrop-blur-md shadow-md text-xs">
-          {/* Models 3-Way Toggle (ON / AUTO / OFF) */}
-          <div className="flex items-center gap-1 bg-bg-subtle/90 px-1 py-0.5 rounded-md border border-border/60">
-            <span className="text-[11px] text-text-muted px-1 font-semibold">Models:</span>
-            <button
-              type="button"
-              onClick={() => setModelDisplayMode("on")}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                modelDisplayMode === "on"
-                  ? "bg-primary text-white shadow-xs"
-                  : "text-text-muted hover:text-text hover:bg-bg-hover"
-              }`}
-              title="Munculkan SEMUA cabang model"
-            >
-              ON
-            </button>
-            <button
-              type="button"
-              onClick={() => setModelDisplayMode("auto")}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                modelDisplayMode === "auto"
-                  ? "bg-cyan-500 text-white shadow-xs"
-                  : "text-text-muted hover:text-text hover:bg-bg-hover"
-              }`}
-              title="Model HANYA muncul saat sedang diproses/aktif"
-            >
-              AUTO
-            </button>
-            <button
-              type="button"
-              onClick={() => setModelDisplayMode("off")}
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                modelDisplayMode === "off"
-                  ? "bg-stone-700 text-white shadow-xs"
-                  : "text-text-muted hover:text-text hover:bg-bg-hover"
-              }`}
-              title="Sembunyikan SEMUA cabang model"
-            >
-              OFF
-            </button>
-          </div>
-
-          <div className="w-[1px] h-4 bg-border/60" />
-
-          {/* View Fit Zoom Switcher */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={handleFitProvidersOnly}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
-                activeView === "providers"
-                  ? "bg-primary/20 text-primary border border-primary/30 font-semibold"
-                  : "text-text-muted hover:text-text hover:bg-bg-hover"
-              }`}
-              title="Zoom In 115% Fokus ke Provider"
-            >
-              <span className="material-symbols-outlined text-[14px]">hub</span>
-              <span>Providers</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleFitAllModels}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
-                activeView === "models"
-                  ? "bg-primary/20 text-primary border border-primary/30 font-semibold"
-                  : "text-text-muted hover:text-text hover:bg-bg-hover"
-              }`}
-              title="Zoom Full semua model"
-            >
-              <span className="material-symbols-outlined text-[14px]">account_tree</span>
-              <span>All</span>
-            </button>
-          </div>
-        </div>
-      )}
-
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected
@@ -727,7 +631,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={false}
-          minZoom={0.5}
+          minZoom={0.2}
           maxZoom={2.5}
           onInit={onInit}
           proOptions={{ hideAttribution: true }}
@@ -740,14 +644,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodesConnectable={false}
           elementsSelectable={false}
         >
-          <Controls showInteractive={false} className="react-flow-controls-custom">
-            <ControlButton onClick={handleFitProvidersOnly} title="Zoom In 115% Providers Only">
-              <span className="material-symbols-outlined text-[16px]">hub</span>
-            </ControlButton>
-            <ControlButton onClick={handleFitAllModels} title="Fit All Models">
-              <span className="material-symbols-outlined text-[16px]">fit_screen</span>
-            </ControlButton>
-          </Controls>
+          <Controls showInteractive={false} className="react-flow-controls-custom" />
         </ReactFlow>
       )}
     </div>

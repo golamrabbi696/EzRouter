@@ -33,8 +33,20 @@ const STATUS_GETTERS = {
   pi: piGet,
 };
 
+// Simple in-memory cache to reduce redundant filesystem checks on quick page switches
+let cache = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5000; // 5 seconds
+
 // Batch endpoint: gather all CLI tool statuses in one round-trip
 export async function GET() {
+  const now = Date.now();
+  
+  // Return cached result if still valid
+  if (cache && now - cacheTimestamp < CACHE_TTL) {
+    return NextResponse.json(cache);
+  }
+
   const entries = await Promise.all(
     Object.entries(STATUS_GETTERS).map(async ([toolId, getter]) => {
       try {
@@ -46,5 +58,10 @@ export async function GET() {
       }
     }),
   );
-  return NextResponse.json(Object.fromEntries(entries));
+  
+  const result = Object.fromEntries(entries);
+  cache = result;
+  cacheTimestamp = now;
+  
+  return NextResponse.json(result);
 }
