@@ -6,7 +6,36 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, plan = null, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+const AUTH_EXPIRED_PATTERNS = [
+  "invalid_grant",
+  "refresh_token_expired",
+  "reauth_required",
+  "unrecoverable_refresh_error",
+  "refresh_token_reused",
+  "refresh_token_invalidated",
+];
+
+function isAuthExpiredError(errorText) {
+  if (!errorText || typeof errorText !== "string") return false;
+  const lower = errorText.toLowerCase();
+  return AUTH_EXPIRED_PATTERNS.some((p) => lower.includes(p));
+}
+
+function isAuthError(errorCode, errorText) {
+  if (errorCode === 401 || errorCode === 403) return true;
+  if (!errorText || typeof errorText !== "string") return false;
+  const lower = errorText.toLowerCase();
+  return (
+    lower.includes("unauthorized") ||
+    lower.includes("token") ||
+    lower.includes("invalid api key") ||
+    lower.includes("revoked") ||
+    lower.includes("auth") ||
+    isAuthExpiredError(errorText)
+  );
+}
+
+export default function ConnectionRow({ connection, plan = null, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onReconnect = null, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -120,8 +149,15 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
+    ? "active"  // Cooldown expired → treat as active
     : connection.testStatus;
+
+  const isAuthUnavailable = (isOAuthConnection || isCookieConnection)
+    && connection.testStatus === "unavailable"
+    && isAuthError(connection.errorCode, connection.lastError);
+
+  const isExpired = isAuthExpiredError(connection.lastError);
+  const displayErrorText = isExpired ? "Auth expired — reconnect required" : connection.lastError;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
@@ -190,7 +226,7 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
-                {connection.lastError}
+                {displayErrorText}
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
@@ -269,6 +305,16 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
               </button>
             </Tooltip>
           )}
+          {isAuthUnavailable && onReconnect && (
+            <button
+              onClick={() => onReconnect(connection)}
+              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20 transition-colors"
+              title="Reconnect account"
+            >
+              <span className="material-symbols-outlined text-[18px]">lock_reset</span>
+              <span className="text-[10px] leading-tight font-semibold">Reconnect</span>
+            </button>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -319,6 +365,7 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onReconnect: PropTypes.func,
   oneByOneStatus: PropTypes.shape({
     state: PropTypes.string,
     error: PropTypes.string,

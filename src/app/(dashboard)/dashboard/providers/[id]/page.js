@@ -1075,6 +1075,13 @@ export default function ProviderDetailPage() {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
                 }}
+                onReconnect={() => {
+                  if (providerId === "iflow") {
+                    setShowIFlowCookieModal(true);
+                  } else {
+                    setShowOAuthModal(true);
+                  }
+                }}
                 onDelete={() => handleDelete(conn.id)}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
