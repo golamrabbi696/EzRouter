@@ -9,8 +9,8 @@ export const APP_CONFIG = {
 
 // GitHub configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
-  donateUrl: "https://9router.com/api/donate",
+  changelogUrl: "/CHANGELOG.md",
+  donateUrl: "https://www.supportkori.com/golamrabbi",
 };
 
 // Updater configuration
