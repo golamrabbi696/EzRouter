@@ -150,7 +150,7 @@ ModelNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Center 9Router node — pulse/glow on card only
+// Center EzRouter node — pulse/glow on card only
 function RouterNode({ data }) {
   const powering = (data.activeCount || 0) > 0;
   return (
@@ -167,14 +167,18 @@ function RouterNode({ data }) {
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
       <img
-        src="/favicon.svg"
-        alt="9Router"
+        src="/logo.png"
+        alt="EzRouter"
         className={`w-6 h-6 mr-2 ${powering ? "topology-router-icon" : ""}`}
         loading="lazy"
         decoding="async"
+        onError={(e) => {
+          e.target.onerror = null;
+          e.target.src = "/favicon.svg";
+        }}
       />
       <span className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-primary"}`}>
-        9Router
+        EzRouter
       </span>
       {data.activeCount > 0 && (
         <span className="ml-2 px-1.5 py-0.5 rounded-full bg-yellow-400 text-black text-xs font-bold topology-router-badge">
@@ -315,7 +319,7 @@ TopologyEdge.propTypes = {
 const nodeTypes = { provider: ProviderNode, router: RouterNode, model: ModelNode };
 const edgeTypes = { topology: TopologyEdge };
 
-// Place 9Router center, Providers on inner ellipse, Models branching on outer ellipse
+// Place EzRouter center, Providers on inner ellipse, Models branching on outer ellipse
 function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode = "on") {
   const nodeW = 150;
   const nodeH = 34;
@@ -443,14 +447,14 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const midCol = (itemsInThisLayer - 1) / 2;
         const colOffset = colIndex - midCol;
 
-        // Keep every provider's fan inside its own angular sector. This prevents
-        // neighbouring providers from crossing into each other's radial labels.
+    // Keep every provider's fan inside its own angular sector. This prevents
+    // neighbouring providers from crossing into each other's radial labels.
         const providerSector = (2 * Math.PI) / count;
         const usableFan = providerSector * 0.68;
         const fanStep = itemsInThisLayer > 1 ? usableFan / (itemsInThisLayer - 1) : 0;
         const mAngle = angle + colOffset * fanStep;
 
-        // Radial labels use their long axis toward 9Router, so each tier needs
+        // Radial labels use their long axis toward EzRouter, so each tier needs
         // enough depth for the whole pill rather than only its horizontal height.
         const baseDist = 120;
         const layerSpacing = 150;
@@ -459,7 +463,7 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const mx = (rx + distOffset) * Math.cos(mAngle);
         const my = (ry + (distOffset * 0.85)) * Math.sin(mAngle);
 
-        // Align the model name's axis to the actual line through the 9Router
+        // Align the model name's axis to the actual line through the EzRouter
         // center. Flip labels on the left half so their text remains upright.
         const radialAngle = Math.atan2(my, mx);
         let radialRotation = (radialAngle * 180) / Math.PI;

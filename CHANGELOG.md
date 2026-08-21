@@ -1,3 +1,75 @@
+# v0.5.62 (2026-08-21)
+
+## Breaking Changes
+- **Rebranding**: Complete rebrand from `9router` to `EzRouter` for independent operation
+  - Package name changed to `@rabbi696/ezrouter` on npm
+  - Binary command changed from `9router` to `ezrouter`
+  - Default port changed from `20128` to `20126`
+  - Data directory changed from `~/.9router` to `~/.ezrouter` (Windows: `%APPDATA%/ezrouter`)
+
+## Features
+- **Isolation**: Full runtime isolation to run alongside `9router` without conflicts
+  - Separate authentication cookies (`ezrouter_auth_token` vs `auth_token`)
+  - Separate MITM certificates (`EzRouter MITM Root CA` vs `9Router MITM Root CA`)
+  - Separate data directories and process management
+  - Separate ports (20126 vs 20128) for concurrent operation
+- **Branding**: Updated all user-facing branding to EzRouter
+  - Dashboard title, login screen, sidebar logo
+  - Browser page title and favicon
+  - CLI help text and error messages
+  - Removed upstream 9Remote and 9English sidebar links
+
+## Fixes
+- **Auth**: Fixed cross-logout issue between `9router` and `ezrouter` on localhost
+  - Renamed session cookie from `auth_token` to `ezrouter_auth_token`
+  - Both apps can now maintain separate login sessions on the same machine
+- **MITM**: Fixed MITM proxy conflict when both apps run simultaneously
+  - Changed default MITM router base from `http://localhost:20128` to `http://localhost:20126`
+  - Updated MITM Root CA name to `EzRouter MITM Root CA`
+  - Updated certificate filenames to `ezrouter-root-ca.crt`
+  - Changed hosts file temp filenames from `.9router.{new,bak}` to `.ezrouter.{new,bak}`
+- **Updater**: Fixed npm package name and install commands in auto-updater
+  - Changed from `9router` to `@rabbi696/ezrouter`
+  - Updated install command to `npm i -g @rabbi696/ezrouter@latest --prefer-online`
+
+## Documentation
+- **README**: Updated CLI README with correct paths and package name
+  - Fixed data location paths (`~/.ezrouter` instead of `~/.9router`)
+  - Updated Docker image references
+  - Changed npm install instructions to `@rabbi696/ezrouter`
+  - Updated homepage URL to `https://ezrouter.golamrabbi.dev`
+
+## Internal
+- **Package**: Updated CLI package metadata
+  - Changed package name to `@rabbi696/ezrouter`
+  - Updated homepage URL to `https://ezrouter.golamrabbi.dev`
+  - Updated description to reflect port 20126
+  - Removed `9router` binary alias from bin entry
+- **Database**: Updated all hardcoded path references
+  - Changed `~/.9router` to `~/.ezrouter` across codebase
+  - Updated SAML issuer default from `urn:9router:sp` to `urn:ezrouter:sp`
+  - Updated internal variable names and comments
+- **Branding**: Updated logo and visual identity
+  - Changed sidebar icon from material `hub` to `/logo.png` with `/favicon.svg` fallback
+  - Updated page title to "EzRouter - AI Infrastructure Management"
+  - Updated login screen branding and password reset hint text
+
+---
+
+# v0.5.61 (2026-08-21)
+
+## Internal
+- Version bump for npm publish retry
+
+---
+
+# v0.5.60 (2026-08-21)
+
+## Internal
+- Version bump for npm metadata update
+
+---
+
 # v0.5.55 (2026-08-14)
 
 ## Features
