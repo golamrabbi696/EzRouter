@@ -1,7 +1,7 @@
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy.js";
 import { getExecutor } from "open-sse/index.js";
-import { resolveAntigravityProjectId } from "open-sse/services/projectId.js";
+import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
   const updateData = {};
@@ -52,7 +52,7 @@ export async function POST(request) {
 
     let projectId = connection.projectId;
     if ((provider === "antigravity" || provider === "gemini-cli") && !projectId) {
-      projectId = await resolveAntigravityProjectId({ credentials: connection, connectionId: connection.id, accessToken: connection.accessToken, provider });
+      projectId = await getProjectIdForConnection(connection.id, connection.accessToken, provider);
       if (projectId) {
         await updateProviderConnection(connection.id, { projectId });
       }
