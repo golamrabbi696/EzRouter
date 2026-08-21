@@ -128,9 +128,10 @@ function getDisplayHost() {
   return host === DEFAULT_HOST ? "localhost" : host;
 }
 const MAX_PORT_ATTEMPTS = 10;
-// Identifiers for killAllAppProcesses - only kill 9router specifically
+// Identifiers for killAllAppProcesses - kill ezrouter (and legacy 9router for migration safety)
 const PROCESS_IDENTIFIERS = [
-  '9router'  // Only package name - avoid killing other apps
+  'ezrouter',
+  '9router'
 ];
 
 // Parse arguments
@@ -209,8 +210,8 @@ function compareVersions(a, b) {
 // Get app data dir (matches app/src/lib/dataDir.js convention)
 function getAppDataDir() {
   return process.platform === "win32"
-    ? path.join(process.env.APPDATA || "", "9router")
-    : path.join(os.homedir(), ".9router");
+    ? path.join(process.env.APPDATA || "", "ezrouter")
+    : path.join(os.homedir(), ".ezrouter");
 }
 
 // Kill PID from file (best-effort, removes file after)

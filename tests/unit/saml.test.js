@@ -135,7 +135,7 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
     it("mergeWithDefaults safely populates SAML defaults for existing installations", () => {
       const merged = mergeWithDefaults({ authMode: "password" });
       expect(merged.ssoType).toBe("oidc");
-      expect(merged.samlIssuer).toBe("urn:9router:sp");
+      expect(merged.samlIssuer).toBe("urn:ezrouter:sp");
       expect(merged.samlLoginLabel).toBe("Sign in with SAML SSO");
       expect(merged.samlAttributeEmail).toBe("email");
       expect(merged.samlAttributeName).toBe("name");

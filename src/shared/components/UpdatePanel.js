@@ -216,7 +216,7 @@ export default function UpdatePanel({
           });
   const logTail = Array.isArray(status?.logTail) ? status.logTail : [];
   const busy = phase === "starting" || phase === "running" || phase === "success";
-  const title = `Update 9Router${latestVersion ? ` to v${latestVersion}` : ""}`;
+  const title = `Update EzRouter${latestVersion ? ` to v${latestVersion}` : ""}`;
 
   const whatsNewBlock = (
     <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
@@ -293,7 +293,7 @@ export default function UpdatePanel({
           <>
             {whatsNewBlock}
             <ul className="text-xs text-white/70 space-y-1.5 list-disc list-inside mb-4">
-              <li>Works with the production <code className="px-1 rounded bg-white/10">9router</code> CLI install</li>
+              <li>Works with the production <code className="px-1 rounded bg-white/10">ezrouter</code> CLI install</li>
               <li>Takes about 1–2 minutes (npm global install + restart)</li>
               <li>You can switch to manual install if auto fails</li>
             </ul>
@@ -398,7 +398,7 @@ export default function UpdatePanel({
                 ? `Command copied. Server will stop in ${countdown}s...`
                 : error
                   ? "Auto-update unavailable — install manually."
-                  : "Copy the install command, stop the server, then re-run 9router."}
+                  : "Copy the install command, stop the server, then re-run ezrouter."}
           </p>
         </div>
       </div>
@@ -419,7 +419,7 @@ export default function UpdatePanel({
       <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
         <li>Click <strong>Copy & Shutdown</strong> below.</li>
         <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
+        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">ezrouter</code> again after install.</li>
       </ol>
 
       {isDisconnected ? (
