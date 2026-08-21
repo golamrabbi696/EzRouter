@@ -15,10 +15,10 @@ export default function ChangelogModal({ isOpen, onClose }) {
   const modalRef = useRef(null);
 
   useEffect(() => {
-    if (!isOpen || html) return;
+    if (!isOpen) return;
     setLoading(true);
     setError("");
-    fetch(GITHUB_CONFIG.changelogUrl)
+    fetch(GITHUB_CONFIG.changelogUrl, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
@@ -26,7 +26,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
       .then((md) => setHtml(marked.parse(md)))
       .catch((err) => setError(err.message || "Failed to load"))
       .finally(() => setLoading(false));
-  }, [isOpen, html]);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {

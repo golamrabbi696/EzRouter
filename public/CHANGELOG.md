@@ -1,3 +1,45 @@
+# v0.5.65 (2026-08-21)
+
+## Features & Improvements
+- **Dashboard (Usage & Analytics)**: Optimized Provider Topology chart
+  - Removed top filter bar (`Models: ON / AUTO / OFF`, `Providers`, `All` buttons) for a cleaner UI
+  - Increased default zoom-out view (`padding: 0.25`, `minZoom: 0.2`) so all provider nodes and connections are immediately visible
+  - Enhanced EzRouter center node styling and electric flow animation
+- **Performance**: Resolved page loading delays
+  - Parallelized API fetching on Input Guard (`/dashboard/convoy`) using `Promise.all()` to eliminate request waterfall
+  - Added in-memory caching to `/api/cli-tools/all-statuses` to reduce redundant filesystem checks during navigation
+- **Branding**: Complete EzRouter visual integration
+  - Updated CLI tray icon with crisp 32x32 EzRouter logo and "EzRouter" menu label
+  - Updated model topology center router icon and title
+  - Updated NPM package name in version checker to `@rabbi696/ezrouter` to prevent timeout
+
+---
+
+# v0.5.64 (2026-08-21)
+
+## Features & Upstream Sync
+- **Providers & Models**:
+  - Added `muse-spark-1.2-contributor` and `ox-alpha-free` to OpenCode-Go
+  - Added `muse-spark-1.2-contributor-free` and `x-preview-f-free` to OpenCode
+  - Added OpenAI-Responses transport support for OpenCode / OpenCode-Go
+- **Fixes**:
+  - Fixed cached token tracking fallback (`cached_tokens ?? usage.prompt_tokens_details?.cached_tokens`) (#3449)
+  - Fixed project ID fail-fast handling during onboarding without uncaught throw (#3452)
+  - Cleaned up token refresh scheduler project ID invalidation
+- **Database**:
+  - Migrated SQLite data to `~/.ezrouter/db/data.sqlite`
+  - Applied `VACUUM` and `PRAGMA optimize` for faster query execution
+
+---
+
+# v0.5.63 (2026-08-21)
+
+## Internal
+- CLI build and packaging pipeline updates for `@rabbi696/ezrouter`
+- Verified binary launcher and hook integration
+
+---
+
 # v0.5.62 (2026-08-21)
 
 ## Breaking Changes

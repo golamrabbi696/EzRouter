@@ -60,6 +60,14 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: "/CHANGELOG.md",
+        destination: "/api/changelog"
+      },
+      {
+        source: "/changelog.md",
+        destination: "/api/changelog"
+      },
+      {
         source: "/v1/v1/:path*",
         destination: "/api/v1/:path*"
       },

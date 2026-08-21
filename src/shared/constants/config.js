@@ -9,7 +9,7 @@ export const APP_CONFIG = {
 
 // GitHub configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "/CHANGELOG.md",
+  changelogUrl: "/api/changelog",
   donateUrl: "https://www.supportkori.com/golamrabbi",
 };
 
