@@ -44,8 +44,8 @@ npx @rabbi696/ezrouter
 
 ```bash
 docker run -d --name ezrouter -p 20126:20126 \
-  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data \
-  decolua/9router:latest
+  -v "$HOME/.ezrouter:/app/data" -e DATA_DIR=/app/data \
+  golamrabbi696/ezrouter:latest
 ```
 
 Published images: [Docker Hub](https://hub.docker.com/r/decolua/9router) • [GHCR](https://github.com/decolua/9router/pkgs/container/9router) (multi-platform amd64/arm64).
@@ -93,9 +93,9 @@ Any tool supporting OpenAI/Claude-compatible API works.
 
 ## 💾 Data Location
 
-- **macOS/Linux**: `~/.9router/db/data.sqlite`
-- **Windows**: `%APPDATA%/9router/db/data.sqlite`
-- **Docker**: `/app/data/db/data.sqlite` (mount `$HOME/.9router` to persist)
+- **macOS/Linux**: `~/.ezrouter/db/data.sqlite`
+- **Windows**: `%APPDATA%/ezrouter/db/data.sqlite`
+- **Docker**: `/app/data/db/data.sqlite` (mount `$HOME/.ezrouter` to persist)
 
 ---
 
