@@ -29,6 +29,8 @@ export function shouldUseSecureCookie(request) {
   return forceSecureCookie || isHttpsRequest;
 }
 
+export const AUTH_COOKIE_NAME = "ezrouter_auth_token";
+
 export async function createDashboardAuthToken(claims = {}) {
   return new SignJWT({ authenticated: true, ...claims })
     .setProtectedHeader({ alg: "HS256" })
@@ -59,7 +61,7 @@ export async function getDashboardAuthSession(token) {
 
 export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {
   const token = await createDashboardAuthToken(claims);
-  cookieStore.set("auth_token", token, {
+  cookieStore.set(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: shouldUseSecureCookie(request),
     sameSite: "lax",
@@ -68,7 +70,7 @@ export async function setDashboardAuthCookie(cookieStore, request, claims = {}) 
 }
 
 export function clearDashboardAuthCookie(cookieStore) {
-  cookieStore.delete("auth_token");
+  cookieStore.delete(AUTH_COOKIE_NAME);
 }
 
 // Verify the current dashboard password (re-auth for sensitive actions).
