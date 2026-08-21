@@ -294,12 +294,11 @@ function killAllAppProcesses(appPort) {
           });
           const lines = output.split("\n").slice(1).filter(l => l.trim());
           lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
+            // Whitelist: real node process running ezrouter/cli.js, or next-server.
+            // Avoids killing editors/grep/strace/cursor that just have "ezrouter" in cmdline.
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              (cmd.includes("node") && cmd.includes("ezrouter") && (cmd.includes("cli.js") || cmd.includes("\\ezrouter") || cmd.includes("/ezrouter")));
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
@@ -320,12 +319,11 @@ function killAllAppProcesses(appPort) {
           const lines = output.split('\n');
 
           lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
+            // Whitelist: real node process running ezrouter/cli.js, or next-server.
+            // Avoids killing grep/strace/editors/cursor that incidentally match "ezrouter".
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              (cmd.includes("node") && cmd.includes("ezrouter") && (cmd.includes("cli.js") || cmd.includes("/ezrouter")));
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];

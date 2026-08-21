@@ -1,10 +1,9 @@
 {
   "name": "@rabbi696/ezrouter",
-  "version": "0.5.57",
+  "version": "0.5.59",
   "description": "EzRouter CLI - Start and manage EzRouter server (default port 20126)",
   "bin": {
-    "ezrouter": "./cli.js",
-    "9router": "./cli.js"
+    "ezrouter": "./cli.js"
   },
   "files": [
     "cli.js",
@@ -52,6 +51,15 @@
     "api"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/golamrabbi696/EzRouter.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/golamrabbi696/EzRouter#readme",
+  "bugs": {
+    "url": "https://github.com/golamrabbi696/EzRouter/issues"
+  },
   "devDependencies": {
     "esbuild": "^0.25.12",
     "nodemon": "^3.1.14"
