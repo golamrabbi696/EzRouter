@@ -1,3 +1,45 @@
+# v0.5.67 (2026-08-22)
+
+## Features & Improvements
+- **OAuth & Error Recovery UX**:
+  - Added dedicated **"Reconnect"** action button to connection rows for expired/invalidated OAuth sessions.
+  - Added friendly human-readable error messages for token expiration (`invalid_grant`, `refresh_token_expired`, `reauth_required`, `unrecoverable_refresh_error`).
+  - Gated Reconnect action strictly for auth failures while preserving raw technical errors for rate limits (429) and network issues.
+- **Runtime & Process Isolation**:
+  - Pointed default `DATA_DIR` and `.env.example` configurations to `~/.ezrouter` and `/var/lib/ezrouter`.
+  - Updated default development and server ports to `20126`.
+  - Updated CLI `getAppDataDir()` fallback to `~/.ezrouter` / `%APPDATA%/ezrouter`.
+  - Enhanced CLI `PROCESS_IDENTIFIERS` to manage `ezrouter` processes while retaining `9router` for clean migration.
+  - Updated default SAML Service Provider issuer to `urn:ezrouter:sp` and SAML fallback port to `20126`.
+  - Updated generated runtime `package.json` package names to `ezrouter-runtime`.
+- **Branding**:
+  - Updated `UpdatePanel` modal strings to reference EzRouter (`ezrouter CLI install`, `run ezrouter again`).
+  - Updated Skills dashboard display name to `EzRouter (Entry)`.
+
+## Fixes
+- **Provider Details & Accounts**:
+  - Fixed template string syntax in `src/app/(dashboard)/dashboard/providers/[id]/page.js` (`fetchConnections` was sending literal string `"${encodeURIComponent(providerId)}"` instead of evaluating `providerId`, causing 0 accounts to show in provider connection list).
+- **CLI Tools & Media Combo Configurations**:
+  - Updated legacy hardcoded port `20128` fallbacks to dynamic `window.location.origin` / `20126` in Media Combo details, DeepSeek TUI, Hermes, Grok Build, OpenClaw, JCode, and CLI tools cards.
+  - Updated JCode settings route to recognize both port 20126 and 20128 configurations.
+- **Build & Component Exports**:
+  - Added missing barrel exports for `AddCustomVideoModal` and `Pagination` in `src/shared/components/index.js`, fixing runtime failures in custom video model provider creation.
+  - Removed unused `Pagination` import in `providers/[id]/page.js`.
+  - Fixed `api/translator/send` to use `getProjectIdForConnection` instead of the removed `resolveAntigravityProjectId` helper.
+- **Testing & Packaging**:
+  - Restored `module.exports` and `require.main` guard in `cli/scripts/build-cli.js` so `cli-build-artifacts.test.js` runs in isolation without triggering full builds.
+  - Updated `tests/unit/saml.test.js` default issuer expectation to `urn:ezrouter:sp`.
+  - Normalized Node platform version and package semver in `tests/translator/golden-url-header.test.js` to ensure snapshot stability.
+
+---
+
+# v0.5.66 (2026-08-21)
+
+## Internal
+- Version bump and snapshot alignment for provider registry additions
+
+---
+
 # v0.5.65 (2026-08-21)
 
 ## Features & Improvements
