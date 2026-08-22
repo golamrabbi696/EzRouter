@@ -1,4 +1,4 @@
-# v0.5.73 (2026-08-22)
+# v0.5.74 (2026-08-22)
 
 ## Features & Improvements
 - **Upstream Sync & Enhancements (PRs #3417–#3466)**:
