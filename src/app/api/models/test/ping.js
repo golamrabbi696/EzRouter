@@ -37,7 +37,7 @@ function createSilentWavFile() {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-async function getInternalHeaders() {
+async function getInternalHeaders(connectionId = null) {
   let apiKey = null;
   try {
     const keys = await getApiKeys();
@@ -47,19 +47,26 @@ async function getInternalHeaders() {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  if (connectionId) headers["x-9r-connection-id"] = connectionId;
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, customPrompt = null) {
-  const headers = await getInternalHeaders();
+export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, customPromptOrOptions = null) {
+  const isOptions = customPromptOrOptions && typeof customPromptOrOptions === "object";
+  const customPrompt = isOptions ? customPromptOrOptions.customPrompt : customPromptOrOptions;
+  const connectionId = isOptions ? customPromptOrOptions.connectionId : null;
+  const timeoutMs = (isOptions && typeof customPromptOrOptions.timeoutMs === "number") ? customPromptOrOptions.timeoutMs : 15000;
+
+  const headers = await getInternalHeaders(connectionId);
   const start = Date.now();
 
   if (kind === "embedding") {
+    const promptText = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "test";
     const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, input: customPrompt || "test" }),
-      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ model, input: promptText }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -78,11 +85,12 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
   }
 
   if (kind === "image") {
+    const promptText = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "test";
     const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model, prompt: customPrompt || "test" }),
-      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify({ model, prompt: promptText }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -111,7 +119,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
       body: form,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -130,7 +138,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     return { ok: true, latencyMs, error: null, status: res.status, preview: text };
   }
 
-  const promptContent = customPrompt || "hi";
+  const promptContent = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "hi";
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
     method: "POST",
     headers,
@@ -144,7 +152,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       stream: false,
       messages: [{ role: "user", content: promptContent }],
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const latencyMs = Date.now() - start;
 
