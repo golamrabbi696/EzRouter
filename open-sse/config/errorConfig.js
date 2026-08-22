@@ -44,6 +44,13 @@ export const BACKOFF_CONFIG = {
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
+// Cooldown after a provider returns HTTP 200 with no usable content (null/empty
+// message, no tool_calls, no reasoning). Upstream reports success but produced
+// nothing — lock the model on this account for a few minutes so the combo/account
+// fallback loop skips straight to the next candidate instead of retrying a backend
+// that just failed silently, then automatically retries it once the lock expires.
+export const EMPTY_CONTENT_COOLDOWN_MS = 7 * 60 * 1000;
+
 // Sanity ceiling for a provider-reported reset time (resetsAtMs), NOT a policy cap.
 // Providers report genuinely long resets: codex `resets_at` runs 5-6h out and
 // cloudcode-pa returns `quotaResetTimeStamp` up to ~150h out. Truncating those to
