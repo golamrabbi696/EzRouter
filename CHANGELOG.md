@@ -17,8 +17,10 @@
   - Updated Skills dashboard display name to `EzRouter (Entry)`.
 
 ## Fixes
-- **Provider Details & Accounts**:
-  - Fixed template string syntax in `src/app/(dashboard)/dashboard/providers/[id]/page.js` (`fetchConnections` was sending literal string `"${encodeURIComponent(providerId)}"` instead of evaluating `providerId`, causing 0 accounts to show in provider connection list).
+- **Provider Details & Pagination**:
+  - Restored `Pagination` import in `src/app/(dashboard)/dashboard/providers/[id]/page.js`, fixing runtime render crash when a provider has >10 accounts (e.g. Antigravity with 11 accounts).
+  - Fixed `getProviderStats` and `freeTierEntries` in `src/app/(dashboard)/dashboard/providers/page.js` to dynamically match all valid connection types (`oauth`, `apikey`, `api_key`, `cookie`), ensuring accurate account counts on overview cards.
+  - Fixed template string syntax in `src/app/(dashboard)/dashboard/providers/[id]/page.js` (`fetchConnections` was sending literal string `"${encodeURIComponent(providerId)}"` instead of evaluating `providerId`).
 - **CLI Tools & Media Combo Configurations**:
   - Updated legacy hardcoded port `20128` fallbacks to dynamic `window.location.origin` / `20126` in Media Combo details, DeepSeek TUI, Hermes, Grok Build, OpenClaw, JCode, and CLI tools cards.
   - Updated JCode settings route to recognize both port 20126 and 20128 configurations.
