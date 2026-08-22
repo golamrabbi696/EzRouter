@@ -342,7 +342,6 @@ export class AntigravityExecutor extends BaseExecutor {
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
     return {
-      ...body,
       project: projectId,
       model: body.model || model,
       userAgent: "antigravity",
@@ -574,9 +573,10 @@ export class AntigravityExecutor extends BaseExecutor {
     });
 
     // Single functionDeclarations group: client tools first, then decoys
+    const { stream: _s, stream_options: _so, ...cleanBody } = body;
     return {
       cloakedBody: {
-        ...body,
+        ...cleanBody,
         request: {
           ...body.request,
           tools: [{ functionDeclarations: allDeclarations }],

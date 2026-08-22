@@ -26,6 +26,10 @@ export class GeminiCLIExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     // Store model for use in buildHeaders (called by base.execute after transformRequest)
     this._currentModel = model;
+    if (body) {
+      delete body.stream;
+      delete body.stream_options;
+    }
     // Cloud Code Assist wraps the Gemini payload: { project, model, request: <body> }
     if (body && body.request && body.model) return body;
     return {

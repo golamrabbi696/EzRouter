@@ -165,8 +165,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
-    if (translatedBody.stream !== stream) {
-      translatedBody.stream = stream;
+    if (targetFormat !== FORMATS.GEMINI && targetFormat !== FORMATS.GEMINI_CLI && targetFormat !== FORMATS.ANTIGRAVITY && targetFormat !== FORMATS.VERTEX) {
+      if (translatedBody.stream !== stream) {
+        translatedBody.stream = stream;
+      }
+    } else {
+      delete translatedBody.stream;
+      delete translatedBody.stream_options;
     }
   }
 

@@ -1,4 +1,4 @@
-# v0.5.67 (2026-08-22)
+# v0.5.71 (2026-08-22)
 
 ## Features & Improvements
 - **OAuth & Error Recovery UX**:
@@ -17,6 +17,8 @@
   - Updated Skills dashboard display name to `EzRouter (Entry)`.
 
 ## Fixes
+- **Google & Antigravity Request Payload**:
+  - Stripped `stream` and `stream_options` fields from Google Gemini/Antigravity/Vertex payloads in `chatCore.js`, `antigravity.js`, and `gemini-cli.js` (resolves HTTP 400 `Invalid JSON payload received. Unknown name "stream": Cannot find field`).
 - **Provider Details & Pagination**:
   - Restored `Pagination` import in `src/app/(dashboard)/dashboard/providers/[id]/page.js`, fixing runtime render crash when a provider has >10 accounts (e.g. Antigravity with 11 accounts).
   - Fixed `getProviderStats` and `freeTierEntries` in `src/app/(dashboard)/dashboard/providers/page.js` to dynamically match all valid connection types (`oauth`, `apikey`, `api_key`, `cookie`), ensuring accurate account counts on overview cards.
@@ -32,6 +34,13 @@
   - Restored `module.exports` and `require.main` guard in `cli/scripts/build-cli.js` so `cli-build-artifacts.test.js` runs in isolation without triggering full builds.
   - Updated `tests/unit/saml.test.js` default issuer expectation to `urn:ezrouter:sp`.
   - Normalized Node platform version and package semver in `tests/translator/golden-url-header.test.js` to ensure snapshot stability.
+
+---
+
+# v0.5.70 (2026-08-22)
+
+## Internal
+- Version bump and packaging sync for CLI release
 
 ---
 
