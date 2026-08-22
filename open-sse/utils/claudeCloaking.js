@@ -101,6 +101,33 @@ export function decloakToolNames(body, toolNameMap) {
   return { ...body, content };
 }
 
+/**
+ * Decloak the tool name inside a single streamed Claude SSE event.
+ *
+ * Streaming counterpart of decloakToolNames(). Required for claude→claude
+ * proxying: translateResponse() returns same-format chunks untouched, so
+ * without this the client receives the cloaked ("_ide"-suffixed) tool name
+ * and rejects the call as an unknown tool. In a Claude SSE stream a tool
+ * name appears exactly once per call — on the content_block_start event of
+ * a tool_use block; argument deltas carry no name.
+ *
+ * Unknown names (e.g. a CC decoy tool the model called anyway) pass through
+ * unchanged, matching the non-streaming decloak behavior.
+ *
+ * @param {object|null} chunk - Parsed SSE event (may be null on stream flush)
+ * @param {Map|null} toolNameMap - Suffixed → original name map from cloakClaudeTools()
+ * @returns {object|null} The chunk, with the tool_use name restored when cloaked
+ */
+export function decloakStreamChunk(chunk, toolNameMap) {
+  if (!toolNameMap?.size || !chunk || typeof chunk !== "object") return chunk;
+  if (chunk.type !== "content_block_start") return chunk;
+  const block = chunk.content_block;
+  if (block?.type !== "tool_use" || typeof block.name !== "string") return chunk;
+  const original = toolNameMap.get(block.name);
+  if (!original) return chunk;
+  return { ...chunk, content_block: { ...block, name: original } };
+}
+
 // CC decoy tools — Claude Code native tool names, marked unavailable
 const CC_DECOY_TOOLS = [
   { name: "Task", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },
