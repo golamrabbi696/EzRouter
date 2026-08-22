@@ -92,6 +92,9 @@ export class OpenCodeExecutor extends BaseExecutor {
     // concurrent requests used to overwrite _currentSessionId between
     // transformRequest and buildHeaders, bleeding sessions across requests.
     if (credentials) credentials._ocSession = resolveOpencodeSession(body, credentials);
+    if (body) {
+      body.model = model;
+    }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 

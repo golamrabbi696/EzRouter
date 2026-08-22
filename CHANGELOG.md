@@ -26,6 +26,10 @@
   - Updated Skills dashboard display name to `EzRouter (Entry)`.
 
 ## Fixes
+- **OpenCode Free & Ox Alpha Model Aliases**:
+  - Added upstream alias mapping in `open-sse/providers/registry/opencode.js` and `open-sse/executors/opencode.js` so that `oc/ox-alpha`, `oc/ox-alpha-free`, and `oc/x-preview-f-free` all resolve to OpenCode's wire ID `x-preview-f-free` and pass `dispatchModel` to the executor (resolves `[401]: Model ox-alpha-free is not supported`).
+  - Added OpenCode Free models (`mimo-v2.5-free`, `hy3-free`, `nemotron-3.5-lightning-free`, `nemotron-3-ultra-free`, `laguna-s-2.1-free`) to the registry catalog.
+  - Fixed `isResponsesResponse` reference in `nonStreamingHandler.js`.
 - **Google & Antigravity Request Payload**:
   - Stripped `stream` and `stream_options` fields from Google Gemini/Antigravity/Vertex payloads in `chatCore.js`, `antigravity.js`, and `gemini-cli.js` (resolves HTTP 400 `Invalid JSON payload received. Unknown name "stream": Cannot find field`).
 - **Provider Details & Pagination**:
