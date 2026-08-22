@@ -168,10 +168,13 @@ export default function ProvidersPage() {
   }, []);
 
   const getProviderStats = (providerId, authType) => {
-    const authTypes = Array.isArray(authType) ? authType : [authType];
-    const providerConnections = connections.filter(
-      (c) => c.provider === providerId && authTypes.includes(c.authType),
-    );
+    const authTypes = Array.isArray(authType) ? authType : authType ? [authType] : null;
+    const providerConnections = connections.filter((c) => {
+      if (c.provider !== providerId) return false;
+      if (!authTypes || authTypes.includes("all") || authTypes.includes("freeTier") || authTypes.includes("free")) return true;
+      if (authTypes.includes("apikey") && (c.authType === "apikey" || c.authType === "api_key")) return true;
+      return authTypes.includes(c.authType);
+    });
 
     const getEffectiveStatus = (conn) => {
       const isCooldown = Object.entries(conn).some(
@@ -211,12 +214,15 @@ export default function ProvidersPage() {
     return { connected, error, total, errorCode, errorTime, allDisabled };
   };
 
-  // Toggle all connections for a provider on/off. authType may be a single
-  // string or an array (kiro counts oauth + api_key/apikey together).
+  // Toggle all connections for a provider on/off.
   const handleToggleProvider = async (providerId, authType, newActive) => {
-    const authTypes = Array.isArray(authType) ? authType : [authType];
-    const matches = (c) =>
-      c.provider === providerId && authTypes.includes(c.authType);
+    const authTypes = Array.isArray(authType) ? authType : authType ? [authType] : null;
+    const matches = (c) => {
+      if (c.provider !== providerId) return false;
+      if (!authTypes || authTypes.includes("all") || authTypes.includes("freeTier") || authTypes.includes("free")) return true;
+      if (authTypes.includes("apikey") && (c.authType === "apikey" || c.authType === "api_key")) return true;
+      return authTypes.includes(c.authType);
+    };
     const providerConns = connections.filter(matches);
     setConnections((prev) =>
       prev.map((c) => (matches(c) ? { ...c, isActive: newActive } : c)),
@@ -486,16 +492,21 @@ export default function ProvidersPage() {
               />
             );
           })}
-          {freeTierEntries.map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
+          {freeTierEntries.map(([key, info]) => {
+            const isOauthProvider = !!info.hasOAuth || info.authType === "oauth" || (info.authModes || []).includes("oauth");
+            const CardComponent = isOauthProvider ? ProviderCard : ApiKeyProviderCard;
+            const freeTierAuthTypes = ["oauth", "apikey", "api_key", "cookie"];
+            return (
+              <CardComponent
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, freeTierAuthTypes)}
+                authType={isOauthProvider ? "oauth" : "apikey"}
+                onToggle={(active) => handleToggleProvider(key, freeTierAuthTypes, active)}
+              />
+            );
+          })}
         </div>
       </div>
       )}
