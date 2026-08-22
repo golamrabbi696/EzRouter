@@ -1,6 +1,14 @@
-# v0.5.71 (2026-08-22)
+# v0.5.72 (2026-08-22)
 
 ## Features & Improvements
+- **Upstream Sync & Enhancements (PRs #3417–#3466)**:
+  - **Claude Streaming**: Decloak tool names in same-format streaming passthrough (`decloakStreamChunk`) (#3466).
+  - **Combo & Account Fallback**: Automatically fall back to the next combo account when an upstream provider returns an empty HTTP 200 response with no text, tool calls, or reasoning (`EMPTY_CONTENT_COOLDOWN_MS`) (#3465).
+  - **Codex Usage**: Added GPT-5.3-Codex-Spark quota tracking support (`spark_session` and `spark_weekly`) (#3458).
+  - **SSE Streaming Keepalive**: Emits SSE keepalive ping every 10s during upstream inference silence for Claude Code (`SSE_KEEPALIVE_MS`) (#3457).
+  - **Gemini / Antigravity System Prompts**: Sanitized client branding mentions in system prompts to prevent provider-level rejections (#3454).
+  - **Kimi Performance**: Enabled `forceStream: true` for Kimi Code messages to reduce TTFT from 20s to 2s (#3421).
+  - **MiniMax Multi-Transport**: Preserved images and OpenAI wire format for MiniMax-M3 requests on matching OpenAI transports (#3419).
 - **OAuth & Error Recovery UX**:
   - Added dedicated **"Reconnect"** action button to connection rows for expired/invalidated OAuth sessions.
   - Added friendly human-readable error messages for token expiration (`invalid_grant`, `refresh_token_expired`, `reauth_required`, `unrecoverable_refresh_error`).
@@ -34,6 +42,13 @@
   - Restored `module.exports` and `require.main` guard in `cli/scripts/build-cli.js` so `cli-build-artifacts.test.js` runs in isolation without triggering full builds.
   - Updated `tests/unit/saml.test.js` default issuer expectation to `urn:ezrouter:sp`.
   - Normalized Node platform version and package semver in `tests/translator/golden-url-header.test.js` to ensure snapshot stability.
+
+---
+
+# v0.5.71 (2026-08-22)
+
+## Internal
+- Version bump and packaging sync for CLI release
 
 ---
 
