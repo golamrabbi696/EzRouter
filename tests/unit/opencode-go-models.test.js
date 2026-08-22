@@ -4,11 +4,13 @@ import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
 
 // Chat-only models (no /messages, no /responses support on opencode-go)
-const CHAT_ONLY = ["glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6", "mimo-v2.5", "mimo-v2.5-pro"];
+const CHAT_ONLY = ["glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6", "mimo-v2.5", "mimo-v2.5-pro", "ox-alpha-free"];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
 // Models that also expose the OpenAI /responses endpoint
 const RESPONSES_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash"];
+// Responses-only models
+const RESPONSES_ONLY = ["muse-spark-1.2-contributor"];
 
 // Mirror of chatCore's per-model transport guard: use the sourceFormat-matched
 // transport only when the model declares support for that sourceFormat.
@@ -27,6 +29,8 @@ describe("OpenCode Go model catalog", () => {
       "mimo-v2.5", "mimo-v2.5-pro",
       "minimax-m3", "minimax-m2.7", "minimax-m2.5",
       "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+      "muse-spark-1.2-contributor",
+      "ox-alpha-free",
     ]);
   });
 });
@@ -93,5 +97,14 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
     for (const m of CLAUDE_CAPABLE) {
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
+  });
+
+  it("resolves ox-alpha-free via Chat Completions only (openai transport, not /messages or /responses)", () => {
+    expect(getModelSupportedFormats("opencode-go", "ox-alpha-free")).toEqual(["openai"]);
+    expect(pickTransport("opencode-go", "openai", "opencode-go", "ox-alpha-free")?.baseUrl).toBe(
+      "https://opencode.ai/zen/go/v1/chat/completions",
+    );
+    expect(pickTransport("opencode-go", "claude", "opencode-go", "ox-alpha-free")).toBeNull();
+    expect(pickTransport("opencode-go", "openai-responses", "opencode-go", "ox-alpha-free")).toBeNull();
   });
 });
