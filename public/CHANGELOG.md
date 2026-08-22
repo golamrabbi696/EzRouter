@@ -1,4 +1,4 @@
-# v0.5.72 (2026-08-22)
+# v0.5.73 (2026-08-22)
 
 ## Features & Improvements
 - **Upstream Sync & Enhancements (PRs #3417–#3466)**:
@@ -7,6 +7,7 @@
   - **Codex Usage**: Added GPT-5.3-Codex-Spark quota tracking support (`spark_session` and `spark_weekly`) (#3458).
   - **SSE Streaming Keepalive**: Emits SSE keepalive ping every 10s during upstream inference silence for Claude Code (`SSE_KEEPALIVE_MS`) (#3457).
   - **Gemini / Antigravity System Prompts**: Sanitized client branding mentions in system prompts to prevent provider-level rejections (#3454).
+  - **OpenCode-Go**: Added `ox-alpha-free` (`Ox Alpha Free`) and `muse-spark-1.2-contributor` models with Chat Completions transport guard and full test coverage (#3451).
   - **Kimi Performance**: Enabled `forceStream: true` for Kimi Code messages to reduce TTFT from 20s to 2s (#3421).
   - **MiniMax Multi-Transport**: Preserved images and OpenAI wire format for MiniMax-M3 requests on matching OpenAI transports (#3419).
 - **OAuth & Error Recovery UX**:
@@ -39,9 +40,17 @@
   - Removed unused `Pagination` import in `providers/[id]/page.js`.
   - Fixed `api/translator/send` to use `getProjectIdForConnection` instead of the removed `resolveAntigravityProjectId` helper.
 - **Testing & Packaging**:
+  - Added OpenCode-Go model catalog unit tests for `ox-alpha-free` in `tests/unit/opencode-go-models.test.js` (12/12 pass).
   - Restored `module.exports` and `require.main` guard in `cli/scripts/build-cli.js` so `cli-build-artifacts.test.js` runs in isolation without triggering full builds.
   - Updated `tests/unit/saml.test.js` default issuer expectation to `urn:ezrouter:sp`.
   - Normalized Node platform version and package semver in `tests/translator/golden-url-header.test.js` to ensure snapshot stability.
+
+---
+
+# v0.5.72 (2026-08-22)
+
+## Internal
+- Version bump and packaging sync for CLI release
 
 ---
 
