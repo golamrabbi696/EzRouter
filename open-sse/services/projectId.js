@@ -122,14 +122,6 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
 }
 
 /**
- * Invalidate the cached project ID for a connection.
- * Call this when a connection's credentials are fully revoked or refreshed.
- */
-export function invalidateProjectId(connectionId) {
-    projectIdCache.delete(connectionId);
-}
-
-/**
  * Fully remove a connection: abort any in-flight fetch and delete its cached project ID.
  * Wire this into your connection close / disconnect lifecycle events to prevent memory leaks.
  *

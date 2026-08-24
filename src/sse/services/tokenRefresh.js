@@ -121,8 +121,8 @@ function needsProjectId(provider) {
 
 /**
  * Non-blocking: fetch the project ID for a connection after a token refresh and
- * persist it to localDb.  Invalidates the stale cached value first so the fetch
- * always retrieves a fresh one.
+ * persist it to localDb.  Skipped when the connection already has a project ID –
+ * it never changes on a token rotation.
  *
  * @param {string} provider
  * @param {string} connectionId
