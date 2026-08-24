@@ -8,6 +8,7 @@ import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { applyAssistantPrefillPolicy } from "../concerns/assistantPrefillPolicy.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -180,7 +181,7 @@ function buildThinkingPlaceholder(provider) {
 // 2. output_config.effort → unsupported on Haiku
 // 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
 // 4. server tool model IDs must not include 9router's Claude provider prefix
-export function normalizeClaudePassthrough(body, model = "") {
+export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) {
   if (!body || typeof body !== "object") return body;
 
   // 1. Downgrade adaptive thinking for models that don't support it
@@ -252,6 +253,7 @@ export function normalizeClaudePassthrough(body, model = "") {
     }
   }
 
+  applyAssistantPrefillPolicy(body, rawHeaders);
   return body;
 }
 
@@ -376,7 +378,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
       }
 
       // Keep final assistant even if empty, otherwise check valid content
-      const isFinalAssistant = i === len - 1 && msg.role === "assistant";
+      const isFinalAssistant = i === len - 1 && msg.role === ROLE.ASSISTANT;
       if (isFinalAssistant || hasValidContent(msg)) {
         filtered.push(msg);
       }
@@ -387,10 +389,12 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     filtered = fixToolUseOrdering(filtered);
 
     body.messages = filtered;
+    applyAssistantPrefillPolicy(body, rawHeaders);
+    filtered = body.messages;
 
     // Check if thinking is enabled AND last message is from user
     const lastMessage = filtered[filtered.length - 1];
-    const lastMessageIsUser = lastMessage?.role === "user";
+    const lastMessageIsUser = lastMessage?.role === ROLE.USER;
     const thinkingEnabled = body.thinking?.type === "enabled" && lastMessageIsUser;
 
     // Pass 2 (reverse): add cache_control to last assistant + handle thinking for Anthropic
@@ -398,7 +402,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     for (let i = filtered.length - 1; i >= 0; i--) {
       const msg = filtered[i];
 
-      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      if (msg.role === ROLE.ASSISTANT && Array.isArray(msg.content)) {
         // Add cache_control to last non-thinking block of first (from end) assistant with content
         // thinking/redacted_thinking blocks do not support cache_control
         if (!lastAssistantProcessed && msg.content.length > 0) {
