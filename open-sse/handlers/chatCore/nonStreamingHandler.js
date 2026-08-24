@@ -398,6 +398,79 @@ export async function handleNonStreamingResponse({ body, modelInfo, provider: pP
       } else {
         rawResponseBody = parseSSEToOpenAIResponse(rawText, model);
       }
+    } else {
+      rawResponseBody = JSON.parse(rawText);
+    }
+    responseBody = normalizeResponseBody(rawResponseBody, targetFormat, model, sourceFormat, customToolNames);
+  } catch (parseError) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to parse response: ${parseError.message}`);
+  }
+
+  reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+
+  // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
+  // sending choices[0].native_finish_reason:"network_error" with empty content).
+  const rawChoice = responseBody?.choices?.[0];
+  const nativeReason = rawChoice?.native_finish_reason;
+  const rawMsg = rawChoice?.message || {};
+  const hasContent = (typeof rawMsg.content === "string" && rawMsg.content.length > 0)
+    || (Array.isArray(rawMsg.tool_calls) && rawMsg.tool_calls.length > 0);
+  if (nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && !hasContent) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Upstream provider error: ${nativeReason}`);
+  }
+
+  const usage = extractUsageFromResponse(responseBody);
+  appendLog({ tokens: usage, status: "200 OK" });
+  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+
+  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+    : responseBody;
+  const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
+  // Responses-format translation produces a `object:"response"` body with no
+  // `choices`; skip the Chat-Completions-specific post-processing below for it.
+  const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
+
+  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+  if (translatedResponse?.choices?.[0]) {
+    const choice = translatedResponse.choices[0];
+    const msg = choice.message;
+    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+      choice.finish_reason = "tool_calls";
+    }
+  }
+
+  // Ensure OpenAI-required fields
+  if (!isClaudeMessageResponse && !isResponsesResponse) {
+    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+  }
+
+  // Strip Azure-specific fields
+  if (!isClaudeMessageResponse && !isResponsesResponse) {
+    delete translatedResponse.prompt_filter_results;
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) delete choice.content_filter_results;
+    }
+  }
+
+  if (translatedResponse?.usage) {
+    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
+  }
+
+  // Strip reasoning_content only when content is non-empty.
+  // When content is empty (e.g. thinking models that used all tokens for reasoning),
+  // reasoning_content is the only useful output and must be preserved.
+  if (!isClaudeMessageResponse && !isResponsesResponse && translatedResponse?.choices) {
+    for (const choice of translatedResponse.choices) {
+      if (choice?.message?.reasoning_content && choice.message.content) {
+        delete choice.message.reasoning_content;
+>>>>>>> 9b24277de (fix(stream): abort and fallback when upstream returns native_finish_reason error with empty content)
+      }
       if (!rawResponseBody) {
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
       }

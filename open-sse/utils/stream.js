@@ -203,6 +203,21 @@ export function createSSEStream(options = {}) {
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              const nativeReason = parsed.choices?.[0]?.native_finish_reason;
+              // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
+              // sending finish_reason:"stop" with native_finish_reason:"network_error"
+              // and empty content). Error out so the stream aborts and combo fallbacks.
+              if (isFinishChunk && nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && totalContentLength === 0) {
+                controller.error(new Error(`Upstream stream failed: ${nativeReason}`));
+                return;
+              }
+              if (isFinishChunk && passthroughFinishSeen) {
+                // Duplicate finish chunk (the second usually carries only
+                // upstream-side usage) — drop it: two finish_reasons in one
+                // stream break AI SDK clients ("content after finish reason").
+                continue;
+              }
+              if (isFinishChunk) passthroughFinishSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
