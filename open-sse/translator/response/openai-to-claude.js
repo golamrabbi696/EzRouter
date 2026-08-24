@@ -278,6 +278,9 @@ export function openaiToClaudeResponse(chunk, state) {
   // also dedupes repeated finish_reason chunks from OpenAI-compatible models.
   if (choice.finish_reason && !state.claudeFinishHandled) {
     state.claudeFinishHandled = true;
+    if (state.claudeTerminalEmitted) return results.length > 0 ? results : null;
+    state.claudeTerminalEmitted = true;
+
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
     flushToolBlocks(state, results);
