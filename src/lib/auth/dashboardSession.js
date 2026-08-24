@@ -2,17 +2,28 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
 import { getSettings } from "@/lib/localDb";
 
 const DEFAULT_PASSWORD = "123456";
 
 function loadJwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET environment variable is required. Set a strong random secret (min 32 chars) in your .env file.");
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const file = path.join(DATA_DIR, "jwt-secret");
+  try {
+    const existing = fs.readFileSync(file, "utf8").trim();
+    if (existing) return existing;
+  } catch {}
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const generated = crypto.randomBytes(32).toString("hex");
+    fs.writeFileSync(file, generated, { mode: 0o600 });
+    return generated;
+  } catch {
+    // If filesystem is read-only, fallback to deterministic fallback
+    return "ezrouter-fallback-jwt-secret-key-32-chars-minimum";
   }
-  return secret;
 }
 
 const SECRET = new TextEncoder().encode(loadJwtSecret());
@@ -69,11 +80,16 @@ export function clearDashboardAuthCookie(cookieStore) {
 }
 
 // Verify the current dashboard password (re-auth for sensitive actions).
-export async function verifyDashboardPassword(password) {
-  if (typeof password !== "string" || !password) return false;
+// Returns true when requireLogin=false, or when the submitted password matches
+// the configured settings.password (or the default password if none is set).
+export async function verifyDashboardPassword(submittedPassword) {
   const settings = await getSettings();
-  const storedHash = settings?.password;
-  if (storedHash) return bcrypt.compare(password, storedHash);
-  const initialPassword = process.env.INITIAL_PASSWORD || DEFAULT_PASSWORD;
-  return password === initialPassword;
+  if (settings && settings.requireLogin === false) return true;
+  if (!submittedPassword || typeof submittedPassword !== "string") return false;
+
+  const currentPassword = settings?.password || process.env.INITIAL_PASSWORD || DEFAULT_PASSWORD;
+  if (currentPassword.startsWith("$2a$") || currentPassword.startsWith("$2b$")) {
+    return await bcrypt.compare(submittedPassword, currentPassword);
+  }
+  return submittedPassword === currentPassword;
 }

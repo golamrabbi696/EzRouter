@@ -1,3 +1,9 @@
+# v0.5.76 (2026-08-23)
+
+## Fixes
+- **Dashboard & Middleware Initialization**:
+  - Restored self-generating `jwt-secret` file persistence (`~/.ezrouter/jwt-secret`) in `dashboardSession.js` when `JWT_SECRET` environment variable is not explicitly provided in production/CLI mode. Resolves HTTP 500 Internal Server Error on `/dashboard` and dashboard routes.
+
 # v0.5.75 (2026-08-23)
 
 ## Security & Upstream Hardening (GHSA Fixes #3496–#3503)

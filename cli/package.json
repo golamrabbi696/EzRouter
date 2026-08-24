@@ -1,6 +1,6 @@
 {
   "name": "@rabbi696/ezrouter",
-  "version": "0.5.75",
+  "version": "0.5.76",
   "description": "EzRouter CLI - Start and manage EzRouter server (default port 20126)",
   "bin": {
     "ezrouter": "./cli.js"
