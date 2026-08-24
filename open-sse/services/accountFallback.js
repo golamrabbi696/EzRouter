@@ -182,7 +182,15 @@ export function getModelLockUntil(connection, model) {
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  return getModelLockUntil(connection, model) !== null;
+export function isModelLockActive(connection, model) {
+  const now = Date.now();
+  const stillLocked = (value) => {
+    if (!value) return false;
+    const until = new Date(value).getTime();
+    return Number.isFinite(until) && until > now;
+  };
+  return stillLocked(connection[getModelLockKey(model)]) || stillLocked(connection[MODEL_LOCK_ALL]);
+}
 }
 
 /**
