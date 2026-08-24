@@ -49,19 +49,19 @@ export function parseSuffix(model) {
 export function extractThinking(body) {
   if (!body || typeof body !== "object") return null;
 
-  // Claude output_config.effort (explicit) — priority over adaptive thinking
-  const oc = body.output_config?.effort;
-  if (typeof oc === "string" && oc) {
-    const e = oc.toLowerCase();
+  // OpenAI chat / Responses shape
+  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  if (typeof effort === "string" && effort) {
+    const e = effort.toLowerCase();
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
   }
 
-  // OpenAI chat / Responses shape — check effort first (zai sends both thinking object and reasoning.effort)
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
-  if (typeof effort === "string" && effort) {
-    const e = effort.toLowerCase();
+  // Claude output_config.effort (explicit) — priority over adaptive thinking
+  const oc = body.output_config?.effort;
+  if (typeof oc === "string" && oc) {
+    const e = oc.toLowerCase();
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
@@ -95,15 +95,6 @@ export function extractThinking(body) {
     // Numeric or other truthy → auto, falsy → none
     if (tv) return { mode: "auto" };
     return { mode: "none" };
-  }
-
-  // OpenAI chat / Responses shape
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
-  if (typeof effort === "string" && effort) {
-    const e = effort.toLowerCase();
-    if (e === "none" || e === "off") return { mode: "none" };
-    if (e === "auto") return { mode: "auto" };
-    return { mode: "level", level: e };
   }
 
   // Kiro additionalModelRequestFields
@@ -378,8 +369,6 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
       body.reasoning_effort = level === "xhigh" || level === "ultra" ? "max"
         : level === "minimal" ? "low"
         : level;
-      break;
-    }
       break;
     }
     case "minimax": {

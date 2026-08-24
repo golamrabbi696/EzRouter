@@ -210,6 +210,10 @@ export async function POST(request) {
 
     await atomicWrite(configPath, stringifyTOML(parsed));
     await atomicWrite(BRIDGE_SECRET_PATH, `${apiKey.trim()}\n`);
+    
+    // Update auth.json with OPENAI_API_KEY if auth file exists
+    const authPath = getCodexAuthPath();
+    const authData = (await readExistingConfig(authPath, JSON.parse)) ?? {};
     const migratedLegacyAuth = await migrateOwnedLegacyAuth(apiKey.trim());
 
     return NextResponse.json({
