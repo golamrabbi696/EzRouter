@@ -11,6 +11,20 @@ export async function GET(request) {
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
+  // Idempotent: safe to call from request.signal abort, cancel(), or enqueue failure.
+  const cleanup = () => {
+    if (state.closed) return;
+    state.closed = true;
+    if (state.send) statsEmitter.off("update", state.send);
+    if (state.sendPending) statsEmitter.off("pending", state.sendPending);
+    if (state.keepalive) clearInterval(state.keepalive);
+  };
+
+  // request.signal fires reliably on client disconnect; ReadableStream.cancel()
+  // is not always invoked in Next.js, which caused listeners to accumulate on the
+  // process-wide statsEmitter. Same pattern as translator/console-logs/stream.
+  request?.signal?.addEventListener("abort", cleanup, { once: true });
+
   const stream = new ReadableStream({
     async start(controller) {
       // Full stats refresh (heavy) + immediate lightweight push
@@ -28,10 +42,7 @@ export async function GET(request) {
           state.cachedStats = stats;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
+          cleanup();
         }
       };
 
@@ -43,14 +54,16 @@ export async function GET(request) {
           const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
+          cleanup();
         }
       };
 
       await state.send();
+
+      // The first send is awaited, so the client can be gone — or that send can have
+      // failed and run cleanup — before we get here. Subscribing anyway would register
+      // handlers nothing ever removes.
+      if (state.closed) return;
 
       statsEmitter.on("update", state.send);
       statsEmitter.on("pending", state.sendPending);
@@ -60,17 +73,13 @@ export async function GET(request) {
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
-          state.closed = true;
-          clearInterval(state.keepalive);
+          cleanup();
         }
       }, 25000);
     },
 
     cancel() {
-      state.closed = true;
-      statsEmitter.off("update", state.send);
-      statsEmitter.off("pending", state.sendPending);
-      clearInterval(state.keepalive);
+      cleanup();
     },
   });
 
