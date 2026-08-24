@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
+import { assertValidAwsRegion } from "@/lib/oauth/constants/oauth";
 
 /**
  * POST /api/oauth/kiro/api-key
@@ -19,12 +20,20 @@ export async function POST(request) {
       );
     }
 
+    // Validate region (SSRF prevention)
+    const safeRegion = region || "us-east-1";
+    try {
+      assertValidAwsRegion(safeRegion);
+    } catch (err) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
     const kiroService = new KiroService();
 
     // Validate the key against the same Amazon Q surface used for inference.
     const credential = await kiroService.validateApiKey(
       apiKey,
-      region || "auto"
+      safeRegion
     );
 
     // Extract email from JWT if the key happens to be a JWT (optional display)
@@ -58,10 +67,6 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Kiro API key import error:", error);
-    // Do not reflect upstream response body to the client (SSRF hardening)
-    return NextResponse.json(
-      { error: "API key validation failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
