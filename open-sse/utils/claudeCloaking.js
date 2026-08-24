@@ -31,8 +31,8 @@ function generateFakeUserID(sessionId, apiKey) {
 
 /**
  * Cloak tools before sending to Claude provider (anti-ban):
- * - Rename non-CC client tools with _cc suffix in tools[] and messages[]
- * - Skip tools that are already CC default names (they become decoys as-is)
+ * - Rename client tools with the CLAUDE_TOOL_SUFFIX ("_ide") in tools[] and messages[]
+ * - Skip tools that carry a `type` (server-side built-ins) — sent as-is
  * - Inject CC_DECOY_TOOLS after client tools
  * Returns { body, toolNameMap } where toolNameMap maps suffixed → original
  * @param {object} body - Claude API request body

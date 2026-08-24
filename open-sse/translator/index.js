@@ -133,7 +133,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     result = prepareClaudeRequest(result, provider, apiKey, connectionId, credentials?.rawHeaders, clientSessionId);
   }
 
-  // Claude cloaking: rename client tools with _cc suffix (anti-ban)
+  // Claude cloaking: rename client tools with CLAUDE_TOOL_SUFFIX (anti-ban)
   // quirk: only providers flagged cloakToolsOnOAuth, and only with an OAuth token
   if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
