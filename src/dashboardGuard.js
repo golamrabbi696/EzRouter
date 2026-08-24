@@ -13,7 +13,7 @@ async function getCliToken() {
   return cachedCliToken;
 }
 
-async function hasValidCliToken(request) {
+export async function hasValidCliToken(request) {
   const token = request.headers.get(CLI_TOKEN_HEADER);
   if (!token) return false;
   return token === await getCliToken();
@@ -189,8 +189,8 @@ async function canAccessLocalOnlyRoute(request) {
   return false;
 }
 
-async function hasValidToken(request) {
-  const token = request.cookies.get(AUTH_COOKIE_NAME)?.value || request.cookies.get("auth_token")?.value;
+export async function hasValidToken(request) {
+  const token = request.cookies?.get?.(AUTH_COOKIE_NAME)?.value || request.cookies?.get?.("auth_token")?.value;
   return await verifyDashboardAuthToken(token);
 }
 
@@ -203,7 +203,7 @@ async function loadSettings() {
   }
 }
 
-async function isAuthenticated(request) {
+export async function isAuthenticated(request) {
   if (await hasValidToken(request)) return true;
   const settings = await loadSettings();
   if (settings && settings.requireLogin === false) return true;
@@ -239,6 +239,9 @@ export const __test__ = {
   extractApiKeyCandidates,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  hasValidCliToken,
+  hasValidToken,
+  isAuthenticated,
 };
 
 export async function proxy(request) {

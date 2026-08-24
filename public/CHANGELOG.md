@@ -1,3 +1,32 @@
+# v0.5.75 (2026-08-23)
+
+## Security & Upstream Hardening (GHSA Fixes #3496–#3503)
+- **Authentication & Authorization**:
+  - Implemented strict route protection on `/api/headroom/*`, `/api/tunnel/*`, `/api/auth/reset-password`, and Cursor auto-import endpoints (GHSA-g6g7, GHSA-x5c9, GHSA-86m2, GHSA-8gmq, GHSA-6g2f).
+  - Protected `/api/providers` and `/api/usage/stats` endpoints and enforced masked credential exposure (GHSA-vjc7).
+  - Required CLI token authentication for `/api/mcp/[plugin]/message` and `/api/mcp/[plugin]/sse` bridge routes (GHSA-63p9, GHSA-fhh6).
+  - Implemented dual-factor authentication (CLI token + password or JWT session + password) for database export and import (GHSA-qvfm).
+  - Enforced explicit `JWT_SECRET` configuration and removed insecure fallback generation (GHSA-jphh).
+  - Extended `PROTECTED_SETTING_KEYS` in settings handler to prevent mass assignment vulnerabilities (GHSA-vmjq).
+  - Hardened IP extraction against `Host` header and `X-Forwarded-For` spoofing, binding trust strictly to peer token validation (GHSA-32gc, GHSA-5mj8, GHSA-7cfm).
+  - Added SSRF protection with URL validation and Undici DNS pinning for external fetch and Kiro/OIDC endpoints (GHSA-8g4w, GHSA-6mwv, GHSA-cmhj, GHSA-qj3v).
+
+## Stability & Bug Fixes (PRs #3476–#3529)
+- **Model Routing & Token Limits**:
+  - Exposed aggregate combo token limits (`context_length` and `max_completion_tokens`) on `/v1/models` (#3529).
+  - Fixed non-streaming request handling when `stream` key is omitted (#3528).
+  - Forwarded reasoning effort for OpenCode Zen stealth models (#3504) and added Muse model Responses API transport handling (#3509).
+- **Streaming & Memory Optimization**:
+  - Added immediate cleanup for SSE MCP bridges and usage stats listeners on client disconnects (#3526, #3527).
+  - Fixed OpenAI→Claude duplicate terminal chunk flush and tool parameter double serialization (#3520).
+  - Prevented dropping generated images from OpenAI-format streams (#3521).
+  - Recorded usage snapshots on premature stream aborts (#3513).
+  - Corrected Claude thinking parameter translation for Ollama models (#3478) and ZAI effort objects (#3479).
+- **CLI & SQLite Runtime Resilience**:
+  - Added dynamic ABI compatibility check for `better-sqlite3` native binaries with auto-rebuild on Node.js version changes.
+  - Implemented atomic publishing for sql.js database files (#3523).
+  - Refused to clobber Codex and GitHub Copilot configuration files when existing configs cannot be parsed (#3524, #3525).
+
 # v0.5.74 (2026-08-22)
 
 ## Features & Improvements
