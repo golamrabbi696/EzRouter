@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 import { GEMINI_CONFIG, FRONTIER_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, refreshFrontierToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { parseVertexSaJson, refreshVertexToken } from "open-sse/services/tokenRefresh.js";
@@ -557,6 +563,9 @@ const PROVIDER_MODELS_CONFIG = {
  * GET /api/providers/[id]/models - Get models list from provider
  */
 export async function GET(request, { params }) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const { id } = await params;
     const connection = await getProviderConnectionById(id);

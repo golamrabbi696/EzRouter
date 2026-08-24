@@ -3,6 +3,7 @@ import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
 import { resolveKiroCredentialsFromCache } from "@/lib/oauth/kiroSsoCache";
 import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp";
+import { assertValidAwsRegion } from "@/lib/oauth/constants/oauth";
 
 /**
  * POST /api/oauth/kiro/import
@@ -21,11 +22,19 @@ export async function POST(request) {
       );
     }
 
+    // Validate region if provided (SSRF prevention)
+    const safeRegion = region || "us-east-1";
+    try {
+      assertValidAwsRegion(safeRegion);
+    } catch (err) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
     const kiroService = new KiroService();
     const isIdc = !!(clientId && clientSecret);
 
     let resolvedProviderData = isIdc
-      ? { clientId, clientSecret, region: region || "us-east-1", authMethod: "idc" }
+      ? { clientId, clientSecret, region: safeRegion, authMethod: "idc" }
       : {};
 
     let resolvedProfileArn = profileArn || null;
@@ -43,8 +52,8 @@ export async function POST(request) {
     }
 
     const tokenData = await kiroService.refreshToken(refreshToken.trim(), resolvedProviderData);
-
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+
     const resolvedAuthMethod = tokenData.providerSpecificData?.authMethod || (isIdc ? "idc" : "imported");
     const providerLabel = tokenData.providerSpecificData?.provider || (isIdc ? "Enterprise" : "Imported");
     resolvedProfileArn = resolvedProfileArn || tokenData.providerSpecificData?.profileArn || tokenData.profileArn || null;
@@ -60,7 +69,7 @@ export async function POST(request) {
         profileArn: resolvedProfileArn,
         authMethod: resolvedAuthMethod,
         provider: providerLabel,
-        ...(isIdc ? { clientId, clientSecret, region: region || "us-east-1" } : {}),
+        ...(isIdc ? { clientId, clientSecret, region: safeRegion } : {}),
         ...(tokenData.providerSpecificData?.authMethod === "external_idp" ? tokenData.providerSpecificData : {})
       },
       testStatus: "active",
