@@ -3,6 +3,7 @@
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
+import { PROVIDERS } from "./index.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
@@ -32,6 +33,7 @@ const FORMAT_LEVELS = {
   step: L.base,
   nous: L.base,
   meta: ["minimal", "low", "medium", "high", "xhigh"], // Muse Spark — no disable, no max
+  ollama: L.levelMax,
 };
 
 const GPT_56_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
@@ -40,6 +42,8 @@ const GPT_56_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max
 const PATTERN_THINKING = [
   { providers: ["openai", "codex"], pattern: "*gpt-5.6*", levels: GPT_56_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] },
+  { provider: "ollama", pattern: "*gpt-oss*", levels: ["none", "low", "medium", "high"] },
+  { provider: "ollama-local", pattern: "*gpt-oss*", levels: ["none", "low", "medium", "high"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
@@ -47,8 +51,10 @@ export function getThinkingLevels(provider, model) {
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
-  const hit = PATTERN_THINKING.find((p) => (!p.providers || !provider || p.providers.includes(provider)) && matchPattern(p.pattern, model));
-  let levels = caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  const hit = PATTERN_THINKING.find((p) => (!p.providers || !provider || p.providers.includes(provider)) && (!p.provider || p.provider === provider) && matchPattern(p.pattern, model));
+  const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
+  const fmt = providerFmt || caps.thinkingFormat;
+  let levels = caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[fmt] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }
