@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { readExistingConfig } from "@/lib/cliTools/readExistingConfig";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -169,12 +170,14 @@ export async function POST(request) {
     }
 
     const configPath = getCodexConfigPath();
-    let parsed = {};
-    try {
-      parsed = parsedToWritable(parseTOML(await fs.readFile(configPath, "utf8")));
-    } catch {
-      // First setup.
-    }
+    // Ensure directory exists
+    await fs.mkdir(getCodexDir(), { recursive: true });
+
+    // Read and parse existing config. A file that exists but cannot be read or
+    // parsed must NOT be treated as empty: the merge below writes the result back,
+    // so that would replace every provider, MCP server and policy the user had.
+    const existingConfig = await readExistingConfig(configPath, (raw) => parsedToWritable(parseTOML(raw)));
+    const parsed = existingConfig ?? {};
 
     const universalBaseUrl = normalizeUniversalBaseUrl(baseUrl);
     const nativeBaseUrl = `${universalBaseUrl}/codex`;
@@ -220,7 +223,13 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
-    return NextResponse.json({ error: "Failed to update codex settings" }, { status: 500 });
+    // Surface the one failure the user can act on — a config file of theirs that
+    // cannot be parsed — and keep everything else generic.
+    const refusedToClobber = String(error?.message || "").includes("refusing to overwrite it");
+    return NextResponse.json(
+      { error: refusedToClobber ? error.message : "Failed to update codex settings" },
+      { status: 500 }
+    );
   }
 }
 
