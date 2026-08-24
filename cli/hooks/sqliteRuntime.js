@@ -49,16 +49,15 @@ function hasModule(name) {
 function isBetterSqliteBinaryValid() {
   const binary = path.join(getRuntimeNodeModules(), "better-sqlite3", "build", "Release", "better_sqlite3.node");
   if (!fs.existsSync(binary)) return false;
+  // Test if binary can be required by current Node.js runtime ABI without mismatch
   try {
-    const fd = fs.openSync(binary, "r");
-    const buf = Buffer.alloc(4);
-    fs.readSync(fd, buf, 0, 4, 0);
-    fs.closeSync(fd);
-    const magic = buf.toString("hex");
-    if (process.platform === "linux") return magic.startsWith("7f454c46");
-    if (process.platform === "darwin") return magic.startsWith("cffaedfe") || magic.startsWith("cefaedfe");
-    if (process.platform === "win32") return magic.startsWith("4d5a");
-    return true;
+    const testCode = `try { require(${JSON.stringify(binary)}); process.exit(0); } catch (e) { process.exit(1); }`;
+    const res = spawnSync(process.execPath, ["-e", testCode], {
+      windowsHide: true,
+      stdio: "ignore",
+      timeout: 3000,
+    });
+    return res.status === 0;
   } catch { return false; }
 }
 
