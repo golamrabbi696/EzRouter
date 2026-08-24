@@ -86,6 +86,25 @@ export function createSSEStream(options = {}) {
     state.responsesAccumulator = openAIResponsesAccumulator;
   }
 
+  // What has been seen so far, readable at any moment — including after a client
+  // disconnect, when neither flush nor `onStreamComplete` will ever run. Usage is
+  // resolved the same way the flush paths resolve it, so an aborted stream is
+  // accounted for like a completed one rather than being dropped.
+  const getStreamSnapshot = () => {
+    const seenUsage = mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage;
+    const resolvedUsage = hasValidUsage(seenUsage)
+      ? seenUsage
+      : (totalContentLength > 0
+        ? estimateUsage(body, totalContentLength, mode === STREAM_MODE.PASSTHROUGH ? FORMATS.OPENAI : sourceFormat)
+        : null);
+    return {
+      content: accumulatedContent,
+      thinking: accumulatedThinking,
+      usage: resolvedUsage,
+      ttftAt,
+    };
+  };
+
   const transformStream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
@@ -555,6 +574,10 @@ export function createSSEStream(options = {}) {
     };
   }
 
+  // Carried on the stream itself so callers that only hold the TransformStream
+  // (streamingHandler) can read the partial result without threading another
+  // channel through every wrapper.
+  transformStream.getStreamSnapshot = getStreamSnapshot;
   return transformStream;
 }
 
