@@ -67,7 +67,6 @@ QuotaPauseField.propTypes = {
   thresholds: PropTypes.object.isRequired,
   onChange: PropTypes.func.isRequired,
 };
->>>>>>> pr-3584
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({

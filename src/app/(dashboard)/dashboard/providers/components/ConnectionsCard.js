@@ -213,7 +213,6 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
                 </button>
               </span>
             )}
-            )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
           </div>
           {usage && (
