@@ -1,5 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS, SSE_KEEPALIVE_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, SSE_KEEPALIVE_MS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -188,14 +188,33 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, keepaliveMs = SSE_KEEPALIVE_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, keepaliveMs = SSE_KEEPALIVE_MS, ttftTimeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS) {
   let stallTimer = null;
   let keepaliveTimer = null;
+  let firstChunkTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
   const t0 = Date.now();
   const tag = "STREAM";
+
+  // TTFT watchdog: if no upstream bytes arrive within the TTFT window, abort.
+  // Fires only once; cleared by the first upstream byte (or any termination).
+  // Separate from the inter-chunk stall watchdog so slow-but-healthy streams
+  // (e.g. reasoning models with long prefill) are never falsely aborted.
+  const clearFirstChunk = () => {
+    if (firstChunkTimer) { clearTimeout(firstChunkTimer); firstChunkTimer = null; }
+  };
+  const armFirstChunk = () => {
+    clearFirstChunk();
+    firstChunkTimer = setTimeout(() => {
+      firstChunkTimer = null;
+      dbg(tag, `TTFT TIMEOUT ${ttftTimeoutMs}ms | no bytes received`);
+      streamController.handleError?.(new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`));
+      streamController.abort?.();
+    }, ttftTimeoutMs);
+  };
+
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
@@ -213,21 +232,22 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     }, stallTimeoutMs);
   };
 
-  // Wrap controller so every termination path clears the stall timer.
-  // Without this, abort/cancel/downstream-error paths leave the timer armed
+  // Wrap controller so every termination path clears both timers.
+  // Without this, abort/cancel/downstream-error paths leave the timers armed
   // and a stale abort could fire after the request has already ended.
   const wrappedController = {
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); clearKeepalive(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); clearKeepalive(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); clearKeepalive(); streamController.handleDisconnect(r); },
-    abort: () => { clearStall(); clearKeepalive(); streamController.abort(); }
+    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); clearKeepalive(); streamController.handleComplete(); },
+    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); clearKeepalive(); streamController.handleError(e); },
+    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); clearKeepalive(); streamController.handleDisconnect(r); },
+    abort: () => { clearFirstChunk(); clearStall(); clearKeepalive(); streamController.abort(); }
   };
 
+  armFirstChunk();
   armStall();
-  dbg(tag, `pipe start | stallTimeout=${stallTimeoutMs}ms | keepalive=${keepaliveMs}ms`);
+  dbg(tag, `pipe start | ttftTimeout=${ttftTimeoutMs}ms | stallTimeout=${stallTimeoutMs}ms | keepalive=${keepaliveMs}ms`);
 
   const encoder = new TextEncoder();
   const keepaliveBytes = encoder.encode("event: ping\ndata: {}\n\n");
@@ -259,6 +279,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
         dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
       }
+      clearFirstChunk(); // first byte received — TTFT watchdog satisfied
       armStall();
       controller.enqueue(chunk);
     },
