@@ -108,7 +108,7 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const toml = applyGrokBuildConfig(await readConfigToml(), {
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_9router",
+      apiKey: apiKey || "sk_ezrouter",
       model: selectedModel,
       contextWindow: normalizeContextWindow(contextWindow, selectedModel),
       subagentModels: normalizeSubagentModels(subagentModels),

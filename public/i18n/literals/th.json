@@ -1362,7 +1362,7 @@
   "seconds...": "วินาที...",
   "sends image/PDF/audio requests to a model that supports them first": "ส่ง image/PDF/audio requests ไปยังโมเดลที่รองรับก่อน",
   "sk-...": "sk-...",
-  "sk_9router (default)": "sk_9router (ค่าเริ่มต้น)",
+  "sk_ezrouter (default)": "sk_ezrouter (ค่าเริ่มต้น)",
   "system": "ตามระบบ",
   "tested": "ทดสอบแล้ว",
   "the database.": "ฐานข้อมูล",

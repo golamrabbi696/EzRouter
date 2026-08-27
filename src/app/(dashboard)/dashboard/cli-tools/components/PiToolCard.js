@@ -447,7 +447,7 @@ export default function PiToolCard({
         selectedApiKey && selectedApiKey.trim()
           ? selectedApiKey
           : !cloudEnabled
-            ? "sk_9router"
+            ? "sk_ezrouter"
             : selectedApiKey;
 
       const res = await fetch("/api/cli-tools/pi-settings", {
@@ -506,7 +506,7 @@ export default function PiToolCard({
       selectedApiKey && selectedApiKey.trim()
         ? selectedApiKey
         : !cloudEnabled
-          ? "sk_9router"
+          ? "sk_ezrouter"
           : "<API_KEY_FROM_DASHBOARD>";
 
     const modelsToShow =

@@ -1121,7 +1121,7 @@
   "extras status failed": "falha no status dos extras",
   "git/grep/ls/tree/logs → 60-90% fewer input tokens": "git/grep/ls/tree/logs → 60-90% menos tokens de entrada",
   "not installed": "não instalado",
-  "sk_9router (default)": "sk_9router (padrão)",
+  "sk_ezrouter (default)": "sk_ezrouter (padrão)",
   "tree-sitter AST compression for code responses": "Compressão AST tree-sitter para respostas de código",
   "web": "web",
   "— audio input": "— entrada de áudio",

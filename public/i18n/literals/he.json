@@ -178,7 +178,7 @@
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "בקשת Antigravity/Copilot IDE → הפניה DNS ל-localhost:443 → פרוקסי MITM חוטף → 9Router → תגובה ל-Antigravity/Copilot",
   "No API keys — create one in Keys page": "אין מפתחות API — צור אחד בעמוד Keys",
   "e.g. a warm, gentle voice, speaking slowly with a British accent": "למשל: קול חם ועדין, מדבר לאט במבטא בריטי",
-  "sk_9router (default)": "sk_9router (ברירת מחדל)",
+  "sk_ezrouter (default)": "sk_ezrouter (ברירת מחדל)",
   "Server started": "השרת התחיל",
   "Failed to start server": "הפעלת השרת נכשלה",
   "Server stopped — all DNS cleared": "השרת הופסק — כל ה-DNS נוקה",

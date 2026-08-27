@@ -164,7 +164,7 @@ export default function GrokBuildToolCard({
     try {
       const keyToUse = selectedApiKey?.trim()
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+        || (!cloudEnabled ? "sk_ezrouter" : null);
       const mappedSubagents = {};
       for (const type of SUBAGENT_TYPES) {
         const model = subagentModels[type.id]?.trim();
@@ -228,7 +228,7 @@ export default function GrokBuildToolCard({
 
   const getManualConfigs = () => {
     const keyToUse = selectedApiKey?.trim()
-      || (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      || (!cloudEnabled ? "sk_ezrouter" : "<API_KEY_FROM_DASHBOARD>");
     const baseUrl = getEffectiveBaseUrl();
     const mainModel = selectedModel || "provider/model-id";
     const blocks = [

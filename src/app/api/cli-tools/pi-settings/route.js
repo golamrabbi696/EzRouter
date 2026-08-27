@@ -104,7 +104,7 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1")
       ? baseUrl
       : `${baseUrl}/v1`;
-    const keyToUse = apiKey || "sk_9router";
+    const keyToUse = apiKey || "sk_ezrouter";
 
     if (!config.providers) config.providers = {};
 

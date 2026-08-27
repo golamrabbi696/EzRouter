@@ -122,10 +122,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setApplying(true);
     setMessage(null);
     try {
-      // Use sk_9router for localhost if no key, otherwise use selected key
+      // Use sk_ezrouter for localhost if no key, otherwise use selected key
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_ezrouter" : selectedApiKey);
 
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
@@ -206,7 +206,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setTestingNative(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim() || (!cloudEnabled ? "sk_9router" : "");
+      const keyToUse = selectedApiKey?.trim() || (!cloudEnabled ? "sk_ezrouter" : "");
       const res = await fetch("/api/cli-tools/codex-native/readiness", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -235,7 +235,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_ezrouter" : "<API_KEY_FROM_DASHBOARD>");
 
     const effectiveSubagentModel = subagentModel || selectedModel;
 
