@@ -57,10 +57,18 @@ function isAction(frame, requiredName = "") {
   if (event === "content_block_delta" && (
     (payload?.delta?.type === "text_delta" && payload.delta.text)
     || (payload?.delta?.type === "input_json_delta" && payload.delta.partial_json)
+    || (payload?.delta?.type === "thinking_delta" && payload.delta.thinking)
+    || payload?.delta?.thinking
   )) return true;
+  if (payload?.candidates?.[0]?.content?.parts?.some((p) => p?.text || p?.functionCall || p?.inlineData)) return true;
+  if (payload?.message?.content || payload?.response || payload?.message?.tool_calls?.length) return true;
+  if (payload?.usage?.completion_tokens > 0 || payload?.usage?.output_tokens > 0 || payload?.response?.usage?.output_tokens > 0) return true;
   return payload?.choices?.some((choice) => (
     (typeof choice?.delta?.content === "string" && choice.delta.content.length > 0)
+    || (typeof choice?.delta?.reasoning_content === "string" && choice.delta.reasoning_content.length > 0)
+    || (typeof choice?.delta?.reasoning === "string" && choice.delta.reasoning.length > 0)
     || (Array.isArray(choice?.delta?.tool_calls) && choice.delta.tool_calls.length > 0)
+    || !!choice?.delta?.function_call
   )) === true;
 }
 
@@ -143,8 +151,8 @@ export async function inspectComboPreaction(response, requestBody) {
       text = scanned.remainder;
       if (scanned.actionable) return committedResponse(response, reader, prefix);
       if (bytes > maxBytes) {
-        await reader.cancel("combo pre-action byte limit").catch(() => {});
-        return null;
+        // Exceeded byte limit without finding action — pass through to avoid unbounded buffer
+        return committedResponse(response, reader, prefix);
       }
     }
   } catch {

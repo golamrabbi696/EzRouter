@@ -168,7 +168,7 @@ export async function POST(request) {
           return NextResponse.json({ error: "Custom Video node not found" }, { status: 404 });
         }
         const baseUrl = node.baseUrl?.trim().replace(/\/$/, "").replace(/\/(generations|edits|extensions)$/, "") || "";
-        const res = await fetch(`${baseUrl}/generations`, {
+        const res = await fetchWithTimeout(`${baseUrl}/generations`, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({}),
@@ -347,7 +347,7 @@ export async function POST(request) {
           // Nous exposes /models publicly, so a models request cannot validate
           // the Portal key. Use the smallest authenticated inference instead.
           const probe = createNousApiKeyProbe(apiKey);
-          const res = await fetch(probe.url, {
+          const res = await fetchWithTimeout(probe.url, {
             ...probe.options,
             signal: AbortSignal.timeout(8000),
           });
