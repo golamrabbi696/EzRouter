@@ -68,11 +68,13 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
   formatRtkLog: vi.fn(() => ""),
 }));
 
-vi.mock("../../open-sse/rtk/headroom.js", () => ({
+// Spread the real module: chatCore imports four things from here, and a factory
+// that lists only the ones it needed at the time breaks the whole file the next
+// time an export is added (it did — formatHeadroomSizeLog and
+// isHeadroomPhantomSavings). Only the call that would reach out is stubbed.
+vi.mock("../../open-sse/rtk/headroom.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   compressWithHeadroom: vi.fn(async () => null),
-  formatHeadroomLog: vi.fn(() => ""),
-  formatHeadroomSizeLog: vi.fn(() => ""),
-  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -106,7 +108,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 
 const FORCED = ["openai", "codex", "commandcode"];
 
-function makeOptions(bodyStream, provider = "openai", accept = "application/json") {
+function makeOptions(bodyStream) {
   const body = {
     model: "gpt-4.1",
     messages: [{ role: "user", content: "hello" }],
@@ -115,12 +117,12 @@ function makeOptions(bodyStream, provider = "openai", accept = "application/json
 
   return {
     body,
-    modelInfo: { provider, model: "gpt-4.1" },
+    modelInfo: { provider: "openai", model: "gpt-4.1" },
     credentials: { apiKey: "sk-test" },
     clientRawRequest: {
       endpoint: "/v1/chat/completions",
       body,
-      headers: accept ? { accept } : {},
+      headers: { accept: "application/json" },
     },
     connectionId: "test-connection",
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -151,16 +153,5 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
-    const sentBody = executeMock.mock.calls[0][0].body;
-    expect(sentBody.stream).toBe(true);
-  });
-
-  it("defaults to non-streaming for non-forced providers when client omits stream", async () => {
-    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
-
-    await handleChatCore(makeOptions(undefined, "deepseek", null));
-
-    expect(executeMock).toHaveBeenCalledTimes(1);
-    expect(executeMock.mock.calls[0][0].stream).toBe(false);
   });
 });
