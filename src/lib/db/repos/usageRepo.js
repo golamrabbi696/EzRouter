@@ -487,7 +487,7 @@ export async function getUsageStats(period = "all") {
   const useDailySummary = period !== "24h" && period !== "today";
 
   if (useDailySummary) {
-    const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
+    const periodDays = { "7d": 7, "30d": 30, "60d": 60, "90d": 90, "180d": 180, "365d": 365 };
     const maxDays = periodDays[period] || null;
     const dayRows = loadDaysInRange(db, maxDays);
 
@@ -771,9 +771,27 @@ export async function getChartData(period = "7d", timeZone) {
     return buckets;
   }
 
-  const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+  const periodDays = { "7d": 7, "30d": 30, "60d": 60, "90d": 90, "180d": 180, "365d": 365 };
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  if (period === "all") {
+    // For 'all', load all daily summary rows from DB sorted by dateKey
+    const dayRows = loadDaysInRange(db, null).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    if (dayRows.length === 0) return [];
+    return dayRows.map((r) => {
+      const dayData = parseJson(r.data, {});
+      const [year, month, day] = r.dateKey.split("-").map(Number);
+      const d = new Date(year, month - 1, day);
+      return {
+        label: labelFn(d),
+        tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
+        cost: dayData ? (dayData.cost || 0) : 0,
+      };
+    });
+  }
+
+  const bucketCount = periodDays[period] || 7;
 
   // Build map of dateKey → day data
   const dayRows = loadDaysInRange(db, bucketCount);

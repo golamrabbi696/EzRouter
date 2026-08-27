@@ -1,13 +1,13 @@
 import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
 
-export const dynamic = "force-dynamic";
+import { VALID_USAGE_STATS_PERIODS } from "@/lib/usagePeriods.js";
 
-const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
+export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const requestedPeriod = searchParams.get("period") || "today";
-  const period = VALID_PERIODS.has(requestedPeriod) ? requestedPeriod : "today";
+  const period = VALID_USAGE_STATS_PERIODS.has(requestedPeriod) ? requestedPeriod : "today";
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
