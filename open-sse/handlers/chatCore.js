@@ -22,6 +22,8 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { toolFilter } from "../utils/toolFilter.js";
+import { disclosureTools } from "../utils/toolDisclosure.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -41,7 +43,18 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export function stripContinuityFields(body) {
+  if (!body || !Array.isArray(body.messages)) return body;
+  for (const msg of body.messages) {
+    if (msg && typeof msg === "object") {
+      delete msg.encrypted_content;
+      delete msg.reasoning_encrypted_content;
+    }
+  }
+  return body;
+}
+
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, toolDisclosure }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -181,6 +194,42 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       translatedBody.tools = deduped;
       log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
     }
+  }
+
+  // Progressive tool disclosure: static filter (Phase 1) + BM25 selection (Phase 2).
+  // Phase 0 measurement log always fires when tools are present.
+  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+    const beforeN = translatedBody.tools.length;
+    const beforeBytes = JSON.stringify(translatedBody.tools).length;
+
+    if (toolDisclosure?.filterEnabled) {
+      const filtered = toolFilter(translatedBody.tools, toolDisclosure);
+      if (filtered.length < translatedBody.tools.length) {
+        log?.debug?.("TOOLDISCLOSE", `filter: ${translatedBody.tools.length}→${filtered.length} tools`);
+        translatedBody.tools = filtered;
+      }
+    }
+
+    if (toolDisclosure?.disclosureEnabled) {
+      const { tools: disclosed, stats } = disclosureTools(translatedBody.tools, body, connectionId, toolDisclosure);
+      if (stats) {
+        log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
+        translatedBody.tools = disclosed;
+      }
+    }
+
+    // Re-anchor cache_control to the actual last tool after any filtering.
+    // The translator stamps it during translateRequest(); disclosure may have
+    // reordered or removed that tool, so we move the annotation here.
+    if (translatedBody.tools.length > 0 && (beforeN !== translatedBody.tools.length)) {
+      for (const t of translatedBody.tools) delete t.cache_control;
+      const last = translatedBody.tools[translatedBody.tools.length - 1];
+      last.cache_control = { type: "ephemeral", ttl: "1h" };
+    }
+
+    const afterN = translatedBody.tools.length;
+    const afterBytes = JSON.stringify(translatedBody.tools).length;
+    log?.debug?.("TOOLDISCLOSE", `measure: ${beforeN}tools ${beforeBytes}B → ${afterN}tools ${afterBytes}B`);
   }
 
   // Token savers: applied at the final body just before dispatch
