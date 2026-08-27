@@ -30,6 +30,7 @@ import {
   setQuotaCache,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
+  COUNTDOWN_SECONDS,
   CLAUDE_REFRESH_INTERVAL_MS,
   createQuotaAutoRefresh,
   DEPLETED_QUOTA_THRESHOLD,
@@ -40,6 +41,7 @@ import {
   ACCOUNT_FILTER_OPTIONS,
   QUOTA_SORT_OPTIONS,
 } from "./utils";
+import { createRefreshTimers, nextCountdown } from "./refreshTimers";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
@@ -137,7 +139,7 @@ export default function ProviderLimits() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
@@ -467,7 +469,7 @@ export default function ProviderLimits() {
     if (refreshingAll) return;
 
     setRefreshingAll(true);
-    setCountdown(60);
+    setCountdown(COUNTDOWN_SECONDS);
 
     // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
     const tick = (tickCountRef.current += 1);
@@ -624,21 +626,54 @@ export default function ProviderLimits() {
     updateQuotaVisibility(next, previous);
   }, [quotaVisibility, updateQuotaVisibility]);
 
-  // Auto-refresh + countdown, paused while the tab is hidden (Page Visibility API).
-  // One owner for both intervals: resuming replaces whatever is running instead of
-  // stacking a second pair, which used to make the countdown run at double speed
-  // after a hide/show cycle.
+  // One owner for both intervals. `refreshAll` is read through a ref so a new
+  // identity does not tear the timers down and restart the 60s window.
+  const refreshAllRef = useRef(refreshAll);
   useEffect(() => {
-    if (!hasHydratedAutoRefresh || !autoRefresh) return undefined;
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
 
-    const autoRefreshTimers = createQuotaAutoRefresh({
-      onRefresh: () => refreshAll(),
-      onTick: () => setCountdown((prev) => (prev <= 1 ? 60 : prev - 1)),
-    });
-    autoRefreshTimers.start();
+  const timers = useMemo(
+    () =>
+      createRefreshTimers({
+        onRefresh: () => refreshAllRef.current(),
+        onTick: () => setCountdown((prev) => nextCountdown(prev, COUNTDOWN_SECONDS)),
+        refreshIntervalMs: REFRESH_INTERVAL_MS,
+      }),
+    []
+  );
 
-    return () => autoRefreshTimers.stop();
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+  // Auto-refresh interval. Nothing starts while the tab is hidden — the
+  // visibilitychange handler below owns the resume.
+  useEffect(() => {
+    if (!hasHydratedAutoRefresh || !autoRefresh || (typeof document !== "undefined" && document.hidden)) {
+      timers.stop();
+      return;
+    }
+    timers.start();
+    return () => timers.stop();
+  }, [autoRefresh, hasHydratedAutoRefresh, timers]);
+
+  // Pause auto-refresh when tab is hidden (Page Visibility API)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        timers.stop();
+      } else if (autoRefresh && hasHydratedAutoRefresh) {
+        // `start` clears first, so repeated visible events cannot stack.
+        timers.start();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      // A tab hidden at mount takes the effect above through its early return,
+      // which leaves no cleanup behind — so unmounting after a resume would
+      // otherwise leave both intervals running.
+      timers.stop();
+    };
+  }, [autoRefresh, hasHydratedAutoRefresh, timers]);
 
   const sortedConnections = useMemo(
     () =>
