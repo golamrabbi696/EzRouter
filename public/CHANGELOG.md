@@ -1,3 +1,14 @@
+# v0.5.80 (2026-08-23)
+
+## Fixes & UI/UX Enhancements
+- **Usage & Analytics Filter Aggregation**:
+  - Fully resolved data lookups for extended time periods (`90d`, `180d`, `365d`, and `all`) across both REST endpoints and real-time SSE streams.
+  - Implemented dynamic daily bucket calculation in `getChartData()` for 90D/180D/365D/All-time chart trends.
+  - Aligned `/api/usage/stream` validation with shared period constants (`VALID_USAGE_STATS_PERIODS`), eliminating unexpected fallbacks to `today`.
+- **Packaging & Performance Optimization**:
+  - Restructured `.gitignore` rules to completely ignore standalone Next.js CLI runtime artifacts (`/cli/app/`) and generated `.tgz` packages, eliminating IDE, editor, and sub-agent file-indexing freezes.
+  - Synchronized and verified all version tags and manifests for stable offline npm deployments.
+
 # v0.5.79 (2026-08-23)
 
 ## Fixes & Improvements
