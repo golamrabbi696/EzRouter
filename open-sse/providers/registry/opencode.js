@@ -14,8 +14,8 @@ export default {
   noAuth: true,
   transport: {
     baseUrl: "https://opencode.ai",
-    // Single OpenAI-compatible gateway for every model (claude/gpt/gemini/... ids
-    // included) → one reasoning_effort enum; overrides per-model caps format.
+    format: "openai-responses",
+    forceStream: true,
     thinkingFormat: "opencode",
     headers: {
       "x-opencode-client": "desktop",

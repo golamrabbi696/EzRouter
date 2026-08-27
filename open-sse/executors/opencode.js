@@ -6,57 +6,12 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyOcEgress } from "../utils/ocEgress.js";
 
-// Machine's real public IPv4, discovered once (direct https — intentionally
-// NOT the patched proxy-aware fetch, so we learn the home/public egress even
-// while the outbound proxy is enabled).
-let _publicIp = null;
-let _publicIpFetching = false;
-const PUBLIC_IP_PROBES = ["https://4.icanhazip.com", "https://ip.sb", "https://ifconfig.me/ip"];
-
-function discoverPublicIp() {
-  if (_publicIp || _publicIpFetching) return _publicIp;
-  _publicIpFetching = true;
-  const probe = (url, cb) => {
-    https.get(url, { timeout: 4000 }, (res) => {
-      let d = "";
-      res.on("data", (c) => (d += c));
-      res.on("end", () => cb(d.trim()));
-    }).on("error", () => cb(""));
-  };
-  const accept = (v) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v);
-  probe(PUBLIC_IP_PROBES[0], (v) => {
-    if (accept(v)) { _publicIp = v; _publicIpFetching = false; }
-    else probe(PUBLIC_IP_PROBES[1], (v2) => {
-      if (accept(v2)) { _publicIp = v2; _publicIpFetching = false; }
-      else probe(PUBLIC_IP_PROBES[2], (v3) => {
-        if (accept(v3)) _publicIp = v3;
-        _publicIpFetching = false;
-      });
-    });
-  });
-  return _publicIp;
-}
-
-// Never forward loopback/private IPs upstream: the Zen rate limiter would put
-// every local 9router user into one shared "127.0.0.1"/LAN bucket that
-// exhausts immediately. Only real public IPs are forwarded as x-real-ip; for
-// loopback/private peers we fall back to the machine's own public IP.
-function isPrivateIp(ip) {
-  if (!ip) return true;
-  if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("::ffff:127.")) return true;
-  if (ip.startsWith("10.") || ip.startsWith("192.168.")) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
-  if (ip.startsWith("fc00:") || ip.startsWith("fe80:")) return true;
-  return false;
-}
-
 // Official opencode CLI sends "opencode/<version>" (e.g. opencode/1.18.18).
 // OpenCode Zen's free-tier ("-free") models gate anonymous capacity on this
 // User-Agent — a bare "opencode" or any non-opencode UA is still classified
 // as unidentified and gets FreeUsageLimitError/429 immediately. Keep the
 // version in sync with opencode releases when it bumps.
 const OPENCODE_UA = "opencode/latest/1.18.18/cli";
-const MESSAGES_MODELS = new Set();
 
 function generateRequestId() {
   return `msg_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -87,29 +42,25 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    // Stash the resolved session on the per-request credentials object instead
-    // of an instance field: OpenCodeExecutor is a module-level singleton and
-    // concurrent requests used to overwrite _currentSessionId between
-    // transformRequest and buildHeaders, bleeding sessions across requests.
     if (credentials) credentials._ocSession = resolveOpencodeSession(body, credentials);
     if (body) {
       body.model = model;
+      body.stream = true;
+      if (body.max_output_tokens === undefined) {
+        if (body.max_completion_tokens !== undefined) body.max_output_tokens = body.max_completion_tokens;
+        else if (body.max_tokens !== undefined) body.max_output_tokens = body.max_tokens;
+      }
+      delete body.max_tokens;
+      delete body.max_completion_tokens;
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
-    // Runtime transport (multi-endpoint): use the sourceFormat-matched endpoint
-    // (e.g. OpenCode Free Muse Spark → /zen/v1/responses).
     const rt = credentials?.runtimeTransport;
     if (rt?.baseUrl) return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
     const base = this.config.baseUrl;
-    if (/muse/i.test(model)) {
-      return `${base}/zen/v1/responses`;
-    }
-    return MESSAGES_MODELS.has(model)
-      ? `${base}/zen/v1/messages`
-      : `${base}/zen/v1/chat/completions`;
+    return `${base}/zen/v1/responses`;
   }
 
   // OpenCode Zen's free tier is rate-limited per real egress IP (daily

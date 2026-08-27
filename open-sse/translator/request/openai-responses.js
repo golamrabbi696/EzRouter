@@ -358,17 +358,17 @@ function buildReasoningInputItem(msg) {
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
+export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   if (body.input) {
     const cleanInput = stripOrphanedToolOutputs(body.input);
     const passthrough = cleanInput === body.input ? { ...body, model, stream: true } : { ...body, input: cleanInput, model, stream: true };
     // Responses API rejects Chat's max_tokens/max_completion_tokens — only max_output_tokens is valid.
-    if (passthrough.max_tokens !== undefined || passthrough.max_completion_tokens !== undefined) {
-      if (passthrough.max_output_tokens === undefined) {
-        passthrough.max_output_tokens = passthrough.max_tokens ?? passthrough.max_completion_tokens;
-      }
-      delete passthrough.max_tokens;
-      delete passthrough.max_completion_tokens;
+    if (passthrough.max_output_tokens === undefined) {
+      if (passthrough.max_completion_tokens !== undefined) passthrough.max_output_tokens = passthrough.max_completion_tokens;
+      else if (passthrough.max_tokens !== undefined) passthrough.max_output_tokens = passthrough.max_tokens;
     }
+    delete passthrough.max_tokens;
+    delete passthrough.max_completion_tokens;
     return passthrough;
   }
 
@@ -488,10 +488,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.temperature !== undefined) result.temperature = body.temperature;
   if (body.max_output_tokens !== undefined) {
     result.max_output_tokens = body.max_output_tokens;
-  } else if (body.max_tokens !== undefined) {
-    result.max_output_tokens = body.max_tokens;
   } else if (body.max_completion_tokens !== undefined) {
     result.max_output_tokens = body.max_completion_tokens;
+  } else if (body.max_tokens !== undefined) {
+    result.max_output_tokens = body.max_tokens;
   }
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;

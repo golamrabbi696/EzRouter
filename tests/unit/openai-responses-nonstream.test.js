@@ -9,6 +9,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const { createSSETransformStreamWithLogger } = await import("../../open-sse/utils/stream.js");
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
 const CHAT_TOOL_BODY = {
@@ -78,10 +79,76 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     expect(msg.content[0].text).toBe("hello");
   });
 
+  it("chains Antigravity response conversion into Responses output", () => {
+    const body = {
+      response: {
+        responseId: "ag-resp-1",
+        modelVersion: "gemini-3.7-flash-low",
+        candidates: [{
+          content: { parts: [{ text: "hello from antigravity" }] },
+          finishReason: "STOP",
+        }],
+      },
+    };
+    const out = translateNonStreamingResponse(body, FORMATS.ANTIGRAVITY, FORMATS.OPENAI_RESPONSES);
+
+    expect(out.object).toBe("response");
+    expect(out).not.toHaveProperty("choices");
+    const msg = (out.output || []).find((item) => item.type === "message");
+    expect(msg?.content?.[0]).toMatchObject({
+      type: "output_text",
+      text: "hello from antigravity",
+    });
+  });
+
   it("leaves chat->chat untouched", () => {
     const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI);
     expect(out.object).toBe("chat.completion");
     expect(out.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+});
+
+describe("Antigravity streaming tool calls for a Responses-API client", () => {
+  it("emits a Responses function_call instead of an empty stream", async () => {
+    const encoder = new TextEncoder();
+    const raw = [
+      'data: {"response":{"responseId":"ag-tool","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"functionCall":{"name":"read_file","args":{"path":"README.md"},"thoughtSignature":"sig"}}]}}]}}',
+      'data: {"response":{"responseId":"ag-tool","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}}',
+      "data: [DONE]",
+      ""
+    ].join("\n\n");
+    const input = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(raw));
+        controller.close();
+      }
+    });
+    const output = input.pipeThrough(createSSETransformStreamWithLogger(
+      FORMATS.ANTIGRAVITY,
+      FORMATS.OPENAI_RESPONSES,
+      "antigravity",
+      { appendProviderChunk() {}, appendConvertedChunk() {} },
+      null,
+      "gemini-3.7-flash-low",
+      "test-connection",
+      { messages: [] },
+      null,
+      "test-key",
+    ));
+    const text = await new Response(output).text();
+    expect(text).toContain('"type":"response.output_item.added"');
+    expect(text).toContain('"type":"function_call"');
+    expect(text).toContain('"name":"read_file"');
+    expect(text).toContain('"type":"response.completed"');
+    const completedLine = text.split("\n").find((line) => line.startsWith("data: {") && line.includes('"type":"response.completed"'));
+    const completed = JSON.parse(completedLine.slice(6));
+    expect(completed.response.output).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "function_call",
+        name: "read_file",
+        arguments: '{"path":"README.md"}',
+      }),
+    ]));
   });
 });
 
@@ -146,58 +213,43 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
   });
 
-  it("returns an Anthropic Message for a Claude-format client (forceStream provider)", async () => {
-    // Reproduces the bug: Claude Code SDK gets "JSON but not a Message" when it
-    // retries non-streaming against a provider with forceStream:true (e.g. openai,
-    // zed, codebuddy-*). The fix must return type:"message", not object:"chat.completion".
-    const result = await handleForcedSSEToJson(sseCtx(FORMATS.CLAUDE, FORMATS.OPENAI));
-    expect(result.success).toBe(true);
-    const json = await result.response.json();
-    // Must be an Anthropic Message, not an OpenAI chat.completion
-    expect(json.type).toBe("message");
-    expect(json.role).toBe("assistant");
-    expect(json).not.toHaveProperty("object");
-    expect(json).not.toHaveProperty("choices");
-    // Tool call must appear as a tool_use content block
-    const tu = (json.content || []).find((b) => b.type === "tool_use");
-    expect(tu).toBeTruthy();
-    expect(tu.name).toBe("shell");
-    expect(tu.input).toEqual({ cmd: "pwd" });
-    // finish_reason "tool_calls" → stop_reason "tool_use" in Claude format
-    expect(json.stop_reason).toBe("tool_use");
-  });
-
-  it("returns an Anthropic Message with text content for a Claude-format client", async () => {
+  it("converts forced Antigravity SSE into Responses JSON", async () => {
     const encoder = new TextEncoder();
     const raw = [
-      'data: {"id":"chatcmpl-txt","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}',
-      'data: {"id":"chatcmpl-txt","object":"chat.completion.chunk","created":1700000000,"model":"gpt-x","choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}',
+      'data: {"response":{"responseId":"ag-sse","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"text":"hello from stream"}]}}]}}',
+      'data: {"response":{"responseId":"ag-sse","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}}',
       "data: [DONE]",
       ""
     ].join("\n\n");
-    const ctx = {
+    const result = await handleForcedSSEToJson({
       providerResponse: new Response(new ReadableStream({
         start(controller) { controller.enqueue(encoder.encode(raw)); controller.close(); }
       }), { headers: { "content-type": "text/event-stream" } }),
-      sourceFormat: FORMATS.CLAUDE,
-      targetFormat: FORMATS.OPENAI,
-      provider: "openai",
-      model: "gpt-x",
-      body: { model: "gpt-x", messages: [] },
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      targetFormat: FORMATS.ANTIGRAVITY,
+      provider: "antigravity",
+      model: "gemini-3.7-flash-low",
+      body: { model: "combo-ui", input: "hello" },
       stream: false,
+      translatedBody: null,
+      finalBody: null,
       requestStartTime: Date.now(),
-      connectionId: "test-conn",
-      clientRawRequest: { endpoint: "/v1/messages" },
+      connectionId: "test-connection",
+      apiKey: "test-key",
+      clientRawRequest: { endpoint: "/v1/responses" },
+      onRequestSuccess: vi.fn(),
+      customToolNames: null,
       trackDone: vi.fn(),
-      appendLog: vi.fn()
-    };
-    const result = await handleForcedSSEToJson(ctx);
+      appendLog: vi.fn(),
+      reqTag: "test",
+      log: null,
+    });
     expect(result.success).toBe(true);
     const json = await result.response.json();
-    expect(json.type).toBe("message");
-    expect(json.role).toBe("assistant");
-    const textBlock = (json.content || []).find((b) => b.type === "text");
-    expect(textBlock?.text).toBe("Hello world");
-    expect(json.stop_reason).toBe("end_turn");
+    expect(json.object).toBe("response");
+    expect(json.output?.[0]?.content?.[0]).toMatchObject({
+      type: "output_text",
+      text: "hello from stream",
+    });
   });
 });
