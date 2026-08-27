@@ -1,3 +1,10 @@
+# v0.5.79 (2026-08-23)
+
+## Fixes & Improvements
+- **Usage & Analytics Extended Period Aggregation**:
+  - Added support for extended period filters (`90d`, `180d`, `365d`, and `all`) in `usageRepo.js` query calculations and `getChartData()`.
+  - Updated SSE stream endpoint (`/api/usage/stream`) to validate against all shared usage periods (`VALID_USAGE_STATS_PERIODS`), fixing data updates when toggling 90D/180D/365D filters.
+
 # v0.5.78 (2026-08-23)
 
 ## Fixes & Enhancements (PRs #3589, #3591 & Branding)
