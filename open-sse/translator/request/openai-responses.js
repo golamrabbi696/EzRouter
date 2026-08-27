@@ -358,7 +358,6 @@ function buildReasoningInputItem(msg) {
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
-export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   if (body.input) {
     const cleanInput = stripOrphanedToolOutputs(body.input);
     const passthrough = cleanInput === body.input ? { ...body, model, stream: true } : { ...body, input: cleanInput, model, stream: true };
