@@ -6,6 +6,7 @@ import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { TTS_GENERATED_EVENT, MIN_USAGE_REFETCH_MS } from "@/shared/constants/ttsProviders";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -161,6 +162,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
 
   const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
 
+  const quotaInfo = getQuotaPauseInfo(connection);
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
   const displayName = isOAuth
@@ -193,6 +195,11 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             </Badge>
             {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {quotaInfo.paused && connection.isActive !== false && (
+              <Badge variant="warning" size="sm">
+                Paused (quota)
+              </Badge>
+            )}
             {errorIsFresh && (
               <span className="inline-flex items-center gap-1 max-w-[320px]">
                 <span className="text-xs text-red-500 truncate" title={connection.lastError}>{connection.lastError}</span>
@@ -205,6 +212,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
                   <span className="material-symbols-outlined text-[14px]">close</span>
                 </button>
               </span>
+            )}
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
           </div>
