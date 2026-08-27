@@ -46,6 +46,26 @@ export function normalizeQoderMachineOs(arch = process.arch, platform = process.
 export const QODER_MACHINE_OS = normalizeQoderMachineOs();
 export const QODER_MACHINE_TYPE = "5";
 
+// Canonical model identifiers. Identity map — keep as a map so callers can
+// cheaply test "is this a known qoder model?" before sending the request.
+export const QODER_MODEL_MAP = {
+  // Tier models
+  auto: "auto",
+  ultimate: "ultimate",
+  performance: "performance",
+  efficient: "efficient",
+  lite: "lite",
+  // Frontier models
+  qmodel: "qmodel",
+  qmodel_latest: "qmodel_latest",
+  qmodel_38max: "qmodel_38max",
+  dmodel: "dmodel",
+  dfmodel: "dfmodel",
+  gmodel: "gmodel",
+  kmodel: "kmodel",
+  mmodel: "mmodel",
+};
+
 // RSA public key for COSY (same across IDE / CN / CLIProxy family).
 export const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
