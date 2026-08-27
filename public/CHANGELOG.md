@@ -1,3 +1,16 @@
+# v0.5.78 (2026-08-23)
+
+## Fixes & Enhancements (PRs #3589, #3591 & Branding)
+- **Responses API Output & Streaming Translation (#3589)**:
+  - Preserved emitted Responses API output items across provider translations in `response.completed.response.output`.
+  - Added seamless Gemini & Antigravity non-streaming and forced-SSE conversion into standard Responses JSON.
+- **OpenCode Free Responses Migration (#3591)**:
+  - Migrated OpenCode Free endpoint to Responses API (`/zen/v1/responses`) to fix `muse-spark-1.2-contributor-free` HTTP 500 error.
+  - Automatically normalized `max_tokens` and `max_completion_tokens` into `max_output_tokens` while dropping incompatible Chat-only fields.
+- **Branding & API Key Fallback**:
+  - Replaced legacy `sk_9router` fallback with `sk_ezrouter` across all CLI tool setup cards and 34 language i18n literal bundles.
+  - Ignored `/cli/app/` build artifacts and tarballs in `.gitignore` to prevent IDE & AI tool indexing stalls.
+
 # v0.5.77 (2026-08-23)
 
 ## Features & Enhancements (PRs #3534–#3584)
