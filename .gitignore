@@ -16,12 +16,14 @@
 # next.js
 /.next/
 /.next-cli-build/
+/cli/app/
 /out/
 cli/.build-home/
 product
 # production
 /build
 .idea/
+*.tgz
 
 # misc
 .DS_Store
