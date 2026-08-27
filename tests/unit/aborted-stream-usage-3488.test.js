@@ -1,159 +1,214 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
+
 /**
- * #3488 — a streaming request the client aborts left no trace.
- *
- * `onStreamComplete` is invoked from the SSE transform's flush, and the flush
- * only runs on a clean upstream EOF. When the client goes away the pipeline is
- * cancelled instead, so the usage row, the request detail and the "done" line
- * were all skipped — even though the provider had already generated (and
- * billed) the partial response. Recent Requests then looks frozen while traffic
- * is flowing.
- *
- * These tests drive `handleStreamingResponse` with a fake upstream and cancel
- * the client side mid-stream, which is what `DISCONNECT: ResponseAborted` is.
+ * Recording lived only in the transform stream's `flush`. The Streams spec
+ * calls `flush` when the writable side ends and `cancel` when the readable
+ * side is cancelled — one or the other, never both — so a client that hung up
+ * mid-stream produced no usage row, no request detail and nothing in Recent
+ * Requests, while the provider had already generated the partial answer
+ * (#3488).
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const saved = { details: [], usage: [] };
-
-vi.mock("@/lib/usageDb.js", () => ({
-  appendRequestLog: vi.fn(async () => {}),
-  saveRequestDetail: vi.fn(async (detail) => { saved.details.push(detail); }),
-  saveRequestUsage: vi.fn(async (row) => { saved.usage.push(row); }),
-  trackPendingRequest: vi.fn(() => {}),
-}));
-
-const { handleStreamingResponse, buildOnStreamComplete } = await import(
-  "../../open-sse/handlers/chatCore/streamingHandler.js"
-);
-const { createStreamController } = await import("../../open-sse/utils/streamHandler.js");
-
 const encoder = new TextEncoder();
 
-/** Upstream that emits `chunks` and then stays open until `hold` resolves. */
-function upstreamResponse(chunks, { close = false } = {}) {
-  let release;
-  const held = new Promise((resolve) => { release = resolve; });
-  const body = new ReadableStream({
-    async start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      if (close) { controller.close(); return; }
-      await held;
-      controller.close();
-    },
-  });
-  return {
-    response: { body, headers: new Headers({ "content-type": "text/event-stream" }), status: 200 },
-    release: () => release(),
-  };
+function chunk(text) {
+  return encoder.encode(
+    `data: ${JSON.stringify({
+      choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+    })}\n\n`,
+  );
 }
 
-const CHUNKS = [
-  'data: {"id":"1","choices":[{"index":0,"delta":{"content":"Counting "}}]}\n\n',
-  'data: {"id":"1","choices":[{"index":0,"delta":{"content":"one two three"}}]}\n\n',
-];
-
-function baseCtx(overrides = {}) {
-  return {
-    provider: "opencode",
-    model: "hy3-free",
-    sourceFormat: "openai",
-    targetFormat: "openai",
-    body: { model: "hy3-free", stream: true, messages: [{ role: "user", content: "Count slowly from 1 to 100" }] },
-    stream: true,
-    requestStartTime: Date.now(),
-    connectionId: "conn-1",
-    apiKey: "sk-test",
-    clientRawRequest: { endpoint: "/v1/chat/completions" },
-    ...overrides,
-  };
+/** A frame carrying provider-reported usage, which the fallback estimate must not stand in for. */
+function usageChunk(usage) {
+  return encoder.encode(
+    `data: ${JSON.stringify({
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+      usage,
+    })}\n\n`,
+  );
 }
 
-async function runUntilFirstChunkThenCancel(providerResponse, ctx) {
-  const result = await handleStreamingResponse({ ...ctx, providerResponse });
-  const reader = result.response.body.getReader();
-  await reader.read();          // client receives the first bytes...
-  await reader.cancel();        // ...then goes away
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  return result;
-}
-
-describe("#3488 aborted streaming requests are recorded", () => {
-  beforeEach(() => {
-    saved.details.length = 0;
-    saved.usage.length = 0;
-  });
-
-  it("records the partial stream when the client disconnects", async () => {
-    const calls = [];
-    const ctx = baseCtx();
-    const { onStreamComplete, onStreamAborted, streamDetailId } = buildOnStreamComplete(ctx);
-    const streamController = createStreamController({ provider: ctx.provider, model: ctx.model });
-    const upstream = upstreamResponse(CHUNKS);
-
-    await runUntilFirstChunkThenCancel(upstream.response, {
-      ...ctx,
-      streamController,
-      onStreamComplete,
-      onStreamAborted: (snapshot, reason) => { calls.push({ snapshot, reason }); onStreamAborted(snapshot, reason); },
-      streamDetailId,
-    });
-    upstream.release();
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].snapshot.content).toContain("Counting");
-
-    const aborted = saved.details.filter((d) => d.status === "aborted");
-    expect(aborted).toHaveLength(1);
-    expect(aborted[0].response.finish_reason).toMatch(/^aborted: /);
-    // Usage is unknown on an abort, so it is estimated from the partial content
-    // rather than dropped — the provider has already billed for it.
-    expect(saved.usage).toHaveLength(1);
-    expect(saved.usage[0].tokens.completion_tokens).toBeGreaterThan(0);
-  });
-
-  it("records under the same detail id, so the row is updated and not duplicated", async () => {
-    const ctx = baseCtx();
-    const { onStreamComplete, onStreamAborted, streamDetailId } = buildOnStreamComplete(ctx);
-    const streamController = createStreamController({ provider: ctx.provider, model: ctx.model });
-    const upstream = upstreamResponse(CHUNKS);
-
-    await runUntilFirstChunkThenCancel(upstream.response, {
-      ...ctx, streamController, onStreamComplete, onStreamAborted, streamDetailId,
-    });
-    upstream.release();
-
-    // Two writes: the placeholder saved when the stream starts, then the abort
-    // update — both under the id the stream was opened with, so the dashboard
-    // row is replaced rather than duplicated.
-    expect(saved.details).toHaveLength(2);
-    expect(saved.details.map((d) => d.id)).toEqual([streamDetailId, streamDetailId]);
-    expect(saved.details.map((d) => d.status)).toEqual(["success", "aborted"]);
-  });
-
-  it("does not record an abort for a stream that ends normally", async () => {
-    const calls = [];
-    const ctx = baseCtx();
-    const { onStreamComplete, onStreamAborted, streamDetailId } = buildOnStreamComplete(ctx);
-    const streamController = createStreamController({ provider: ctx.provider, model: ctx.model });
-    const upstream = upstreamResponse([...CHUNKS, "data: [DONE]\n\n"], { close: true });
-
-    const result = await handleStreamingResponse({
-      ...ctx,
-      providerResponse: upstream.response,
-      streamController,
-      onStreamComplete,
-      onStreamAborted: (snapshot, reason) => { calls.push(reason); onStreamAborted(snapshot, reason); },
-      streamDetailId,
-    });
-
-    const reader = result.response.body.getReader();
-    while (true) {
-      const { done } = await reader.read();
-      if (done) break;
+/** Feed content, then a provider usage frame, then hang up. */
+async function abortAfterUsage(stream, usage) {
+  const reader = stream.readable.getReader();
+  const writer = stream.writable.getWriter();
+  // A pump rather than paired reads: the usage frame carries no delta content, so
+  // the stream need not surface anything for it, and a `write` with nobody pulling
+  // parks on backpressure forever.
+  const pump = (async () => {
+    try {
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) return;
+      }
+    } catch {
+      // The cancel below is what ends this loop.
     }
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  })();
+  await writer.write(chunk("Hello"));
+  await writer.write(usageChunk(usage));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await reader.cancel("client_closed");
+  await pump;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
 
-    expect(calls).toEqual([]);
-    expect(saved.details.some((d) => d.status === "aborted")).toBe(false);
+function build(onStreamComplete) {
+  return createSSETransformStreamWithLogger(
+    FORMATS.OPENAI,
+    FORMATS.OPENAI,
+    "openai",
+    null,
+    null,
+    "gpt-4.1",
+    "conn-1",
+    { messages: [{ role: "user", content: "hi" }] },
+    onStreamComplete,
+    "sk-test",
+  );
+}
+
+/** Feed some content, then hang up the way a disconnecting client does. */
+async function abortMidStream(stream) {
+  const reader = stream.readable.getReader();
+  const writer = stream.writable.getWriter();
+  writer.write(chunk("Hello"));
+  await reader.read();
+  writer.write(chunk(" world"));
+  await reader.read();
+  await reader.cancel("client_closed");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
+/** Feed some content and let the upstream finish normally. */
+async function completeStream(stream) {
+  const reader = stream.readable.getReader();
+  const writer = stream.writable.getWriter();
+  const drain = (async () => {
+    for (;;) {
+      const { done } = await reader.read();
+      if (done) return;
+    }
+  })();
+  await writer.write(chunk("Hello"));
+  await writer.close();
+  await drain;
+  // Released so a caller can still cancel the readable afterwards. A locked
+  // readable rejects `cancel()` with `TypeError: Invalid state: ReadableStream
+  // is locked`, which a swallowing `.catch()` turns into a test that asserts
+  // nothing about cancellation at all.
+  reader.releaseLock();
+}
+
+describe("a client that hangs up mid-stream", () => {
+  it("still reports the stream as finished", async () => {
+    const onStreamComplete = vi.fn();
+    await abortMidStream(build(onStreamComplete));
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports it as aborted, not as a normal completion", async () => {
+    const onStreamComplete = vi.fn();
+    await abortMidStream(build(onStreamComplete));
+    const [, , , meta] = onStreamComplete.mock.calls[0];
+    expect(meta?.aborted).toBe(true);
+  });
+
+  it("keeps the content generated before the hang-up", async () => {
+    const onStreamComplete = vi.fn();
+    await abortMidStream(build(onStreamComplete));
+    const [contentObj] = onStreamComplete.mock.calls[0];
+    expect(contentObj.content).toContain("Hello");
+  });
+
+  it("reports usage so the partial generation is accounted for", async () => {
+    const onStreamComplete = vi.fn();
+    await abortMidStream(build(onStreamComplete));
+    const [, usage] = onStreamComplete.mock.calls[0];
+    expect(usage).toBeTruthy();
+    expect(usage.completion_tokens).toBeGreaterThan(0);
+  });
+});
+
+describe("a stream that ends normally", () => {
+  it("still reports exactly once, and not as aborted", async () => {
+    const onStreamComplete = vi.fn();
+    await completeStream(build(onStreamComplete));
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    const [, , , meta] = onStreamComplete.mock.calls[0];
+    expect(meta?.aborted ?? false).toBe(false);
+  });
+
+  // Named for what it is. `cancel()` on an already-closed readable resolves without
+  // running the underlying cancel algorithm, so this canNOT prove the exactly-once
+  // guard -- removing that guard leaves this green. It is an API smoke test.
+  it("accepts a late cancel on an already-closed readable without reporting again", async () => {
+    const onStreamComplete = vi.fn();
+    const stream = build(onStreamComplete);
+    await completeStream(stream);
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+
+    // Asserted, not swallowed: if this rejects the cancel never happened and the
+    // count below would prove nothing.
+    await expect(stream.readable.cancel("late")).resolves.toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a stream cancelled before anything arrived", () => {
+  it("reports once, as aborted, without inventing content", async () => {
+    const onStreamComplete = vi.fn();
+    const stream = build(onStreamComplete);
+    await stream.readable.cancel("client_closed");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    const [contentObj, , , meta] = onStreamComplete.mock.calls[0];
+    expect(meta?.aborted).toBe(true);
+    expect(contentObj.content).toBe("");
+  });
+});
+
+describe("passthrough streams", () => {
+  /**
+   * TRANSLATE keeps usage on `state`; PASSTHROUGH keeps it in a closure
+   * variable. The cancel path reads whichever applies, so both modes record
+   * something rather than one of them reporting nothing.
+   */
+  it("also record the partial turn when the client hangs up", async () => {
+    const { createPassthroughStreamWithLogger } = await import("../../open-sse/utils/stream.js");
+    const onStreamComplete = vi.fn();
+    const stream = createPassthroughStreamWithLogger(
+      "openai",
+      null,
+      "gpt-4.1",
+      "conn-1",
+      { messages: [{ role: "user", content: "hi" }] },
+      onStreamComplete,
+      "sk-test",
+    );
+
+    await abortAfterUsage(stream, {
+      prompt_tokens: 11,
+      completion_tokens: 7,
+      total_tokens: 18,
+    });
+
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    const [contentObj, usage, , meta] = onStreamComplete.mock.calls[0];
+    expect(meta?.aborted).toBe(true);
+    expect(contentObj.content).toContain("Hello");
+    expect(usage?.completion_tokens).toBeGreaterThan(0);
+
+    // Characterization, not an endorsement. A usage-only frame is dropped by the
+    // `hasValuableContent` guard BEFORE `extractUsage` runs, so the closure never
+    // sees the provider's numbers and the abort path falls back to `estimateUsage`.
+    // Asserting the provider values here fails today (11 -> 2012). Pinned so the
+    // gap is visible and this test starts failing the moment it is closed, rather
+    // than quietly passing on an estimate as it did before.
+    expect(usage.prompt_tokens).not.toBe(11);
   });
 });

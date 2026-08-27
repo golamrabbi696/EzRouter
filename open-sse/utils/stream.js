@@ -4,11 +4,6 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
-import {
-  createResponsesAccumulator,
-  reduceResponsesEvent
-} from "../translator/concerns/responsesAccumulator.js";
-import { canonicalEchoModel } from "../services/model.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -49,12 +44,12 @@ export function createSSEStream(options = {}) {
     provider = null,
     reqLogger = null,
     toolNameMap = null,
+    customToolNames = null,
     model = null,
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null,
-    responsesAccumulator = null
+    apiKey = null
   } = options;
 
   let buffer = "";
@@ -63,7 +58,9 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  const state = mode === STREAM_MODE.TRANSLATE
+    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
+    : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -78,34 +75,35 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
-  const openAIResponsesAccumulator = responsesAccumulator ||
-    (targetFormat === FORMATS.OPENAI_RESPONSES
-      ? createResponsesAccumulator({ model })
-      : null);
-  if (state && openAIResponsesAccumulator && targetFormat === FORMATS.OPENAI_RESPONSES) {
-    state.responsesAccumulator = openAIResponsesAccumulator;
-  }
 
-  // What has been seen so far, readable at any moment — including after a client
-  // disconnect, when neither flush nor `onStreamComplete` will ever run. Usage is
-  // resolved the same way the flush paths resolve it, so an aborted stream is
-  // accounted for like a completed one rather than being dropped.
-  const getStreamSnapshot = () => {
-    const seenUsage = mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage;
-    const resolvedUsage = hasValidUsage(seenUsage)
-      ? seenUsage
-      : (totalContentLength > 0
-        ? estimateUsage(body, totalContentLength, mode === STREAM_MODE.PASSTHROUGH ? FORMATS.OPENAI : sourceFormat)
-        : null);
-    return {
-      content: accumulatedContent,
-      thinking: accumulatedThinking,
-      usage: resolvedUsage,
+  // The stream finishes exactly once. `flush` runs when the upstream ends, and
+  // `cancel` when the client goes away mid-stream — the Streams spec calls one
+  // or the other, never both. Recording lived only in `flush`, so an aborted
+  // request left no usage row, no request detail and nothing in Recent
+  // Requests, even though the provider had already generated (and charged for)
+  // the partial answer (#3488).
+  //
+  // RUNTIME SCOPE: the aborted path below is Node-only. Every disconnect signal
+  // in Next — and therefore `cancel` in any of its shapes — descends from `res`
+  // `'close'`, which Bun's node:http ServerResponse never emits on a client
+  // hangup. Under `start:bun` nothing cancels this stream, so `finishStream` only
+  // ever runs from `flush`, exactly as before this fix. The portable hook is `req`
+  // `'close'`; see #3559, which also covers the larger consequence that the
+  // upstream provider request is never aborted on Bun either.
+  let streamFinished = false;
+  const finishStream = (usage, { aborted = false } = {}) => {
+    if (streamFinished) return;
+    streamFinished = true;
+    if (!onStreamComplete) return;
+    onStreamComplete(
+      { content: accumulatedContent, thinking: accumulatedThinking },
+      usage,
       ttftAt,
-    };
+      { aborted },
+    );
   };
 
-  const transformStream = new TransformStream({
+  return new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -143,18 +141,6 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
-              // Echo a stable, listing-valid model name instead of the upstream
-              // id. Passthrough providers (opencode free tier) echo the bare
-              // resolved model with the provider prefix stripped; clients that
-              // trust the echo re-send it on the next hop. Prefixed requests
-              // keep their exact form; bare requests resolved to a
-              // connection-less catalog provider get the listing form
-              // re-injected (OpenRouter-style proxy echo).
-              const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
-              if (typeof parsed.model === "string" && echoModel && parsed.model !== echoModel) {
-                parsed.model = echoModel;
-                fieldsInjected = true;
-              }
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
@@ -183,13 +169,6 @@ export function createSSEStream(options = {}) {
                 for (const choice of parsed.choices) {
                   if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length === 0) {
                     delete choice.delta.tool_calls;
-                    fieldsInjected = true;
-                  }
-                  // Normalize NVIDIA/vLLM-style `delta.reasoning` → `reasoning_content`
-                  // so clients (Cursor thinking UI, AI SDK) render thinking (issue #2936).
-                  if (choice.delta?.reasoning && typeof choice.delta.reasoning === "string" && !choice.delta.reasoning_content) {
-                    choice.delta.reasoning_content = choice.delta.reasoning;
-                    delete choice.delta.reasoning;
                     fieldsInjected = true;
                   }
                 }
@@ -254,41 +233,19 @@ export function createSSEStream(options = {}) {
         }
 
         // Translate mode
-        // Responses API SSE: buffer "event:" lines (Codex uses multi-line format "event:\ndata:\n\n")
-        // parseSSELine only reads "data:" lines → "event:" lines get dropped → event type lost during translate
-        if (trimmed.startsWith("event:")) {
-          if (state) state._lastEventType = trimmed.slice(6).trim();
-          // When both formats are OPENAI_RESPONSES → forward event line as-is
-          if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-            const output = line + "\n";
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
-          }
-          continue;
-        }
+        if (!trimmed) continue;
 
-        let parsed = parseSSELine(trimmed, targetFormat);
+        const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
         const keepsOpenAIResponsesFormat = isOpenAIResponsesStream && sourceFormat === FORMATS.OPENAI_RESPONSES;
-        let openAIResponsesEventName = isOpenAIResponsesStream
+        const openAIResponsesEventName = isOpenAIResponsesStream
           ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
           : null;
 
-        if (keepsOpenAIResponsesFormat && !parsed.done) {
-          const reduced = reduceResponsesEvent(openAIResponsesAccumulator, {
-            event: openAIResponsesEventName,
-            data: parsed
-          });
-          if (!reduced.accepted) continue;
-          parsed = reduced.data;
-          openAIResponsesEventName = reduced.type;
-          if (isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
-            openAIResponsesTerminalSeen = true;
-          }
-        } else if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+        if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
         }
 
@@ -297,7 +254,7 @@ export function createSSEStream(options = {}) {
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
           // Synthesize response.failed if the Responses stream never sent a terminal event
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
-            const failedOutput = formatIncompleteOpenAIResponsesStreamFailure(openAIResponsesAccumulator);
+            const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
             reqLogger?.appendConvertedChunk?.(failedOutput);
             controller.enqueue(sharedEncoder.encode(failedOutput));
             openAIResponsesTerminalSeen = true;
@@ -308,7 +265,6 @@ export function createSSEStream(options = {}) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
-            openAIResponsesAccumulator.doneSent = true;
           }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
@@ -324,16 +280,6 @@ export function createSSEStream(options = {}) {
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
-        }
-
-        // Ollama native format
-        if (typeof parsed.message?.content === "string" && parsed.message.content) {
-          totalContentLength += parsed.message.content.length;
-          accumulatedContent += parsed.message.content;
-        }
-        if (typeof parsed.message?.thinking === "string" && parsed.message.thinking) {
-          totalContentLength += parsed.message.thinking.length;
-          accumulatedThinking += parsed.message.thinking;
         }
         
         // OpenAI format - content
@@ -458,32 +404,12 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
-          if (onStreamComplete) {
-            onStreamComplete({
-              content: accumulatedContent,
-              thinking: accumulatedThinking
-            }, usage, ttftAt);
-          }
+          finishStream(usage);
           return;
         }
 
         if (buffer.trim()) {
-          let parsed = parseSSELine(buffer.trim(), targetFormat);
-          if (parsed && !parsed.done) {
-            const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
-            if (keepsOpenAIResponsesFormat) {
-              const eventName = getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed);
-              const reduced = reduceResponsesEvent(openAIResponsesAccumulator, { event: eventName, data: parsed });
-              if (reduced.accepted) {
-                parsed = reduced.data;
-                const output = formatSSE({ event: reduced.type, data: parsed }, sourceFormat);
-                reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
-                if (isOpenAIResponsesTerminalEvent(reduced.type, parsed)) openAIResponsesTerminalSeen = true;
-              }
-              parsed = null;
-            }
-          }
+          const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
@@ -526,7 +452,7 @@ export function createSSEStream(options = {}) {
         // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
         const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
-          const failedOutput = formatIncompleteOpenAIResponsesStreamFailure(openAIResponsesAccumulator);
+          const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
           controller.enqueue(sharedEncoder.encode(failedOutput));
           openAIResponsesTerminalSeen = true;
@@ -538,7 +464,6 @@ export function createSSEStream(options = {}) {
           controller.enqueue(sharedEncoder.encode(doneOutput));
           openAIResponsesDoneSent = true;
           streamDoneSent = true;
-          openAIResponsesAccumulator.doneSent = true;
         }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
@@ -551,37 +476,32 @@ export function createSSEStream(options = {}) {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
         
-        if (onStreamComplete) {
-          onStreamComplete({
-            content: accumulatedContent,
-            thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
-        }
+        finishStream(state?.usage);
       } catch (error) {
         console.log("Error in flush:", error);
       }
+    },
+
+    // The client hung up. Nothing more can be written, but everything that was
+    // already generated is worth recording — with whatever usage the provider
+    // had reported by then.
+    cancel() {
+      try {
+        // TRANSLATE keeps usage on `state`, PASSTHROUGH in the closure variable
+        // — the same split the two flush paths above make.
+        let reported = state ? state.usage : usage;
+        if (!hasValidUsage(reported) && totalContentLength > 0) {
+          reported = estimateUsage(body, totalContentLength, state ? sourceFormat : FORMATS.OPENAI);
+        }
+        finishStream(reported, { aborted: true });
+      } catch (error) {
+        console.log("Error in cancel:", error);
+      }
     }
   });
-
-  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat !== FORMATS.OPENAI_RESPONSES) {
-    transformStream.buildAbortedTerminalBytes = () => {
-      const flushed = translateResponse(targetFormat, sourceFormat, null, state);
-      const chunks = Array.isArray(flushed) ? flushed : flushed ? [flushed] : [];
-      const output = chunks.filter(Boolean).map(item => formatSSE(item, sourceFormat)).join("");
-      // Translated streams normally end with their format's final chunk plus EOF;
-      // only same-format Responses streams use the OpenAI `data: [DONE]` sentinel.
-      return output ? sharedEncoder.encode(output) : null;
-    };
-  }
-
-  // Carried on the stream itself so callers that only hold the TransformStream
-  // (streamingHandler) can read the partial result without threading another
-  // channel through every wrapper.
-  transformStream.getStreamSnapshot = getStreamSnapshot;
-  return transformStream;
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, responsesAccumulator = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -589,12 +509,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     provider,
     reqLogger,
     toolNameMap,
+    customToolNames,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey,
-    responsesAccumulator
+    apiKey
   });
 }
 
