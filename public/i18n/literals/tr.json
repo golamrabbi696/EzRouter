@@ -418,7 +418,6 @@
   "Submit": "Gönder",
   "Success": "Başarılı",
   "Sudo Password": "Sudo Parolası",
-<<<<<<< HEAD
   "Sudo password is required": "Sudo parolası gereklidir",
   "Sudo Password Required": "Sudo Parolası Gerekli",
   "Support": "Destek",
@@ -702,5 +701,4 @@
   "Construct a dialogue": "Bir diyalog kur",
   "Recall a haunting memory": "Sarsıcı bir anıyı hatırla",
   "Overlap speech": "Konuşmaları üst üste bindir"
->>>>>>> 8169ec78 (i18n(elevenlabs): localize TTS panel strings across 32 locales)
 }

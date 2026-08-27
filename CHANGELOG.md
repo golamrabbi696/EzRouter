@@ -1,3 +1,23 @@
+# v0.5.77 (2026-08-23)
+
+## Upstream Feature & Capability Sync (PRs #3534–#3584)
+- **Qoder Multimodal & Frontier Models (#3555)**:
+  - Added support for `Qwen3.8-Max (qmodel_38max)`, `GLM-5.3 (gmodel)`, and `Lite` models.
+  - Implemented multimodal image pass-through for Qoder (`image_url`, base64 Data URIs, and Claude-style image block conversion).
+  - Mapped complete 1M token context window and reasoning capabilities for Qoder models.
+- **Quota Safety Buffer & Account Pause (#3584)**:
+  - Added configurable pause threshold per quota window in Provider Limits and Edit Connection modal.
+  - Automatically transitions low-quota connections to `Paused (quota)` state before depletion to seamlessly rotate traffic to backup accounts.
+- **Progressive Tool Disclosure (#3575)**:
+  - Integrated BM25 tool relevance ranking and static schema filtering for heavy MCP environments, saving 60–75% of per-turn schema token overhead.
+- **Upstream Stability & Bug Fixes (PRs #3534–#3560)**:
+  - Added TTFT watchdog for stalled upstream streams (#3556).
+  - Empty-stream auto-failover for combo models (#3560).
+  - LRU session eviction to safeguard active session affinity (#3550).
+  - Recorded aborted stream partial usage in DB (#3542).
+  - Eliminated OAuth callback server port and interval timer leaks (#3543).
+  - Unified multi-endpoint transport routing and self-hosted audio base URLs (#3538, #3539).
+
 # v0.5.76 (2026-08-23)
 
 ## Fixes
