@@ -1,3 +1,30 @@
+# v0.5.92 (2026-08-29)
+
+## Critical Fixes
+- **Account Selection & Non-Streaming Response Fix**:
+  - Fixed result evaluation check in `src/sse/handlers/chat.js` (`isSuccess = result instanceof Response || (result && !result.isError)`). Previously, `if (result.success)` evaluated `undefined` to `false` for raw `Response` objects returned by `handleChatCore`, causing successful non-streaming model responses to mistakenly mark active accounts as unavailable and loop into a false `HTTP 500: All accounts unavailable` error.
+
+# v0.5.91 (2026-08-29)
+
+## Packaging & Standalone Bundle Release
+- Repackaged full Next.js standalone application distribution bundle for global CLI updates.
+
+# v0.5.90 (2026-08-29)
+
+## Fixes & Improvements
+- **Model Test Ping Timeout & Error Handling**:
+  - Increased model test ping timeout from 15s to 60s to support heavy reasoning models with long time-to-first-token (e.g. DeepSeek V4 Pro, Nemotron 550B).
+  - Wrapped internal test requests in `try...catch` handlers across LLM, Embedding, Image, and STT probes to prevent unhandled exceptions and return clean HTTP 504 / timeout messages instead of HTTP 500.
+
+# v0.5.89 (2026-08-29)
+
+## Fixes & Provider Registry Updates
+- **NVIDIA NIM Model Catalog Update**:
+  - Updated active models in `open-sse/providers/registry/nvidia.js` to match NVIDIA NIM's latest catalog (`minimaxai/minimax-m3`, `moonshotai/kimi-k3`, `deepseek-ai/deepseek-v4-pro-0813`, `deepseek-ai/deepseek-v4-flash-0731`, `nvidia/nemotron-3-ultra-550b-a55b`, `nvidia/nemotron-3-super-120b-a12b`).
+  - Removed deprecated `z-ai/glm-5.2` (reached end-of-life upstream on 2026-08-21).
+- **Universal Provider Health & Model Testing**:
+  - Validated all active connections across all configured providers for non-streaming model test pings and streaming responses.
+
 # v0.5.88 (2026-08-29)
 
 ## Fixes & Provider Engine Resilience

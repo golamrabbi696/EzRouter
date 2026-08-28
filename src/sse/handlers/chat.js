@@ -287,19 +287,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    const isSuccess = result instanceof Response || (result && !result.isError && (result.ok || result.status === HTTP_STATUS.OK || !result.status));
+    if (isSuccess) {
+      return result instanceof Response ? result : (result.response || result);
+    }
+
+    const errorStatus = result?.status || HTTP_STATUS.INTERNAL_SERVER_ERROR;
+    const errorMessage = result?.error || "Upstream request failed";
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, errorStatus, errorMessage, provider, model, result?.resetsAtMs);
 
     if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${errorStatus}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
+      lastError = errorMessage;
+      lastStatus = errorStatus;
       continue;
     }
 
-    return result.response;
+    return result instanceof Response ? result : (result?.response || errorResponse(errorStatus, errorMessage));
   }
 }

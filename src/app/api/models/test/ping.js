@@ -55,19 +55,28 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
   const isOptions = customPromptOrOptions && typeof customPromptOrOptions === "object";
   const customPrompt = isOptions ? customPromptOrOptions.customPrompt : customPromptOrOptions;
   const connectionId = isOptions ? customPromptOrOptions.connectionId : null;
-  const timeoutMs = (isOptions && typeof customPromptOrOptions.timeoutMs === "number") ? customPromptOrOptions.timeoutMs : 15000;
+  const timeoutMs = (isOptions && typeof customPromptOrOptions.timeoutMs === "number") ? customPromptOrOptions.timeoutMs : 60000;
 
   const headers = await getInternalHeaders(connectionId);
   const start = Date.now();
 
   if (kind === "embedding") {
     const promptText = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "test";
-    const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, input: promptText }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/api/v1/embeddings`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, input: promptText }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      const latencyMs = Date.now() - start;
+      if (err.name === "TimeoutError" || err.name === "AbortError") {
+        return { ok: false, latencyMs, status: 504, error: `HTTP 504: Request timed out (${Math.round(timeoutMs / 1000)}s)` };
+      }
+      return { ok: false, latencyMs, status: 500, error: err.message || "Embedding request failed" };
+    }
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
     let parsed = null;
@@ -86,12 +95,21 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
 
   if (kind === "image") {
     const promptText = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "test";
-    const res = await fetch(`${baseUrl}/api/v1/images/generations`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model, prompt: promptText }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/api/v1/images/generations`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, prompt: promptText }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      const latencyMs = Date.now() - start;
+      if (err.name === "TimeoutError" || err.name === "AbortError") {
+        return { ok: false, latencyMs, status: 504, error: `HTTP 504: Request timed out (${Math.round(timeoutMs / 1000)}s)` };
+      }
+      return { ok: false, latencyMs, status: 500, error: err.message || "Image generation request failed" };
+    }
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
     let parsed = null;
@@ -115,12 +133,21 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
     form.append("file", sampleAudio, "test.wav");
     form.append("model", model);
 
-    const res = await fetch(`${baseUrl}/api/v1/audio/transcriptions`, {
-      method: "POST",
-      headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
-      body: form,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/api/v1/audio/transcriptions`, {
+        method: "POST",
+        headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
+        body: form,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      const latencyMs = Date.now() - start;
+      if (err.name === "TimeoutError" || err.name === "AbortError") {
+        return { ok: false, latencyMs, status: 504, error: `HTTP 504: Request timed out (${Math.round(timeoutMs / 1000)}s)` };
+      }
+      return { ok: false, latencyMs, status: 500, error: err.message || "STT request failed" };
+    }
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
     let parsed = null;
@@ -139,21 +166,30 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
   }
 
   const promptContent = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "hi";
-  const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model,
-      // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
-      // their budget on chain-of-thought before emitting an answer. A tiny probe like
-      // max_tokens:16 starves the answer and yields a false "no choices" failure.
-      // See issue #3010.
-      max_tokens: 1024,
-      stream: false,
-      messages: [{ role: "user", content: promptContent }],
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
+        // their budget on chain-of-thought before emitting an answer. A tiny probe like
+        // max_tokens:16 starves the answer and yields a false "no choices" failure.
+        // See issue #3010.
+        max_tokens: 1024,
+        stream: false,
+        messages: [{ role: "user", content: promptContent }],
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return { ok: false, latencyMs, status: 504, error: `HTTP 504: Request timed out (${Math.round(timeoutMs / 1000)}s)` };
+    }
+    return { ok: false, latencyMs, status: 500, error: err.message || "Chat completion request failed" };
+  }
   const latencyMs = Date.now() - start;
 
   const rawText = await res.text().catch(() => "");
