@@ -1,3 +1,10 @@
+# v0.5.87 (2026-08-23)
+
+## Fixes & Model Testing
+- **Antigravity & Model Ping Connection Pinning**:
+  - Enforced `x-9r-connection-id` header support in chat routing handler to pin model test ping calls directly to the targeted connection.
+  - Fully verified non-streaming Antigravity & OpenRouter model testing from the dashboard.
+
 # v0.5.86 (2026-08-23)
 
 ## Fixes & Resilience
