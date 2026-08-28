@@ -1,3 +1,10 @@
+# v0.5.86 (2026-08-23)
+
+## Fixes & Resilience
+- **Model Echo Backward Compatibility**:
+  - Upgraded `canonicalEchoModel` in `open-sse/services/model.js` to accept both call styles (`canonicalEchoModel({ requestedModel, provider, model })` and legacy positional arguments `canonicalEchoModel(requestedModel, modelInfo)`).
+  - Guarantees complete crash resilience for all upstream providers and non-streaming endpoints under all runtime bundle variations.
+
 # v0.5.85 (2026-08-23)
 
 ## Fixes & Packaging

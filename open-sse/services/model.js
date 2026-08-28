@@ -40,7 +40,17 @@ for (const entry of REGISTRY) {
  * bare "big-pickle" → "oc/big-pickle" — so re-sending the echoed name routes
  * again and passes listing validation instead of triggering client warnings.
  */
-export function canonicalEchoModel({ requestedModel, provider, model }) {
+export function canonicalEchoModel(arg1, arg2) {
+  let requestedModel, provider, model;
+  if (arg1 && typeof arg1 === "object") {
+    requestedModel = arg1.requestedModel;
+    provider = arg1.provider;
+    model = arg1.model;
+  } else {
+    requestedModel = arg1;
+    provider = arg2?.provider;
+    model = arg2?.model;
+  }
   if (!requestedModel || requestedModel.includes("/")) return requestedModel;
   const alias = CONNECTIONLESS_CATALOG_ALIASES.get(provider);
   if (alias) return `${alias}/${model}`;
