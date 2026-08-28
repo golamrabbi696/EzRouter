@@ -22,6 +22,7 @@ export default {
   transport: {
     baseUrl: "devin://acp/stdio",
     format: "openai",
+    forceStream: true,
   },
   models: [
     { id: "swe-1.6-fast", name: "SWE-1.6 Fast" },

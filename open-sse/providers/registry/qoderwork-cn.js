@@ -18,6 +18,7 @@ export default {
   transport: {
     baseUrl:
       "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
+    forceStream: true,
     headers: {},
     timeoutMs: 120000,
     usage: {

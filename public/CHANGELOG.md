@@ -1,3 +1,14 @@
+# v0.5.88 (2026-08-29)
+
+## Fixes & Provider Engine Resilience
+- **Non-Streaming Response Handler Stabilization**:
+  - Fixed parameter extraction in `handleNonStreamingResponse` (`open-sse/handlers/chatCore/nonStreamingHandler.js`) to safely read `provider`, `model`, `connectionId`, and `apiKey` directly and via fallbacks, resolving `TypeError: Cannot destructure property 'provider' of 'modelInfo' as it is undefined` that caused HTTP 500 on Vertex AI (`vx/gemini-3.7-flash`), Ollama, Claude, and other non-streaming requests.
+  - Added comprehensive multi-target format translations for non-streaming responses (OpenAI, OpenAI Responses, Claude Messages, Gemini/Vertex, Ollama).
+- **SSE Stream-Only Provider Forced Streaming**:
+  - Added `forceStream: true` transport flags to stream-only and custom protocol providers (`antigravity`, `gemini-cli`, `kiro`, `cursor`, `devin-cli`, `windsurf`, `qoder`, `qoderwork-cn`).
+  - Added automatic SSE stream detector and parser in `handleNonStreamingResponse` to gracefully convert upstream SSE stream output to standard OpenAI completions when non-streaming JSON is requested.
+  - Exported `parseGeminiSSEToOpenAIResponse` in `sseToJsonHandler.js` to correctly handle Google CloudCode and Gemini CLI internal streaming responses.
+
 # v0.5.87 (2026-08-23)
 
 ## Fixes & Model Testing

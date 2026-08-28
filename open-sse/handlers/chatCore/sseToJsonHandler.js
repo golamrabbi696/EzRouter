@@ -239,7 +239,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   return result;
 }
 
-function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
+export function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const state = {};
   const chunks = [];
   let streamError = null;
@@ -252,16 +252,23 @@ function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
     try {
       const parsed = JSON.parse(payload);
       if (parsed?.error) streamError = parsed.error;
-      else chunks.push(...(geminiToOpenAIResponse(parsed, state) || []));
+      else {
+        const out = geminiToOpenAIResponse(parsed, state);
+        if (out) chunks.push(...out);
+      }
     } catch { /* ignore malformed lines */ }
   }
 
   if (streamError) return { error: streamError };
   if (chunks.length === 0) return null;
-  return parseSSEToOpenAIResponse(
+  const result = parseSSEToOpenAIResponse(
     chunks.map((chunk) => `data: ${JSON.stringify(chunk)}`).join("\n"),
     fallbackModel
   );
+  if (result && state.usage && !result.usage) {
+    result.usage = state.usage;
+  }
+  return result;
 }
 
 /**
@@ -290,7 +297,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     FORMATS.GEMINI,
     FORMATS.GEMINI_CLI,
     FORMATS.VERTEX,
-  ].includes(targetFormat);
+  ].includes(targetFormat) || [
+    FORMATS.ANTIGRAVITY,
+    FORMATS.GEMINI,
+    FORMATS.GEMINI_CLI,
+    FORMATS.VERTEX,
+  ].includes(PROVIDERS[provider]?.format);
   const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi || isGeminiSse) {
     try {

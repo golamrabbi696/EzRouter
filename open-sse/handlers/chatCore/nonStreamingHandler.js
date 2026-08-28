@@ -7,7 +7,8 @@ import { createErrorResult } from "../../utils/error.js";
 import { canonicalEchoModel } from "../../services/model.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
-import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { parseSSEToOpenAIResponse, parseGeminiSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { PROVIDERS } from "../../config/providers.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -337,7 +338,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     if (!message.content && !message.tool_calls) message.content = "";
 
     const usage = responseBody.usage || {};
-    return {
+    const result = {
       id: `chatcmpl-${responseBody.id || Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
@@ -353,22 +354,60 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         total_tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0)
       }
     };
+    return sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? openAICompletionToResponses(result, customToolNames)
+      : result;
   }
 
   // Ollama
   if (targetFormat === FORMATS.OLLAMA) {
-    return ollamaBodyToOpenAI(responseBody);
+    const result = ollamaBodyToOpenAI(responseBody);
+    return sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? openAICompletionToResponses(result, customToolNames)
+      : (sourceFormat === FORMATS.CLAUDE ? openAICompletionToClaudeMessage(result) : result);
   }
 
   return responseBody;
 }
 
-export async function handleNonStreamingResponse({ body, modelInfo, credentials, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog, reqTag = "", log = null, customToolNames = null }) {
-  const { provider, model } = modelInfo;
+export async function handleNonStreamingResponse({ body, modelInfo, provider: pProp, model: mProp, connectionId, apiKey, clientRawRequest, credentials, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog, reqTag = "", log = null, customToolNames = null }) {
+  const provider = modelInfo?.provider || pProp;
+  const model = modelInfo?.model || mProp;
+  const effectiveConnId = credentials?.connectionId || connectionId;
+  const effectiveApiKey = credentials?.apiKey || apiKey;
   const requestStartTime = Date.now();
 
   try {
-    const rawResponseBody = await providerResponse.json();
+    const rawText = await providerResponse.text();
+    let rawResponseBody;
+    if (rawText.trimStart().startsWith("data:")) {
+      const isGeminiSse = [
+        FORMATS.ANTIGRAVITY,
+        FORMATS.GEMINI,
+        FORMATS.GEMINI_CLI,
+        FORMATS.VERTEX,
+      ].includes(targetFormat) || [
+        FORMATS.ANTIGRAVITY,
+        FORMATS.GEMINI,
+        FORMATS.GEMINI_CLI,
+        FORMATS.VERTEX,
+      ].includes(PROVIDERS[provider]?.format);
+
+      if (isGeminiSse) {
+        rawResponseBody = parseGeminiSSEToOpenAIResponse(rawText, model);
+      } else {
+        rawResponseBody = parseSSEToOpenAIResponse(rawText, model);
+      }
+      if (!rawResponseBody) {
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      }
+      if (rawResponseBody.error) {
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, rawResponseBody.error.message || "Upstream SSE stream failed");
+      }
+      targetFormat = FORMATS.OPENAI;
+    } else {
+      rawResponseBody = JSON.parse(rawText);
+    }
     const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE;
     const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES;
 
@@ -396,7 +435,7 @@ export async function handleNonStreamingResponse({ body, modelInfo, credentials,
 
     const usage = extractUsageFromResponse(translatedResponse);
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId: credentials?.connectionId, apiKey: credentials?.apiKey, endpoint: credentials?.endpoint, silent: true });
+    saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: credentials?.endpoint || clientRawRequest?.endpoint, silent: true });
     if (log?.line) {
       log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
     }
@@ -413,13 +452,13 @@ export async function handleNonStreamingResponse({ body, modelInfo, credentials,
 
     const totalLatency = Date.now() - requestStartTime;
     saveRequestDetail(buildRequestDetail({
-      provider, model, connectionId: credentials?.connectionId,
+      provider, model, connectionId: effectiveConnId, apiKey: effectiveApiKey,
       latency: { ttft: totalLatency, total: totalLatency },
       tokens: usage,
       request: extractRequestConfig(body, false),
       response: { content: contentForLog, thinking: thinkingForLog, finish_reason: translatedResponse.choices?.[0]?.finish_reason || translatedResponse.stop_reason || "stop" },
       status: "success"
-    }, { endpoint: credentials?.endpoint || null })).catch(() => {});
+    }, { endpoint: credentials?.endpoint || clientRawRequest?.endpoint || null })).catch(() => {});
 
     translatedResponse.model = canonicalEchoModel({ requestedModel: body.model, provider, model });
     return new Response(JSON.stringify(translatedResponse), {

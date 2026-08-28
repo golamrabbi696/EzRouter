@@ -23,6 +23,7 @@ export default {
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
     ],
     format: "kiro",
+    forceStream: true,
     retry: {
       "429": 0,
     },

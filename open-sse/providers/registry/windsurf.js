@@ -21,6 +21,7 @@ export default {
   transport: {
     baseUrl: "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
     format: "openai",
+    forceStream: true,
     headers: {
       "Content-Type": "application/grpc-web+proto",
       "Accept": "application/grpc-web+proto",
