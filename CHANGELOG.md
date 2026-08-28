@@ -1,3 +1,9 @@
+# v0.5.85 (2026-08-23)
+
+## Fixes & Packaging
+- **OpenRouter Non-Streaming Model Echo**:
+  - Packed and published the `canonicalEchoModel` fix in `nonStreamingHandler.js`, permanently resolving `TypeError: Cannot destructure property 'provider' of 'b' as it is undefined` across global npm installations.
+
 # v0.5.84 (2026-08-23)
 
 ## Stability & Engine Improvements
