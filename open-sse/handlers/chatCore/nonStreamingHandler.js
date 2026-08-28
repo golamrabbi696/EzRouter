@@ -421,7 +421,7 @@ export async function handleNonStreamingResponse({ body, modelInfo, credentials,
       status: "success"
     }, { endpoint: credentials?.endpoint || null })).catch(() => {});
 
-    translatedResponse.model = canonicalEchoModel(body.model, modelInfo);
+    translatedResponse.model = canonicalEchoModel({ requestedModel: body.model, provider, model });
     return new Response(JSON.stringify(translatedResponse), {
       status: HTTP_STATUS.OK,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }

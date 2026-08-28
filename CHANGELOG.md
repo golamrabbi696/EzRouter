@@ -1,3 +1,10 @@
+# v0.5.82 (2026-08-23)
+
+## Fixes
+- **Non-Streaming Response Formatting**:
+  - Corrected parameter signature in `nonStreamingHandler.js` when calling `canonicalEchoModel({ requestedModel, provider, model })`, resolving `TypeError: Cannot destructure property 'provider' of 'b' as it is undefined`.
+  - Fully stabilized non-streaming and streaming OpenRouter model responses.
+
 # v0.5.81 (2026-08-23)
 
 ## Fixes & Provider Enhancements
