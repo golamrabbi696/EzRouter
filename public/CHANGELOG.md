@@ -1,3 +1,11 @@
+# v0.5.81 (2026-08-23)
+
+## Fixes & Provider Enhancements
+- **OpenRouter Gateway & Fallback Routing**:
+  - Registered `OpenRouterExecutor` in the central executor registry (`open-sse/executors/index.js`), ensuring `allow_fallbacks: true` is properly injected on all OpenRouter chat requests.
+  - Resolved HTTP 502 `Invalid URL:` errors caused by OpenRouter's misconfigured internal "Stealth" routes.
+  - Enhanced `parseUpstreamError` to annotate 502/500 upstream errors with actionable guidance when an OpenRouter sub-provider endpoint fails.
+
 # v0.5.80 (2026-08-23)
 
 ## Fixes & UI/UX Enhancements
