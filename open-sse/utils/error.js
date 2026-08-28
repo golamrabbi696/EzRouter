@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -67,16 +68,31 @@ export async function parseUpstreamError(response, executor = null) {
 
   let structuredMessage = "";
   let structuredCode;
+  let providerName = null;
+  let invalidUrlEmpty = false;
   try {
     const json = JSON.parse(bodyText);
     structuredMessage = json.error?.message || json.message || json.error || bodyText;
     structuredCode = json.error?.code || json.code;
+    providerName = json.error?.metadata?.provider_name || null;
+    if (typeof structuredMessage === "string") {
+      const m = /^Invalid URL:\s*(.*)$/.exec(structuredMessage);
+      if (m) invalidUrlEmpty = m[1].trim() === "";
+    }
   } catch {
     structuredMessage = bodyText;
   }
-  const messageStr = typeof structuredMessage === "string"
+  let messageStr = typeof structuredMessage === "string"
     ? structuredMessage
     : JSON.stringify(structuredMessage);
+
+  if ((providerName || invalidUrlEmpty) && (response.status === HTTP_STATUS.BAD_GATEWAY || response.status === HTTP_STATUS.SERVER_ERROR || response.status === 502 || response.status === 500)) {
+    const hint = providerName
+      ? `OpenRouter upstream "${providerName}" returned an invalid routing URL — its endpoint is misconfigured on OpenRouter's side`
+      : "Upstream returned an invalid (empty) routing URL";
+    messageStr = `${messageStr} — ${hint}. Try a different model, or set \`provider: { allow_fallbacks: true }\` to opt into OpenRouter's automatic upstream fallback.`;
+  }
+
   const fallbackMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)

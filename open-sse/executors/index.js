@@ -23,6 +23,7 @@ import { CodeBuddyIntlExecutor } from "./codebuddy-intl.js";
 import TraeExecutor from "./trae.js";
 import ZedExecutor from "./zed.js";
 import WindsurfExecutor from "./windsurf.js";
+import { OpenRouterExecutor } from "./openrouter.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 
@@ -59,6 +60,7 @@ const executors = {
   zed: new ZedExecutor(),
   windsurf: new WindsurfExecutor(),
   "devin-cli": new DevinCliExecutor(),
+  openrouter: new OpenRouterExecutor(),
 };
 
 const defaultCache = new Map();
