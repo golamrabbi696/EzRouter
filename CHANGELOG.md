@@ -1,3 +1,10 @@
+# v0.5.84 (2026-08-23)
+
+## Stability & Engine Improvements
+- **OpenRouter & Non-Streaming Gateway Stabilization**:
+  - Validated and finalized response model echo logic and error annotations for OpenRouter models.
+  - Re-synchronized clean production standalone bundles across all runtime engines.
+
 # v0.5.83 (2026-08-23)
 
 ## Fixes & OpenRouter Stability
