@@ -280,6 +280,11 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
+    // A CORS preflight carries no credentials and performs no action, so it must
+    // reach the route's OPTIONS handler (which answers with the CORS headers)
+    // instead of being rejected here — otherwise browsers can never complete a
+    // cross-origin request that sends an Authorization header.
+    if (request.method === "OPTIONS") return NextResponse.next();
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json(formatPublicLlmAuthError(pathname), { status: 401 });
   }
