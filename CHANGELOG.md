@@ -154,7 +154,6 @@
   leaving icons blank until a second load
 
 # v0.5.55 (2026-08-14)
->>>>>>> upstream/master
 
 ## Critical Fixes
 - **Upstream Network Request Timeouts in Antigravity OAuth**:
@@ -636,4 +635,3 @@
 
 ## Breaking Changes
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
->>>>>>> upstream/master

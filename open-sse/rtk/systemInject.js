@@ -16,6 +16,8 @@ export function injectSystemPrompt(body, format, prompt) {
     // Kiro wire shape is unique (conversationState/systemPrompt) — handle directly.
     if (isKiroBody(body) || format === FORMATS.KIRO) {
       injectKiroSystem(body, prompt);
+      return;
+    }
     // Claude/Gemini own a dedicated system field, yet their bodies also carry
     // messages[]/contents[] — decide by format label before the shape sniff below.
     // Anthropic rejects a "system" role inside messages[] (no such input role).

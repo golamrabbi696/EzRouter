@@ -14,9 +14,6 @@ export default {
   noAuth: true,
   transport: {
     baseUrl: "https://opencode.ai",
-    format: "openai-responses",
-    forceStream: true,
-    thinkingFormat: "opencode",
     headers: {
       "x-opencode-client": "desktop",
     },
@@ -38,7 +35,4 @@ export default {
   ],
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
-  transports: [
-    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/v1/responses" },
-  ],
 };

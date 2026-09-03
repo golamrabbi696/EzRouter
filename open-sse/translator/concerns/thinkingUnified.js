@@ -67,15 +67,6 @@ export function extractThinking(body) {
     return { mode: "level", level: e };
   }
 
-  // OpenAI chat / Responses shape — check effort first (zai sends both thinking object and reasoning.effort)
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
-  if (typeof effort === "string" && effort) {
-    const e = effort.toLowerCase();
-    if (e === "none" || e === "off") return { mode: "none" };
-    if (e === "auto") return { mode: "auto" };
-    return { mode: "level", level: e };
-  }
-
   // Claude shape
   const t = body.thinking;
   if (t && typeof t === "object") {
@@ -308,7 +299,8 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
       if (canDisable) body.thinking = { type: "adaptive" };
       else delete body.thinking;
       const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" ? "high" : level };
+      const claudeLevel = (level === "auto" || !level) ? "high" : (level === "minimal" ? "low" : (level === "xhigh" ? "high" : level));
+      body.output_config = { effort: claudeLevel };
       break;
     }
     case "claude-budget": {
