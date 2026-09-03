@@ -7,6 +7,7 @@ import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
 import { readGeminiFunctionCallSignature, attachOpenAIToolCallSignature } from "../concerns/thoughtSignature.js";
+import { storeGeminiThoughtSignature } from "../../services/thoughtSignatureStore.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -34,6 +35,14 @@ function emitFunctionCall(functionCall, signature, state) {
   const id = rawId.replace(/[^a-zA-Z0-9_-]/g, "_");
   state.seenToolCallIds.add(id);
   if (upstreamId) state.seenToolCallIds.add(upstreamId);
+
+  if (signature) {
+    storeGeminiThoughtSignature(id, signature, state.sessionId);
+    if (upstreamId && upstreamId !== id) {
+      storeGeminiThoughtSignature(upstreamId, signature, state.sessionId);
+    }
+  }
+
   const toolCall = {
     id,
     index: toolCallIndex,
@@ -108,12 +117,21 @@ export function geminiToOpenAIResponse(chunk, state) {
   if (content?.parts) {
     for (const part of content.parts) {
       const partSignature = readGeminiFunctionCallSignature(part);
+      const hasThoughtSig = partSignature || part.thoughtSignature || part.thought_signature;
+      if (hasThoughtSig && typeof hasThoughtSig === "string") {
+        state.pendingThoughtSignature = hasThoughtSig;
+      }
       const isThought = part.thought === true;
 
       // Handle thought signature (thinking mode)
       if (partSignature) {
         const hasTextContent = part.text !== undefined && part.text !== "";
         const hasFunctionCall = !!part.functionCall;
+
+        // Standalone thoughtSignature part (no text, no functionCall): keep pending for next functionCall
+        if (!hasTextContent && !hasFunctionCall) {
+          continue;
+        }
 
         if (hasTextContent) {
           results.push(buildChunk(
@@ -125,6 +143,7 @@ export function geminiToOpenAIResponse(chunk, state) {
 
         if (hasFunctionCall) {
           results.push(emitFunctionCall(part.functionCall, partSignature, state));
+          state.pendingThoughtSignature = null;
         }
         continue;
       }
@@ -146,7 +165,9 @@ export function geminiToOpenAIResponse(chunk, state) {
       // no signature and are emitted verbatim — the upstream payload shape
       // must not be altered (per Gemini tool-state rules).
       if (part.functionCall) {
-        results.push(emitFunctionCall(part.functionCall, partSignature, state));
+        const sig = partSignature || state.pendingThoughtSignature || null;
+        results.push(emitFunctionCall(part.functionCall, sig, state));
+        state.pendingThoughtSignature = null;
       }
 
       // Inline data (images)
