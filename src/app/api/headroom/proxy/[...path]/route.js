@@ -55,7 +55,7 @@ function forwardedHeaders(request, target) {
   return headers;
 }
 
-function rewriteDashboardHtml(html) {
+export function rewriteDashboardHtml(html) {
   return html
     .replace(
       /fetch\('(?=\/(?:stats|health|stats-history|settings|transformations\/feed))/g,
