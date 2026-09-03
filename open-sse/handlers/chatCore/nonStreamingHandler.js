@@ -370,41 +370,71 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   return responseBody;
 }
 
-export async function handleNonStreamingResponse({ body, modelInfo, provider: pProp, model: mProp, connectionId, apiKey, clientRawRequest, credentials, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog, reqTag = "", log = null, customToolNames = null }) {
+export async function handleNonStreamingResponse({
+  body,
+  modelInfo,
+  provider: pProp,
+  model: mProp,
+  connectionId,
+  apiKey,
+  clientRawRequest,
+  credentials,
+  providerResponse,
+  sourceFormat,
+  targetFormat,
+  reqLogger,
+  toolNameMap,
+  trackDone,
+  appendLog,
+  reqTag = "",
+  log = null,
+  customToolNames = null,
+  stream = false,
+  finalBody = null,
+  translatedBody = null,
+  pxpipe = null,
+  onRequestSuccess = null,
+}) {
   const provider = modelInfo?.provider || pProp;
   const model = modelInfo?.model || mProp;
   const effectiveConnId = credentials?.connectionId || connectionId;
   const effectiveApiKey = credentials?.apiKey || apiKey;
   const requestStartTime = Date.now();
 
-  try {
-    const rawText = await providerResponse.text();
-    let rawResponseBody;
-    if (rawText.trimStart().startsWith("data:")) {
-      const isGeminiSse = [
-        FORMATS.ANTIGRAVITY,
-        FORMATS.GEMINI,
-        FORMATS.GEMINI_CLI,
-        FORMATS.VERTEX,
-      ].includes(targetFormat) || [
-        FORMATS.ANTIGRAVITY,
-        FORMATS.GEMINI,
-        FORMATS.GEMINI_CLI,
-        FORMATS.VERTEX,
-      ].includes(PROVIDERS[provider]?.format);
+  let responseBody;
+  const isSSE = providerResponse.headers.get("content-type")?.includes("text/event-stream");
 
-      if (isGeminiSse) {
-        rawResponseBody = parseGeminiSSEToOpenAIResponse(rawText, model);
-      } else {
-        rawResponseBody = parseSSEToOpenAIResponse(rawText, model);
-      }
-    } else {
-      rawResponseBody = JSON.parse(rawText);
+  if (isSSE) {
+    const sseText = await providerResponse.text();
+    const isGeminiSse = [
+      FORMATS.ANTIGRAVITY,
+      FORMATS.GEMINI,
+      FORMATS.GEMINI_CLI,
+      FORMATS.VERTEX,
+    ].includes(targetFormat) || [
+      FORMATS.ANTIGRAVITY,
+      FORMATS.GEMINI,
+      FORMATS.GEMINI_CLI,
+      FORMATS.VERTEX,
+    ].includes(PROVIDERS[provider]?.format);
+
+    const parsed = isGeminiSse
+      ? parseGeminiSSEToOpenAIResponse(sseText, model)
+      : parseSSEToOpenAIResponse(sseText, model);
+
+    if (!parsed) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     }
-    responseBody = normalizeResponseBody(rawResponseBody, targetFormat, model, sourceFormat, customToolNames);
-  } catch (parseError) {
-    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to parse response: ${parseError.message}`);
+    responseBody = parsed;
+  } else {
+    try {
+      responseBody = await providerResponse.json();
+    } catch (err) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+    }
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
@@ -421,9 +451,20 @@ export async function handleNonStreamingResponse({ body, modelInfo, provider: pP
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Upstream provider error: ${nativeReason}`);
   }
 
+  if (onRequestSuccess) {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  }
+
+  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
+  responseBody = decloakToolNames(responseBody, toolNameMap);
+
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
@@ -473,42 +514,34 @@ export async function handleNonStreamingResponse({ body, modelInfo, provider: pP
     }
   }
 
-    trackDone();
+  reqLogger.logConvertedResponse(translatedResponse);
 
-    const usage = extractUsageFromResponse(translatedResponse);
-    appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: credentials?.endpoint || clientRawRequest?.endpoint, silent: true });
-    if (log?.line) {
-      log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
-    }
+  const totalLatency = Date.now() - requestStartTime;
+  saveRequestDetail(buildRequestDetail({
+    provider,
+    model,
+    connectionId: effectiveConnId,
+    latency: { ttft: totalLatency, total: totalLatency },
+    tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+    request: extractRequestConfig(body, stream),
+    providerRequest: finalBody || translatedBody || null,
+    providerResponse: responseBody || null,
+    response: {
+      content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
+      thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
+      finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown",
+    },
+    pxpipe,
+    status: "success",
+  }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
+    console.error("[RequestDetail] Failed to save:", err.message);
+  });
 
-    const contentForLog = isClaudeMessageResponse
-      ? (Array.isArray(translatedResponse.content)
-        ? translatedResponse.content.map(b => b.text || (b.type === "tool_use" ? `[tool: ${b.name}]` : "")).filter(Boolean).join(" ")
-        : "")
-      : (translatedResponse.choices?.[0]?.message?.content || "");
-
-    const thinkingForLog = isClaudeMessageResponse
-      ? (Array.isArray(translatedResponse.content) ? translatedResponse.content.find(b => b.type === "thinking")?.thinking || null : null)
-      : (translatedResponse.choices?.[0]?.message?.reasoning_content || null);
-
-    const totalLatency = Date.now() - requestStartTime;
-    saveRequestDetail(buildRequestDetail({
-      provider, model, connectionId: effectiveConnId, apiKey: effectiveApiKey,
-      latency: { ttft: totalLatency, total: totalLatency },
-      tokens: usage,
-      request: extractRequestConfig(body, false),
-      response: { content: contentForLog, thinking: thinkingForLog, finish_reason: translatedResponse.choices?.[0]?.finish_reason || translatedResponse.stop_reason || "stop" },
-      status: "success"
-    }, { endpoint: credentials?.endpoint || clientRawRequest?.endpoint || null })).catch(() => {});
-
-    translatedResponse.model = canonicalEchoModel({ requestedModel: body.model, provider, model });
-    return new Response(JSON.stringify(translatedResponse), {
+  return {
+    success: true,
+    response: new Response(JSON.stringify(translatedResponse), {
       status: HTTP_STATUS.OK,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-    });
-  } catch (error) {
-    if (log?.error) log.error("NON_STREAMING", `Error parsing response: ${error.message}`);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid upstream response format: ${error.message}`);
-  }
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    }),
+  };
 }
