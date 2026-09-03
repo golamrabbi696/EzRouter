@@ -349,9 +349,26 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // The SSE snapshot is newer than an in-flight initial/period REST fetch.
-        statsFetchAbortRef.current?.abort();
-        setStats(data);
+        const isFullUpdate = data.byModel !== undefined || data.byProvider !== undefined || data.totalRequests !== undefined;
+        if (isFullUpdate) {
+          statsFetchAbortRef.current?.abort();
+        }
+        setStats((prev) => {
+          if (!prev) {
+            if (isFullUpdate) return data;
+            return prev;
+          }
+          if (isFullUpdate) {
+            return { ...prev, ...data };
+          }
+          return {
+            ...prev,
+            activeRequests: data.activeRequests,
+            recentRequests: data.recentRequests,
+            errorProvider: data.errorProvider,
+            pending: data.pending,
+          };
+        });
         hasLoadedStats.current = true;
         setLoading(false);
       } catch (err) {
