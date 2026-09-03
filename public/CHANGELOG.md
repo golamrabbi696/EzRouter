@@ -1,4 +1,4 @@
-# v0.5.100 (2026-09-04)
+# v0.6.0 (2026-09-04)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router Sync)
 - **Security**: Closed SSRF guard bypasses in `ssrfGuard.js` (alternate IPv6 encodings, hostname trailing dots, wildcard DNS resolution check, safe redirect handling) (#3714).
