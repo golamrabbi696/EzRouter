@@ -469,40 +469,9 @@ export async function handleNonStreamingResponse({ body, modelInfo, provider: pP
     for (const choice of translatedResponse.choices) {
       if (choice?.message?.reasoning_content && choice.message.content) {
         delete choice.message.reasoning_content;
->>>>>>> 9b24277de (fix(stream): abort and fallback when upstream returns native_finish_reason error with empty content)
       }
-      if (!rawResponseBody) {
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
-      }
-      if (rawResponseBody.error) {
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, rawResponseBody.error.message || "Upstream SSE stream failed");
-      }
-      targetFormat = FORMATS.OPENAI;
-    } else {
-      rawResponseBody = JSON.parse(rawText);
     }
-    const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE;
-    const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES;
-
-    let translatedResponse = translateNonStreamingResponse(rawResponseBody, targetFormat, sourceFormat, customToolNames);
-
-    if (needsTranslation(targetFormat, sourceFormat)) {
-      reqLogger?.appendConvertedChunk?.(JSON.stringify(translatedResponse));
-    }
-
-    if (isClaudeMessageResponse && toolNameMap) {
-      translatedResponse = decloakToolNames(translatedResponse, toolNameMap);
-    }
-
-    if (!hasUsefulContent(translatedResponse, isClaudeMessageResponse, isResponsesResponse)) {
-      if (log?.warn) {
-        log.warn("CHATCORE", `${provider}/${model} returned HTTP 200 with empty content — locking for ${EMPTY_CONTENT_COOLDOWN_MS / 1000}s`);
-      }
-      return createErrorResult(
-        HTTP_STATUS.SERVICE_UNAVAILABLE,
-        `[${provider}/${model}] Provider returned empty response content (cooldown: ${EMPTY_CONTENT_COOLDOWN_MS / 1000}s)`
-      );
-    }
+  }
 
     trackDone();
 
