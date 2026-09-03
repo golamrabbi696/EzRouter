@@ -152,6 +152,7 @@ export default function QuotaTable({
         <table className="w-full table-fixed text-left">
           <tbody>
             {currentPageRows.map((quota) => {
+              const isUnlimited = quota.unlimited === true;
               const colors = getColorClasses(quota.remaining);
               const countdown = formatResetTime(quota.resetAt);
               const resetDisplay = formatResetTimeDisplay(quota.resetAt);

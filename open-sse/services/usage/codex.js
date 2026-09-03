@@ -127,7 +127,6 @@ function getCodexSparkRateLimit(data) {
 
 export async function getCodexUsage(accessToken, providerSpecificData = {}, proxyOptions = null, idToken = null) {
   [providerSpecificData, proxyOptions] = normalizeCodexUsageArgs(providerSpecificData, proxyOptions, idToken);
-
   try {
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",

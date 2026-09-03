@@ -89,6 +89,7 @@ import providerNous from "./nous.js";
 import providerNovita from "./novita.js";
 import providerNvidia from "./nvidia.js";
 import providerOllamaLocal from "./ollama-local.js";
+import providerOllamaSearch from "./ollama-search.js";
 import providerOllama from "./ollama.js";
 import providerOpenai from "./openai.js";
 import providerOpencodeGo from "./opencode-go.js";
@@ -132,6 +133,7 @@ import providerVoyageAi from "./voyage-ai.js";
 import providerXai from "./xai.js";
 import providerXiaomiMimo from "./xiaomi-mimo.js";
 import providerXiaomiTokenplan from "./xiaomi-tokenplan.js";
+import providerXquik from "./xquik.js";
 import providerYoucom from "./youcom.js";
 import providerZed from "./zed.js";
 
@@ -219,6 +221,7 @@ export default [
   providerNovita,
   providerNvidia,
   providerOllamaLocal,
+  providerOllamaSearch,
   providerOllama,
   providerOpenai,
   providerOpencodeGo,
@@ -262,6 +265,7 @@ export default [
   providerXai,
   providerXiaomiMimo,
   providerXiaomiTokenplan,
+  providerXquik,
   providerYoucom,
   providerZed,
 ];

@@ -96,3 +96,6 @@ graphify-out/*
 /result-*
 # Devbox generated artifacts
 .devbox/
+# Kiro local workspace state
+.kiro/
+

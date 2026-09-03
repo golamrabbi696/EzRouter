@@ -206,14 +206,13 @@ export async function POST(request) {
       supports_websockets: supportsWebSockets,
       auth: authConfig(),
     });
-    setNestedSection(parsed, "agents.subagent", { model: effectiveSubagentModel });
+    deleteNestedSection(parsed, "agents.subagent");
+    setNestedSection(parsed, "agents.default_subagent_model", effectiveSubagentModel);
 
     await atomicWrite(configPath, stringifyTOML(parsed));
     await atomicWrite(BRIDGE_SECRET_PATH, `${apiKey.trim()}\n`);
     
     // Update auth.json with OPENAI_API_KEY if auth file exists
-    const authPath = getCodexAuthPath();
-    const authData = (await readExistingConfig(authPath, JSON.parse)) ?? {};
     const migratedLegacyAuth = await migrateOwnedLegacyAuth(apiKey.trim());
 
     return NextResponse.json({
@@ -269,6 +268,8 @@ export async function DELETE() {
 
     deleteNestedSection(parsed, "model_providers.9router");
     deleteNestedSection(parsed, `model_providers.${CODEX_NATIVE_CONFIG.providerConfigId}`);
+    deleteNestedSection(parsed, "agents.default_subagent_model");
+    deleteNestedSection(parsed, "agents.subagent");
     await atomicWrite(configPath, stringifyTOML(parsed));
     await Promise.all([
       fs.unlink(BRIDGE_SECRET_PATH).catch(() => {}),

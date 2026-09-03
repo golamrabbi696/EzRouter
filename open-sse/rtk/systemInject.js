@@ -16,10 +16,21 @@ export function injectSystemPrompt(body, format, prompt) {
     // Kiro wire shape is unique (conversationState/systemPrompt) — handle directly.
     if (isKiroBody(body) || format === FORMATS.KIRO) {
       injectKiroSystem(body, prompt);
+    // Claude/Gemini own a dedicated system field, yet their bodies also carry
+    // messages[]/contents[] — decide by format label before the shape sniff below.
+    // Anthropic rejects a "system" role inside messages[] (no such input role).
+    if (format === FORMATS.CLAUDE) {
+      injectClaudeSystem(body, prompt);
+      return;
+    }
+    if (format === FORMATS.GEMINI || format === FORMATS.GEMINI_CLI
+      || format === FORMATS.VERTEX || format === FORMATS.ANTIGRAVITY) {
+      // Antigravity wraps Gemini shape in body.request → injectGeminiSystem handles it
+      injectGeminiSystem(body, prompt);
       return;
     }
 
-    // Dispatch by actual wire shape before format label.
+    // Dispatch by actual wire shape for OpenAI-shaped formats.
     // instructions string takes precedence; messages[] means Chat; input[] means Responses.
     if (typeof body.instructions === "string") {
       injectInstructionsSystem(body, prompt);
@@ -39,21 +50,7 @@ export function injectSystemPrompt(body, format, prompt) {
       return;
     }
 
-    // Fallback: use format label for Gemini/Claude when no openai-shaped array present.
-    switch (format) {
-      case FORMATS.CLAUDE:
-        injectClaudeSystem(body, prompt);
-        return;
-      case FORMATS.GEMINI:
-      case FORMATS.GEMINI_CLI:
-      case FORMATS.VERTEX:
-      case FORMATS.ANTIGRAVITY:
-        injectGeminiSystem(body, prompt);
-        return;
-      default:
-        // OpenAI-shaped but no array (e.g. empty body) — no-op
-        return;
-    }
+    // OpenAI-shaped but no array (e.g. empty body) — no-op
   } catch (_) {
     // fail-open
   }

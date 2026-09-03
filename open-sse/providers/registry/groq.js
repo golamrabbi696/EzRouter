@@ -17,6 +17,12 @@ export default {
   transport: {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     validateUrl: "https://api.groq.com/openai/v1/models",
+    // No dedicated quota endpoint; rate-limit info rides on x-ratelimit-*
+    // response headers, always included. Reuse the models list (already
+    // used as validateUrl) so reading usage never costs tokens.
+    usage: {
+      url: "https://api.groq.com/openai/v1/models",
+    },
   },
   models: [
     { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },
@@ -39,4 +45,8 @@ export default {
   },
   modelsFetcher: { url: "https://api.groq.com/openai/v1/models", type: "openai" },
   passthroughModels: true,
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };

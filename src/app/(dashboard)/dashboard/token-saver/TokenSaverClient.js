@@ -447,7 +447,6 @@ export default function TokenSaverClient() {
       if (res.ok) setDisclosureStats(await res.json());
     } catch {}
   };
-
   useEffect(() => {
     const loadSettings = async () => {
       try {
