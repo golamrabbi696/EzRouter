@@ -28,7 +28,7 @@ export function applyAssistantPrefillPolicy(body, rawHeaders = null) {
   if (trailingAssistant?.role !== ROLE.ASSISTANT) return body;
 
   const toolUses = Array.isArray(trailingAssistant.content)
-    ? trailingAssistant.content.filter(block => block?.type === CLAUDE_BLOCK.TOOL_USE && block.id)
+    ? trailingAssistant.content.filter(block => (block?.type === CLAUDE_BLOCK.TOOL_USE || block?.type === CLAUDE_BLOCK.SERVER_TOOL_USE) && block.id)
     : [];
   if (toolUses.length > 0) {
     body.messages.push({
