@@ -18,6 +18,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isDeviceCode, setIsDeviceCode] = useState(false);
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -42,28 +43,35 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Exchange tokens
   const exchangeTokens = useCallback(async (code, state) => {
-    if (!authData) return;
     try {
+      setIsSubmitting(true);
+      setError(null);
+      const effectiveRedirectUri = authData?.redirectUri || (typeof window !== "undefined" ? `${window.location.origin}/callback` : "");
+      const effectiveCodeVerifier = authData?.codeVerifier || null;
+      const effectiveState = state || authData?.state || null;
+
       const res = await fetch(`/api/oauth/${provider}/exchange`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
-          redirectUri: authData.redirectUri,
-          codeVerifier: authData.codeVerifier,
-          state,
+          redirectUri: effectiveRedirectUri,
+          codeVerifier: effectiveCodeVerifier,
+          state: effectiveState,
           ...(oauthMeta ? { meta: oauthMeta } : {}),
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok || data?.success === false) throw new Error(data.error || "Token exchange failed");
 
       setStep("success");
       onSuccess?.();
     } catch (err) {
       setError(err.message);
       setStep("error");
+    } finally {
+      setIsSubmitting(false);
     }
   }, [authData, provider, onSuccess, oauthMeta]);
 
@@ -251,7 +259,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
       } else {
-        redirectUri = `http://localhost:${appPort}/callback`;
+        redirectUri = `${window.location.origin}/callback`;
       }
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
@@ -376,23 +384,21 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   }, [isOpen, provider, startOAuthFlow]);
 
-  // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
+  // Auto-relay server-side mode: poll status for all providers (server auto-exchanges + saves DB)
   useEffect(() => {
-    const pollProvider = authData?.codexServerSide ? "codex" : authData?.xaiServerSide ? "xai" : null;
-    if (!pollProvider || !authData?.state) return;
-    if (callbackProcessedRef.current) return;
+    if (!authData?.state || !provider) return;
     let cancelled = false;
-    const POLL_INTERVAL_MS = 1500;
-    const MAX_ATTEMPTS = 200; // ~5 minutes
+    const POLL_INTERVAL_MS = 1000;
+    const MAX_ATTEMPTS = 300; // ~5 minutes
     let attempts = 0;
 
     const tick = async () => {
-      if (cancelled || callbackProcessedRef.current) return;
+      if (cancelled) return;
       attempts += 1;
       try {
-          const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
+        const res = await fetch(`/api/oauth/${provider}/poll-status?state=${encodeURIComponent(authData.state)}`);
         const data = await res.json();
-        if (cancelled || callbackProcessedRef.current) return;
+        if (cancelled) return;
         if (data.status === "done") {
           callbackProcessedRef.current = true;
           setStep("success");
@@ -414,11 +420,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setStep("error");
         return;
       }
-      setTimeout(tick, POLL_INTERVAL_MS);
+      if (!cancelled) {
+        setTimeout(tick, POLL_INTERVAL_MS);
+      }
     };
-    setTimeout(tick, POLL_INTERVAL_MS);
-    return () => { cancelled = true; };
-  }, [authData, onSuccess]);
+    const timerId = setTimeout(tick, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timerId);
+    };
+  }, [authData, provider, onSuccess]);
 
   // Listen for OAuth callback via multiple methods
   useEffect(() => {
@@ -427,9 +438,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
     // Handler for callback data - only process once
     const handleCallback = async (data) => {
-      if (callbackProcessedRef.current) return; // Already processed
+      const { code, token, state, error: callbackError, errorDescription, fullUrl } = data;
 
-      const { code, token, state, error: callbackError, errorDescription } = data;
+      if (fullUrl) {
+        setCallbackUrl(fullUrl);
+      } else if (code) {
+        setCallbackUrl(`${window.location.origin}/callback?state=${encodeURIComponent(state || "")}&code=${encodeURIComponent(code)}`);
+      }
+
+      if (callbackProcessedRef.current) return; // Already processed
 
       if (callbackError) {
         callbackProcessedRef.current = true;
@@ -507,6 +524,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(null);
 
       const input = callbackUrl.trim();
+      if (!input) return;
+
+      setIsSubmitting(true);
 
       // Detect raw JWT access token (starts with eyJ) — skip URL parsing
       if (input.startsWith("eyJ") && input.includes(".")) {
@@ -524,14 +544,29 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
-      const url = new URL(input);
-      const code = url.searchParams.get("code");
-      const token = url.searchParams.get("token");
-      const state = url.searchParams.get("state");
-      const errorParam = url.searchParams.get("error");
+      let code = null;
+      let token = null;
+      let state = null;
+      let errorParam = null;
 
-      if (errorParam) {
-        throw new Error(url.searchParams.get("error_description") || errorParam);
+      // Handle raw code paste (e.g. 4/0AY0e-...) or raw strings without URL protocol
+      if (!input.includes("://") && !input.startsWith("/") && !input.startsWith("?")) {
+        code = input;
+      } else {
+        const urlString = input.startsWith("/") || input.startsWith("?") ? `http://localhost${input.startsWith("?") ? "" : "/"}${input}` : input;
+        try {
+          const url = new URL(urlString);
+          code = url.searchParams.get("code");
+          token = url.searchParams.get("token");
+          state = url.searchParams.get("state");
+          errorParam = url.searchParams.get("error");
+          if (errorParam) {
+            throw new Error(url.searchParams.get("error_description") || errorParam);
+          }
+        } catch (urlParseErr) {
+          if (errorParam) throw urlParseErr;
+          code = input;
+        }
       }
 
       if (!code && !token) {
@@ -548,6 +583,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     } catch (err) {
       setError(err.message);
       setStep("error");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -630,8 +667,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>
-                Connect
+              <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl.trim() || isSubmitting}>
+                {isSubmitting ? "Connecting..." : "Connect"}
               </Button>
               <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel

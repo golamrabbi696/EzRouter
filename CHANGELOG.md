@@ -1,3 +1,54 @@
+# v0.5.99 (2026-09-01)
+
+## Critical Fixes
+- **Upstream Network Request Timeouts in Antigravity OAuth**:
+  - Added strict `AbortSignal.timeout(10000)` and `AbortSignal.timeout(5000)` on Google token exchange, user info, and Code Assist discovery endpoints.
+  - Prevents backend thread hanging indefinitely on slow or blocked upstream requests.
+
+# v0.5.98 (2026-09-01)
+
+## Critical Fixes
+- **Keepalive Fetch & Exact-Origin Redirection**:
+  - Added `keepalive: true` to `/api/oauth/callback` fetch so browser window closure never terminates in-flight token exchange with upstream.
+  - Dynamically resolved `redirect_uri` to `${window.location.origin}/callback` to prevent cross-origin isolation issues between `localhost` and `127.0.0.1`.
+
+# v0.5.97 (2026-09-01)
+
+## Critical Fixes
+- **OAuth Callback Direct Fallback & Session Retention**:
+  - Improved server-side `/api/oauth/callback` handler to automatically resolve the provider and complete token exchange even if the in-memory session was cleared or initiated across isolated workers.
+  - Retain completed session status in memory to ensure polling and manual submit resolve immediately without timing out.
+
+# v0.5.96 (2026-09-01)
+
+## Features & Improvements
+- **Continuous Polling & Auto-Close Reliability**:
+  - Ensured OAuth session polling continuously checks for server-side exchange completion without premature cancellation.
+  - Automatically closes modal and refreshes accounts table as soon as authorization completes in the background.
+
+# v0.5.95 (2026-09-01)
+
+## Features & Improvements
+- **Zero-Touch Automatic Callback Population & Connect Button Fix**:
+  - Automatically populate the OAuth callback URL into Step 2 input box upon authorization.
+  - Added responsive `isSubmitting` loading state and decoupled `exchangeTokens` from local state to ensure smooth manual and automatic connection.
+
+# v0.5.94 (2026-09-01)
+
+## Critical Fixes
+- **Synchronized Token Exchange & Single-Use Code Mutex**:
+  - Implemented `performSynchronizedExchange` coordinator to eliminate race conditions between the server-side callback auto-relay (`/api/oauth/callback`) and client-side modal event listeners (`BroadcastChannel`, `localStorage`, `postMessage`).
+  - Concurrent code exchange requests for the same OAuth state now await a single in-flight promise and share the exact same connection result, preventing Google OAuth single-use authorization code invalidation (`invalid_grant: Bad Request`).
+
+# v0.5.93 (2026-09-01)
+
+## Features & Improvements
+- **Zero-Touch Automatic OAuth Callback Connection**:
+  - Implemented server-side OAuth callback relay endpoint (`/api/oauth/callback`) and dynamic session tracker (`registerOAuthSession`, `poll-status`) for Antigravity, Gemini, Claude, and all OAuth providers.
+  - When the user signs in with Google / Antigravity and is redirected to `/callback`, the callback page immediately relays the authorization code to the server, exchanges tokens, and saves the connection automatically without requiring manual URL copy & paste.
+  - Fixed `BroadcastChannel` premature close issue in `/callback` page to ensure cross-tab broadcast messages are delivered reliably.
+  - Added idempotency check in `/api/oauth/[provider]/exchange` to eliminate `invalid_grant` errors when manually submitting callback URLs whose single-use codes were already exchanged.
+
 # v0.5.92 (2026-08-29)
 
 ## Critical Fixes

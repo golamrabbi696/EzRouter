@@ -791,3 +791,162 @@ export function stopZedProxy() {
   zedProxyPort = null;
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Generic OAuth Session Registry (for Antigravity, Gemini, Claude, etc.)
+// Enables automatic server-side callback handling & polling without requiring fixed ports.
+// ───────────────────────────────────────────────────────────────────────────
+
+const genericOAuthSessions = new Map();
+const GENERIC_OAUTH_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+export function registerOAuthSession({ provider, state, codeVerifier, redirectUri, meta }) {
+  if (!state) return false;
+  const cutoff = Date.now() - GENERIC_OAUTH_TTL_MS;
+  for (const [s, session] of genericOAuthSessions) {
+    if (session.createdAt < cutoff) genericOAuthSessions.delete(s);
+  }
+  genericOAuthSessions.set(state, {
+    provider,
+    codeVerifier,
+    redirectUri,
+    meta,
+    status: "pending",
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getOAuthSessionStatus(state) {
+  if (!state) return null;
+  return genericOAuthSessions.get(state) || null;
+}
+
+export function updateOAuthSession(state, patch) {
+  if (!state) return;
+  const current = genericOAuthSessions.get(state);
+  if (current) {
+    genericOAuthSessions.set(state, { ...current, ...patch });
+  }
+}
+
+export function clearOAuthSession(state) {
+  if (!state) return;
+  const session = genericOAuthSessions.get(state);
+  if (session && session.status === "done") {
+    setTimeout(() => {
+      genericOAuthSessions.delete(state);
+    }, 60000);
+  } else {
+    genericOAuthSessions.delete(state);
+  }
+}
+
+const activeExchangePromises = new Map();
+
+/**
+ * Synchronized token exchange coordinator.
+ * Prevents race conditions and `invalid_grant` errors from concurrent callers (callback relay + modal postMessage/BroadcastChannel).
+ */
+export async function performSynchronizedExchange(provider, code, redirectUri, codeVerifier, state, meta) {
+  const sessionKey = state || code;
+  const session = state ? genericOAuthSessions.get(state) : null;
+
+  // 1. If session is already completed, return connection immediately
+  if (session && session.status === "done" && session.connectionId) {
+    return {
+      success: true,
+      alreadyDone: true,
+      connection: {
+        id: session.connectionId,
+        provider: session.provider || provider,
+        email: session.email,
+        displayName: session.displayName,
+      }
+    };
+  }
+
+  // 2. If an exchange is already in-flight for this state or code, await the same promise
+  if (sessionKey && activeExchangePromises.has(sessionKey)) {
+    return await activeExchangePromises.get(sessionKey);
+  }
+
+  // 3. Start a new exchange and store the promise
+  const exchangePromise = (async () => {
+    try {
+      if (session) {
+        session.status = "processing";
+      }
+
+      const { exchangeTokens } = await import("../providers.js");
+      const { createProviderConnection } = await import("@/models");
+
+      const effectiveRedirectUri = redirectUri || session?.redirectUri;
+      const effectiveCodeVerifier = codeVerifier || session?.codeVerifier;
+      const effectiveMeta = meta || session?.meta;
+
+      const tokenData = await exchangeTokens(
+        provider,
+        code,
+        effectiveRedirectUri,
+        effectiveCodeVerifier,
+        state,
+        effectiveMeta
+      );
+
+      const connection = await createProviderConnection({
+        provider,
+        authType: "oauth",
+        ...tokenData,
+        expiresAt: tokenData.expiresIn
+          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+          : null,
+        testStatus: "active",
+      });
+
+      if (session) {
+        session.status = "done";
+        session.connectionId = connection.id;
+        session.email = connection.email;
+        session.displayName = connection.displayName;
+      } else if (state) {
+        genericOAuthSessions.set(state, {
+          provider,
+          status: "done",
+          connectionId: connection.id,
+          email: connection.email,
+          displayName: connection.displayName,
+          createdAt: Date.now(),
+        });
+      }
+
+      return {
+        success: true,
+        connection: {
+          id: connection.id,
+          provider: connection.provider,
+          email: connection.email,
+          displayName: connection.displayName,
+        },
+      };
+    } catch (err) {
+      if (session) {
+        session.status = "error";
+        session.error = err.message;
+      }
+      throw err;
+    } finally {
+      if (sessionKey) {
+        activeExchangePromises.delete(sessionKey);
+      }
+    }
+  })();
+
+  if (sessionKey) {
+    activeExchangePromises.set(sessionKey, exchangePromise);
+  }
+
+  return await exchangePromise;
+}
+
+
+

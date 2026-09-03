@@ -20,6 +20,11 @@ import {
   registerXaiSession,
   getXaiSessionStatus,
   clearXaiSession,
+  registerOAuthSession,
+  getOAuthSessionStatus,
+  clearOAuthSession,
+  updateOAuthSession,
+  performSynchronizedExchange,
 } from "@/lib/oauth/utils/server";
 
 const cursorSessions = new Map();
@@ -105,6 +110,17 @@ export async function GET(request, { params }) {
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
       const authData = await generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
+
+      if (authData?.state) {
+        registerOAuthSession({
+          provider,
+          state: authData.state,
+          codeVerifier: authData.codeVerifier,
+          redirectUri: authData.redirectUri || redirectUri,
+          meta: Object.keys(meta).length ? meta : undefined,
+        });
+      }
+
       return NextResponse.json(authData);
     }
 
@@ -132,19 +148,22 @@ export async function GET(request, { params }) {
     }
 
     if (action === "poll-status") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
-      }
       const state = searchParams.get("state");
       if (!state) {
         return NextResponse.json({ error: "Missing state" }, { status: 400 });
       }
-      const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
+      const session = provider === "xai"
+        ? getXaiSessionStatus(state)
+        : provider === "codex"
+          ? getCodexSessionStatus(state)
+          : getOAuthSessionStatus(state);
+
       if (!session) return NextResponse.json({ status: "unknown" });
       if (session.status === "done" || session.status === "error") {
         const payload = { ...session };
         if (provider === "xai") clearXaiSession(state);
-        else clearCodexSession(state);
+        else if (provider === "codex") clearCodexSession(state);
+        else clearOAuthSession(state);
         return NextResponse.json(payload);
       }
       return NextResponse.json({ status: session.status });
@@ -258,6 +277,21 @@ export async function POST(request, { params }) {
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state, meta } = body;
 
+      // If the session was already exchanged by auto-relay for this state,
+      // return the existing successful connection immediately (avoids invalid_grant from single-use codes)
+      const existingSession = state ? getOAuthSessionStatus(state) : null;
+      if (existingSession && existingSession.status === "done" && existingSession.connectionId) {
+        return NextResponse.json({
+          success: true,
+          connection: {
+            id: existingSession.connectionId,
+            provider,
+            email: existingSession.email,
+            displayName: existingSession.displayName,
+          },
+        });
+      }
+
       // Detect if "code" is actually a raw JWT access token (starts with eyJ)
       if (code && code.startsWith("eyJ") && code.includes(".")) {
         const { extractCodexAccountInfo } = await import("@/lib/oauth/providers");
@@ -300,35 +334,16 @@ export async function POST(request, { params }) {
         });
       }
 
-      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
-      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
+      // Cline, ClinePass, Antigravity, and Gemini use standard authorization_code without PKCE. Kimchi returns a browser token.
+      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi", "antigravity", "gemini"];
       if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
-      // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+      // Synchronized token exchange (prevents race condition with auto-relay)
+      const result = await performSynchronizedExchange(provider, code, redirectUri, codeVerifier, state, meta);
 
-      // Save to database
-      const connection = await createProviderConnection({
-        provider,
-        authType: "oauth",
-        ...tokenData,
-        expiresAt: tokenData.expiresIn 
-          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
-          : null,
-        testStatus: "active",
-      });
-
-      return NextResponse.json({ 
-        success: true, 
-        connection: {
-          id: connection.id,
-          provider: connection.provider,
-          email: connection.email,
-          displayName: connection.displayName,
-        }
-      });
+      return NextResponse.json(result);
     }
 
     if (action === "poll") {

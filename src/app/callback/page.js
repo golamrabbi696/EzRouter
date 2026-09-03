@@ -28,21 +28,38 @@ function CallbackContent() {
 
     let relayed = false;
 
-    // Trusted origins that may receive this callback. The OAuth code/state
-    // must only be relayed to the dashboard window we expect to be the opener
-    // (same origin) or the Codex helper that listens on a fixed loopback port.
-    // Any other origin is treated as hostile (drive-by attacker that opened
-    // the popup against the well-known redirect_uri to phish the code).
+    // Method 0: Direct Server-side callback auto-relay
+    if (state && (code || token || error)) {
+      fetch("/api/oauth/callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state, code, token, error, errorDescription }),
+        keepalive: true,
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.success) {
+            setStatus("success");
+            setTimeout(() => {
+              window.close();
+              setTimeout(() => setStatus("done"), 500);
+            }, 1000);
+          }
+        })
+        .catch((err) => console.log("Server callback relay failed:", err));
+    }
+
+    // Trusted origins that may receive this callback.
     const expectedOrigins = [
-      window.location.origin, // Same origin (for most providers)
-      "http://localhost:1455", // Codex specific port
+      window.location.origin,
+      "http://localhost:1455",
+      "http://localhost:20126",
+      "http://127.0.0.1:20126",
+      "http://localhost:20128",
+      "http://127.0.0.1:20128",
     ];
 
     // Method 1: postMessage to opener (popup mode)
-    // Send once per expected origin. The browser delivers the message only
-    // when the opener's origin matches the targetOrigin we pass — using "*"
-    // here would leak the code/state to any opener (e.g. an attacker page
-    // that opened this URL in a popup), so iterate over the allowlist.
     if (window.opener) {
       for (const origin of expectedOrigins) {
         try {
@@ -54,19 +71,22 @@ function CallbackContent() {
       }
     }
 
-    // Method 2: BroadcastChannel (same origin tabs)
+    // Method 2: BroadcastChannel (same origin tabs) — keep open for 10s
+    let channel = null;
     try {
-      const channel = new BroadcastChannel("oauth_callback");
+      channel = new BroadcastChannel("oauth_callback");
       channel.postMessage(callbackData);
-      channel.close();
       relayed = true;
+      setTimeout(() => {
+        try { channel?.close(); } catch {}
+      }, 10000);
     } catch (e) {
       console.log("BroadcastChannel failed:", e);
     }
 
     // Method 3: localStorage event (fallback)
     try {
-      localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
+      localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now(), _nonce: Math.random() }));
       relayed = true;
     } catch (e) {
       console.log("localStorage failed:", e);
@@ -78,10 +98,18 @@ function CallbackContent() {
     }
 
     setStatus("success");
-    setTimeout(() => {
+    // Fallback auto close after 4s if server already responded
+    const autoCloseTimer = setTimeout(() => {
       window.close();
       setTimeout(() => setStatus("done"), 500);
-    }, 1500);
+    }, 4000);
+
+    return () => {
+      clearTimeout(autoCloseTimer);
+      if (channel) {
+        try { channel.close(); } catch {}
+      }
+    };
   }, [searchParams]);
 
   return (

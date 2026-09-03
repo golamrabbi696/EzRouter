@@ -591,6 +591,7 @@ const PROVIDERS = {
           code: code,
           redirect_uri: redirectUri,
         }),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (!response.ok) {
@@ -612,16 +613,24 @@ const PROVIDERS = {
       };
       const metadata = getOAuthClientMetadata();
 
-      // Fetch user info
-      const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-          "x-request-source": "local",
-        },
-      });
-      const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};
+      // Fetch user info with strict 5s timeout
+      let userInfo = {};
+      try {
+        const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+            "x-request-source": "local",
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (userInfoRes.ok) {
+          userInfo = await userInfoRes.json();
+        }
+      } catch (e) {
+        console.log("Failed to fetch user info:", e);
+      }
 
-      // Load Code Assist to get project ID and tier
+      // Load Code Assist to get project ID and tier with strict 5s timeout
       let projectId = "";
       let tierId = "legacy-tier";
       try {
@@ -629,6 +638,7 @@ const PROVIDERS = {
           method: "POST",
           headers: loadHeaders,
           body: JSON.stringify({ metadata }),
+          signal: AbortSignal.timeout(5000),
         });
         if (loadRes.ok) {
           const data = await loadRes.json();
