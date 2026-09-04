@@ -45,23 +45,25 @@ for (const [aliasOrId, models] of Object.entries(PROVIDER_MODELS)) {
   _modelIndex.set(aliasOrId, { exact, normalized });
 }
 
+// "model(level)" is an EzRouter thinking override, not part of the upstream id.
 // Find a registry entry by id. For Kiro models, tolerates dash/dot version separators
 // ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
 function findModel(models, modelId, aliasOrId) {
   if (!models) return undefined;
+  const baseId = typeof modelId === "string" ? modelId.replace(/\([^()]+\)\s*$/, "").trim() : modelId;
   const idx = _modelIndex.get(aliasOrId);
   if (idx) {
-    const found = idx.exact.get(modelId);
+    const found = idx.exact.get(baseId);
     if (found) return found;
-    if (idx.normalized.size) return idx.normalized.get(modelId);
+    if (idx.normalized.size) return idx.normalized.get(baseId);
     return undefined;
   }
   // Fallback for callers passing a raw models array not yet indexed (defensive).
-  const found = models.find((m) => m.id === modelId);
+  const found = models.find((m) => m.id === baseId);
   if (found) return found;
   if (!DOT_VERSION_PROVIDERS.has(aliasOrId)) return undefined;
-  const normalized = normalizeModelId(modelId);
-  if (normalized === modelId) return undefined;
+  const normalized = normalizeModelId(baseId);
+  if (normalized === baseId) return undefined;
   return models.find((m) => m.id === normalized);
 }
 

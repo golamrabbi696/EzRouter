@@ -78,4 +78,21 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("commandcode", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
     expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash").vision).toBeFalsy();
   });
+
+  it("reports the OpenCode Go Muse Spark 1.3 contributor as exact reasoning caps (no modalities)", () => {
+    expect(getCapabilitiesForModel("opencode-go", "muse-spark-1.3-contributor")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "openai",
+      thinkingCanDisable: false,
+      contextWindow: 1048576,
+      maxOutput: 131072,
+      vision: false,
+      pdf: false,
+      audioInput: false,
+      videoInput: false,
+      imageOutput: false,
+      audioOutput: false,
+      search: false,
+    });
+  });
 });
