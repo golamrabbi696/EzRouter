@@ -1,5 +1,16 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { normalizeScopeInput } from "../../apiKeyScope.js";
+
+function parseScope(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeAllowedModels(value) {
   if (!Array.isArray(value)) return null;
@@ -38,6 +49,7 @@ function rowToKey(row) {
       catch { return null; }
     })(),
     createdAt: row.createdAt,
+    scope: parseScope(row.scope),
   };
 }
 
@@ -61,17 +73,20 @@ export async function createApiKey(name, machineId, policy = {}) {
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
+  const scopeInput = (policy && typeof policy === "object" && "scope" in policy) ? policy.scope : (policy && ("providers" in policy || "models" in policy) ? policy : null);
+  const normalizedScope = normalizeScopeInput(scopeInput);
   const apiKey = {
     id: uuidv4(), name, key: result.key, machineId, isActive: true,
-    expiresAt: normalizeExpiry(policy.expiresAt),
-    tokenLimit: normalizeTokenLimit(policy.tokenLimit),
+    expiresAt: normalizeExpiry(policy?.expiresAt),
+    tokenLimit: normalizeTokenLimit(policy?.tokenLimit),
     tokensUsed: 0, tokensReserved: 0,
-    allowedModels: normalizeAllowedModels(policy.allowedModels),
+    allowedModels: normalizeAllowedModels(policy?.allowedModels),
     createdAt: new Date().toISOString(),
+    scope: normalizedScope,
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt, scope) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt, normalizedScope ? JSON.stringify(normalizedScope) : null]
   );
   return apiKey;
 }
@@ -91,9 +106,10 @@ export async function updateApiKey(id, data) {
       if (merged.tokenLimit == null) throw new Error("Cannot add tokens to an unlimited key; set a token limit first");
       merged.tokenLimit += increment;
     }
+    if ("scope" in data) merged.scope = normalizeScopeInput(data.scope);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, tokenLimit = ?, tokensUsed = ?, tokensReserved = ?, allowedModels = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, merged.tokenLimit == null ? null : Number(merged.tokenLimit), Number(merged.tokensUsed || 0), Number(merged.tokensReserved || 0), merged.allowedModels ? JSON.stringify(merged.allowedModels) : null, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, tokenLimit = ?, tokensUsed = ?, tokensReserved = ?, allowedModels = ?, scope = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, merged.tokenLimit == null ? null : Number(merged.tokenLimit), Number(merged.tokensUsed || 0), Number(merged.tokensReserved || 0), merged.allowedModels ? JSON.stringify(merged.allowedModels) : null, merged.scope ? JSON.stringify(merged.scope) : null, id]
     );
     result = merged;
   });
@@ -153,4 +169,15 @@ export async function settleApiKeyTokens(key, reservedTokens, actualTokens) {
   db.transaction(() => {
     db.run(`UPDATE apiKeys SET tokensReserved = MAX(0, tokensReserved - ?), tokensUsed = tokensUsed + ? WHERE key = ?`, [reservedTokens, used, key]);
   });
+}
+
+// Used by src/middleware/scopeAuth.js. Returns null for unknown/inactive/
+// unscoped keys — the caller treats a null return as "nothing to enforce",
+// preserving exact back-compat behavior for every key without a scope.
+export async function getApiKeyScopeByKey(key) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT scope, isActive FROM apiKeys WHERE key = ?`, [key]);
+  if (!row) return null;
+  if (row.isActive !== 1 && row.isActive !== true) return null;
+  return parseScope(row.scope);
 }

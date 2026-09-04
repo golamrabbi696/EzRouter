@@ -9,6 +9,8 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases, ge
 import { extractApiKey } from "@/sse/services/auth.js";
 import { getListedModels as getOpencodeCatalog } from "@/lib/opencodeCatalog";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getApiKeyScopeByKey } from "@/lib/db/repos/apiKeysRepo.js";
+import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -697,7 +699,9 @@ export async function GET(request) {
     const policy = await getModelListPolicy(request);
     if (policy.error) return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401, headers: { "Access-Control-Allow-Origin": "*" } });
     const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
-    return Response.json({ object: "list", data }, {
+    const apiKey = extractApiKey(request);
+    const scope = apiKey ? await getApiKeyScopeByKey(apiKey) : null;
+    return Response.json({ object: "list", data: filterModelsByScope(data, scope) }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

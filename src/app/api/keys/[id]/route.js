@@ -4,6 +4,7 @@ import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 function parsePolicy(body) {
   const data = {};
   if (body.isActive !== undefined) data.isActive = body.isActive === true;
+  if (body.scope !== undefined) data.scope = body.scope;
   if (body.expiresAt !== undefined) {
     if (body.expiresAt && Number.isNaN(new Date(body.expiresAt).getTime())) throw new Error("Expiration must be a valid date");
     data.expiresAt = body.expiresAt || null;

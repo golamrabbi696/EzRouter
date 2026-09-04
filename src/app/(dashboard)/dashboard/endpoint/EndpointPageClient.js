@@ -17,6 +17,7 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+<<<<<<< HEAD
 
 const TOKEN_LIMIT_PRESETS = [
   { label: "100K", value: "100000" },
@@ -147,20 +148,29 @@ function EditApiKeyModal({ apiKey, activeProviders, modelAliases, onClose, onSav
 
 EditApiKeyModal.propTypes = { apiKey: PropTypes.object.isRequired, activeProviders: PropTypes.array.isRequired, modelAliases: PropTypes.object.isRequired, onClose: PropTypes.func.isRequired, onSave: PropTypes.func.isRequired };
 
+=======
+import KeyScopePicker from "./components/KeyScopePicker";
+>>>>>>> bdfd67e44a (feat(api-keys): add model/provider scoping for API keys)
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+<<<<<<< HEAD
   const [newKeyExpiresAt, setNewKeyExpiresAt] = useState("");
   const [newKeyTokenLimit, setNewKeyTokenLimit] = useState("");
   const [newKeyModels, setNewKeyModels] = useState([]);
   const [showKeyModelSelect, setShowKeyModelSelect] = useState(false);
   const [activeProviders, setActiveProviders] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
+=======
+  const [newKeyScope, setNewKeyScope] = useState(null);
+>>>>>>> bdfd67e44a (feat(api-keys): add model/provider scoping for API keys)
   const [createdKey, setCreatedKey] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [scopeEditingKey, setScopeEditingKey] = useState(null);
+  const [scopeEditDraft, setScopeEditDraft] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -773,6 +783,7 @@ export default function APIPageClient({ machineId }) {
           expiresAt: newKeyExpiresAt || null,
           tokenLimit: newKeyTokenLimit || null,
           allowedModels: newKeyModels,
+          scope: newKeyScope,
         }),
       });
       const data = await res.json();
@@ -785,10 +796,34 @@ export default function APIPageClient({ machineId }) {
         setNewKeyTokenLimit("");
         setNewKeyModels([]);
         setShowKeyModelSelect(false);
+        setNewKeyScope(null);
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleOpenScopeEditor = (key) => {
+    setScopeEditingKey(key);
+    setScopeEditDraft(key.scope ?? null);
+  };
+
+  const handleSaveKeyScope = async () => {
+    if (!scopeEditingKey) return;
+    try {
+      const res = await fetch(`/api/keys/${scopeEditingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: scopeEditDraft }),
+      });
+      if (res.ok) {
+        setKeys((prev) => prev.map((k) => (k.id === scopeEditingKey.id ? { ...k, scope: scopeEditDraft } : k)));
+        setScopeEditingKey(null);
+        setScopeEditDraft(null);
+      }
+    } catch (error) {
+      console.log("Error updating key scope:", error);
     }
   };
 
@@ -1207,8 +1242,18 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {key.scope && (
+                    <p className="text-xs text-primary mt-1">Scoped ({(key.scope.providers || []).length} provider{(key.scope.providers || []).length === 1 ? "" : "s"})</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenScopeEditor(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit scope"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1255,6 +1300,7 @@ export default function APIPageClient({ machineId }) {
           setNewKeyTokenLimit("");
           setNewKeyModels([]);
           setShowKeyModelSelect(false);
+          setNewKeyScope(null);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1343,6 +1389,10 @@ export default function APIPageClient({ machineId }) {
             </button>
             <p className="text-xs text-text-muted">Leave empty to allow every model.</p>
           </div>
+          <div>
+            <p className="text-sm font-medium mb-2">Access Scope</p>
+            <KeyScopePicker value={newKeyScope} onChange={setNewKeyScope} />
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1355,6 +1405,37 @@ export default function APIPageClient({ machineId }) {
                 setNewKeyTokenLimit("");
                 setNewKeyModels([]);
                 setShowKeyModelSelect(false);
+                setNewKeyScope(null);
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Scope Modal */}
+      <Modal
+        isOpen={!!scopeEditingKey}
+        title={`Edit Scope — ${scopeEditingKey?.name || ""}`}
+        onClose={() => {
+          setScopeEditingKey(null);
+          setScopeEditDraft(null);
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <KeyScopePicker value={scopeEditDraft} onChange={setScopeEditDraft} />
+          <div className="flex gap-2">
+            <Button onClick={handleSaveKeyScope} fullWidth>
+              Save
+            </Button>
+            <Button
+              onClick={() => {
+                setScopeEditingKey(null);
+                setScopeEditDraft(null);
+>>>>>>> bdfd67e44a (feat(api-keys): add model/provider scoping for API keys)
               }}
               variant="ghost"
               fullWidth
