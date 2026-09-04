@@ -2,6 +2,8 @@
 
 ## Fixes & Enhancements
 - **Chat & Gateway**: Fixed HTTP 500 runtime crash during model testing by importing missing `extractThinking` and `prefetchRemoteImages` in `chatCore.js`.
+- **Non-Streaming & Model Test Hardening**: Hardened `handleNonStreamingResponse`, `handleForcedSSEToJson`, `BaseExecutor`, and Next.js chat route against null/undefined values and unhandled exceptions, returning clean error responses (e.g. HTTP 502) instead of unhandled HTTP 500 crashes.
+- **Response Compatibility**: Fixed `Response` contract in non-streaming and forced SSE handlers to satisfy both native `Response` consumers (`.status`, `.json()`) and wrapper consumers (`.response`, `.success`).
 - **Thinking Defaults**: Restored provider-level thinking default injection logic using `extractThinking` verification to ensure dashboard-configured thinking levels are honored across all client formats.
 - **Tool Call Sanitization**: Added defensive null/malformed guards in `getToolCallIds` and `ensureToolCallIds` (`toolCall.js`) preventing crashes on undefined/null tool entries.
 - **Response Model Echo**: Preserved client-requested model name in OpenAI→Claude responses instead of upstream provider model name, preventing Claude Code session restore rejections.

@@ -220,6 +220,7 @@ function openAIResponsesBodyToChatCompletion(responseBody) {
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+  if (!responseBody || typeof responseBody !== "object") return responseBody;
   if (targetFormat === sourceFormat) {
     if (targetFormat === FORMATS.OPENAI) {
       for (const choice of responseBody?.choices || []) {
@@ -401,147 +402,173 @@ export async function handleNonStreamingResponse({
   const effectiveApiKey = credentials?.apiKey || apiKey;
   const requestStartTime = Date.now();
 
-  let responseBody;
-  const isSSE = providerResponse.headers.get("content-type")?.includes("text/event-stream");
+  try {
+    let responseBody;
+    const isSSE = providerResponse?.headers?.get?.("content-type")?.includes("text/event-stream");
 
-  if (isSSE) {
-    const sseText = await providerResponse.text();
-    const isGeminiSse = [
-      FORMATS.ANTIGRAVITY,
-      FORMATS.GEMINI,
-      FORMATS.GEMINI_CLI,
-      FORMATS.VERTEX,
-    ].includes(targetFormat) || [
-      FORMATS.ANTIGRAVITY,
-      FORMATS.GEMINI,
-      FORMATS.GEMINI_CLI,
-      FORMATS.VERTEX,
-    ].includes(PROVIDERS[provider]?.format);
+    if (isSSE) {
+      const sseText = await providerResponse.text();
+      const isGeminiSse = [
+        FORMATS.ANTIGRAVITY,
+        FORMATS.GEMINI,
+        FORMATS.GEMINI_CLI,
+        FORMATS.VERTEX,
+      ].includes(targetFormat) || [
+        FORMATS.ANTIGRAVITY,
+        FORMATS.GEMINI,
+        FORMATS.GEMINI_CLI,
+        FORMATS.VERTEX,
+      ].includes(PROVIDERS[provider]?.format);
 
-    const parsed = isGeminiSse
-      ? parseGeminiSSEToOpenAIResponse(sseText, model)
-      : parseSSEToOpenAIResponse(sseText, model);
+      const parsed = isGeminiSse
+        ? parseGeminiSSEToOpenAIResponse(sseText, model)
+        : parseSSEToOpenAIResponse(sseText, model);
 
-    if (!parsed) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
-    }
-    responseBody = parsed;
-  } else {
-    try {
-      responseBody = await providerResponse.json();
-    } catch (err) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
-    }
-  }
-
-  reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-
-  // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
-  // sending choices[0].native_finish_reason:"network_error" with empty content).
-  const rawChoice = responseBody?.choices?.[0];
-  const nativeReason = rawChoice?.native_finish_reason;
-  const rawMsg = rawChoice?.message || {};
-  const hasContent = (typeof rawMsg.content === "string" && rawMsg.content.length > 0)
-    || (Array.isArray(rawMsg.tool_calls) && rawMsg.tool_calls.length > 0);
-  if (nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && !hasContent) {
-    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Upstream provider error: ${nativeReason}`);
-  }
-
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
-  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
-  responseBody = decloakToolNames(responseBody, toolNameMap);
-
-  const usage = extractUsageFromResponse(responseBody);
-  appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, silent: true });
-  if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
-
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
-    : responseBody;
-  const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
-  // Responses-format translation produces a `object:"response"` body with no
-  // `choices`; skip the Chat-Completions-specific post-processing below for it.
-  const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
-
-  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
-  if (translatedResponse?.choices?.[0]) {
-    const choice = translatedResponse.choices[0];
-    const msg = choice.message;
-    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
-      choice.finish_reason = "tool_calls";
-    }
-  }
-
-  // Ensure OpenAI-required fields
-  if (!isClaudeMessageResponse && !isResponsesResponse) {
-    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
-    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
-  }
-
-  // Strip Azure-specific fields
-  if (!isClaudeMessageResponse && !isResponsesResponse) {
-    delete translatedResponse.prompt_filter_results;
-    if (translatedResponse?.choices) {
-      for (const choice of translatedResponse.choices) delete choice.content_filter_results;
-    }
-  }
-
-  if (translatedResponse?.usage) {
-    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
-  }
-
-  // Strip reasoning_content only when content is non-empty.
-  // When content is empty (e.g. thinking models that used all tokens for reasoning),
-  // reasoning_content is the only useful output and must be preserved.
-  if (!isClaudeMessageResponse && !isResponsesResponse && translatedResponse?.choices) {
-    for (const choice of translatedResponse.choices) {
-      if (choice?.message?.reasoning_content && choice.message.content) {
-        delete choice.message.reasoning_content;
+      if (!parsed) {
+        trackDone?.();
+        appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      }
+      if (parsed.error) {
+        trackDone?.();
+        appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
+      }
+      responseBody = parsed;
+    } else {
+      try {
+        responseBody = await providerResponse.json();
+      } catch (err) {
+        trackDone?.();
+        appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
       }
     }
-  }
 
-  reqLogger.logConvertedResponse(translatedResponse);
+    reqLogger?.logProviderResponse?.(providerResponse?.status, providerResponse?.statusText, providerResponse?.headers, responseBody);
 
-  const totalLatency = Date.now() - requestStartTime;
-  saveRequestDetail(buildRequestDetail({
-    provider,
-    model,
-    connectionId: effectiveConnId,
-    latency: { ttft: totalLatency, total: totalLatency },
-    tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
-    request: extractRequestConfig(body, stream),
-    providerRequest: finalBody || translatedBody || null,
-    providerResponse: responseBody || null,
-    response: {
-      content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
-      thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
-      finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown",
-    },
-    pxpipe,
-    status: "success",
-  }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
-    console.error("[RequestDetail] Failed to save:", err.message);
-  });
+    // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
+    // sending choices[0].native_finish_reason:"network_error" with empty content).
+    const rawChoice = responseBody?.choices?.[0];
+    const nativeReason = rawChoice?.native_finish_reason;
+    const rawMsg = rawChoice?.message || {};
+    const hasContent = (typeof rawMsg.content === "string" && rawMsg.content.length > 0)
+      || (Array.isArray(rawMsg.tool_calls) && rawMsg.tool_calls.length > 0);
+    if (nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && !hasContent) {
+      trackDone?.();
+      appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Upstream provider error: ${nativeReason}`);
+    }
 
-  return {
-    success: true,
-    response: new Response(JSON.stringify(translatedResponse), {
+    if (onRequestSuccess) {
+      Promise.resolve()
+        .then(onRequestSuccess)
+        .catch(err => {
+          console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+        });
+    }
+
+    // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
+    responseBody = decloakToolNames(responseBody, toolNameMap);
+
+    const usage = extractUsageFromResponse(responseBody);
+    appendLog?.({ tokens: usage, status: "200 OK" });
+    saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+    if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+
+    const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+      ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+      : responseBody;
+
+    if (!translatedResponse || typeof translatedResponse !== "object") {
+      trackDone?.();
+      appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid response from upstream provider");
+    }
+
+    const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
+    // Responses-format translation produces a `object:"response"` body with no
+    // `choices`; skip the Chat-Completions-specific post-processing below for it.
+    const isResponsesResponse = sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
+
+    // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+    if (translatedResponse?.choices?.[0]) {
+      const choice = translatedResponse.choices[0];
+      const msg = choice.message;
+      const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+      if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+        choice.finish_reason = "tool_calls";
+      }
+    }
+
+    // Ensure OpenAI-required fields
+    if (!isClaudeMessageResponse && !isResponsesResponse) {
+      if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+      if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+    }
+
+    // Strip Azure-specific fields
+    if (!isClaudeMessageResponse && !isResponsesResponse) {
+      delete translatedResponse.prompt_filter_results;
+      if (Array.isArray(translatedResponse?.choices)) {
+        for (const choice of translatedResponse.choices) {
+          if (choice) delete choice.content_filter_results;
+        }
+      }
+    }
+
+    if (translatedResponse?.usage) {
+      translatedResponse.usage = filterUsageForFormat(translatedResponse.usage, sourceFormat);
+    }
+
+    // Strip reasoning_content only when content is non-empty.
+    // When content is empty (e.g. thinking models that used all tokens for reasoning),
+    // reasoning_content is the only useful output and must be preserved.
+    if (!isClaudeMessageResponse && !isResponsesResponse && Array.isArray(translatedResponse?.choices)) {
+      for (const choice of translatedResponse.choices) {
+        if (choice?.message?.reasoning_content && choice.message.content) {
+          delete choice.message.reasoning_content;
+        }
+      }
+    }
+
+    reqLogger?.logConvertedResponse?.(translatedResponse);
+
+    const totalLatency = Date.now() - requestStartTime;
+    saveRequestDetail(buildRequestDetail({
+      provider,
+      model,
+      connectionId: effectiveConnId,
+      latency: { ttft: totalLatency, total: totalLatency },
+      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: responseBody || null,
+      response: {
+        content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
+        thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
+        finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown",
+      },
+      pxpipe,
+      status: "success",
+    }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
+      console.error("[RequestDetail] Failed to save:", err.message);
+    });
+
+    trackDone?.();
+
+    const res = new Response(JSON.stringify(translatedResponse), {
       status: HTTP_STATUS.OK,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    }),
-  };
+    });
+    res.success = true;
+    res.response = res;
+    return res;
+  } catch (err) {
+    trackDone?.();
+    appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    console.error(`[ChatCore] Error in handleNonStreamingResponse (${provider}/${model}):`, err?.message || err);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to process non-streaming response: ${err?.message || "unknown"}`);
+  }
 }

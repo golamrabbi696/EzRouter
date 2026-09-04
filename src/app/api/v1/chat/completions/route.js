@@ -27,9 +27,20 @@ export async function OPTIONS() {
 }
 
 export async function POST(request) {  
-  // Fallback to local handling
-  await ensureInitialized();
-  
-  return await handleChat(request);
+  try {
+    // Fallback to local handling
+    await ensureInitialized();
+    
+    return await handleChat(request);
+  } catch (err) {
+    console.error("[Route /v1/chat/completions] Unhandled error:", err?.message || err);
+    return Response.json({
+      error: {
+        message: err?.message || "Internal server error in chat completions",
+        type: "server_error",
+        code: "internal_server_error"
+      }
+    }, { status: 500 });
+  }
 }
 
