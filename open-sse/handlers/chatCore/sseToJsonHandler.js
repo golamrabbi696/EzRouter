@@ -7,6 +7,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
+import { chatCompletionToClaudeMessage } from "./claudeResponseConverter.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -393,35 +394,24 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           }
         };
       } else if (sourceFormat === FORMATS.CLAUDE) {
-        // Claude-format client (e.g. Claude Code) talking to a Responses-API provider
-        // (codex, grok-cli). Build an Anthropic Message so the SDK does not see
-        // "JSON but not a Message" when it retries non-streaming.
-        const claudeContent = [];
-        for (const item of (jsonResponse.output || []).filter(i => i?.type === "reasoning")) {
-          const thinkText = (item.summary || []).map(s => s.text || "").join("");
-          if (thinkText) claudeContent.push({ type: "thinking", thinking: thinkText });
+        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        if (hasToolCalls) message.tool_calls = toolCalls;
+        const reasoningItems = (jsonResponse.output || []).filter(i => i?.type === "reasoning");
+        const thinkText = reasoningItems.map(item => (item.summary || []).map(s => s.text || "").join("")).join("");
+        if (thinkText) {
+          message.reasoning_content = thinkText;
         }
-        if (textContent) claudeContent.push({ type: "text", text: textContent });
-        for (const tc of toolCalls) {
-          claudeContent.push({
-            type: "tool_use",
-            id: tc.id,
-            name: tc.function.name,
-            input: parseToolArguments(tc.function.arguments),
-          });
-        }
-        if (claudeContent.length === 0) claudeContent.push({ type: "text", text: "" });
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        finalResp = {
-          id: (jsonResponse.id || `msg_${Date.now()}`).replace(/^resp_/, ""),
-          type: "message",
-          role: "assistant",
+        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const intermediate = {
+          id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
-          content: claudeContent,
-          stop_reason: hasToolCalls ? "tool_use" : (responseDone ? "end_turn" : (jsonResponse.status || "end_turn")),
-          stop_sequence: null,
-          usage: { input_tokens: inTokens, output_tokens: outTokens },
+          choices: [{ index: 0, message, finish_reason: finishReason }],
+          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
         };
+        finalResp = chatCompletionToClaudeMessage(intermediate);
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
@@ -500,19 +490,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
     }
 
-    // The provider forced streaming but the client wants JSON. Convert the
-    // parsed OpenAI Chat Completions body to the format the client speaks.
-    // - Responses-format client: convert to Responses `output` shape (tool_calls intact).
-    // - Claude-format client: convert to Anthropic Message (type:"message") so the
-    //   Anthropic SDK (e.g. Claude Code) does not see "JSON but not a Message".
-    // - All other formats: return the OpenAI body as-is (client already speaks OpenAI).
-    let finalBody;
+    let finalBody = parsed;
     if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
       finalBody = chatCompletionToResponses(parsed, customToolNames);
     } else if (sourceFormat === FORMATS.CLAUDE) {
-      finalBody = openAICompletionToClaudeMessage(parsed);
-    } else {
-      finalBody = parsed;
+      finalBody = chatCompletionToClaudeMessage(parsed);
     }
 
     const res = new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });

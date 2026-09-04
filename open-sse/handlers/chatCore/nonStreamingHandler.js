@@ -14,6 +14,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { chatCompletionToClaudeMessage } from "./claudeResponseConverter.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
@@ -237,7 +238,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat !== FORMATS.OPENAI_RESPONSES) {
     const chatBody = openAIResponsesBodyToChatCompletion(responseBody);
     if (sourceFormat === FORMATS.OPENAI) return chatBody;
-    if (sourceFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(chatBody);
+    if (sourceFormat === FORMATS.CLAUDE) return chatCompletionToClaudeMessage(chatBody);
   }
 
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -245,7 +246,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   }
 
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
+    return chatCompletionToClaudeMessage(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
@@ -309,9 +310,13 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
-    return sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? openAICompletionToResponses(result, customToolNames)
-      : result;
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      return openAICompletionToResponses(result, customToolNames);
+    }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return chatCompletionToClaudeMessage(result);
+    }
+    return result;
   }
 
   // Claude
@@ -366,9 +371,13 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   // Ollama
   if (targetFormat === FORMATS.OLLAMA) {
     const result = ollamaBodyToOpenAI(responseBody);
-    return sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? openAICompletionToResponses(result, customToolNames)
-      : (sourceFormat === FORMATS.CLAUDE ? openAICompletionToClaudeMessage(result) : result);
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      return openAICompletionToResponses(result, customToolNames);
+    }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return chatCompletionToClaudeMessage(result);
+    }
+    return result;
   }
 
   return responseBody;
