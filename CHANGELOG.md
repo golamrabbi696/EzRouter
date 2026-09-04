@@ -1,9 +1,15 @@
+# v0.6.2 (2026-09-04)
+
+## Fixes & Enhancements
+- **Non-Streaming & Model Test Hardening**: Hardened `handleNonStreamingResponse`, `handleForcedSSEToJson`, `BaseExecutor`, and Next.js chat completions route against null/undefined references and unhandled exceptions, returning standard error responses (e.g. HTTP 502) instead of uncaught HTTP 500 runtime crashes during model testing.
+- **Response Compatibility**: Decorated returned `Response` in non-streaming and forced SSE handlers with `.success = true` and `.response = res` so both native `Response` consumers (`.status`, `.json()`) and internal wrapper consumers are seamlessly supported.
+- **Token Usage Accuracy**: Removed artificial 2000-token padding in non-streaming responses, preserving exact upstream token usage metrics.
+- **Executor & Route Error Boundaries**: Added defensive response validation before header/status inspection in `BaseExecutor`, wrapped `handleChatCore` and route handlers in structured error boundaries returning standard OpenAI JSON errors with appropriate HTTP status codes (400, 401, 429, 502, 500).
+
 # v0.6.1 (2026-09-04)
 
 ## Fixes & Enhancements
 - **Chat & Gateway**: Fixed HTTP 500 runtime crash during model testing by importing missing `extractThinking` and `prefetchRemoteImages` in `chatCore.js`.
-- **Non-Streaming & Model Test Hardening**: Hardened `handleNonStreamingResponse`, `handleForcedSSEToJson`, `BaseExecutor`, and Next.js chat route against null/undefined values and unhandled exceptions, returning clean error responses (e.g. HTTP 502) instead of unhandled HTTP 500 crashes.
-- **Response Compatibility**: Fixed `Response` contract in non-streaming and forced SSE handlers to satisfy both native `Response` consumers (`.status`, `.json()`) and wrapper consumers (`.response`, `.success`).
 - **Thinking Defaults**: Restored provider-level thinking default injection logic using `extractThinking` verification to ensure dashboard-configured thinking levels are honored across all client formats.
 - **Tool Call Sanitization**: Added defensive null/malformed guards in `getToolCallIds` and `ensureToolCallIds` (`toolCall.js`) preventing crashes on undefined/null tool entries.
 - **Response Model Echo**: Preserved client-requested model name in OpenAI→Claude responses instead of upstream provider model name, preventing Claude Code session restore rejections.
