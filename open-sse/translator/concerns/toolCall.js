@@ -100,7 +100,7 @@ export function ensureToolCallIds(body) {
     if (Array.isArray(msg.content)) {
       for (let k = 0; k < msg.content.length; k++) {
         const block = msg.content[k];
-        if (block.type === "tool_result") {
+        if (block && typeof block === "object" && block.type === "tool_result") {
           block.tool_use_id = resolveToolResultId(block.tool_use_id, unanswered, () => generateToolCallId(i, k));
         }
       }
@@ -112,21 +112,21 @@ export function ensureToolCallIds(body) {
 
 // Get tool_call ids from assistant message (OpenAI format: tool_calls, Claude format: tool_use in content)
 export function getToolCallIds(msg) {
-  if (msg.role !== "assistant") return [];
+  if (!msg || typeof msg !== "object" || msg.role !== "assistant") return [];
 
   const ids = [];
 
   // OpenAI format: tool_calls array
   if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
     for (const tc of msg.tool_calls) {
-      if (tc.id) ids.push(tc.id);
+      if (tc && typeof tc === "object" && tc.id) ids.push(tc.id);
     }
   }
 
   // Claude format: tool_use blocks in content
   if (Array.isArray(msg.content)) {
     for (const block of msg.content) {
-      if (block.type === "tool_use" && block.id) {
+      if (block && typeof block === "object" && block.type === "tool_use" && block.id) {
         ids.push(block.id);
       }
     }

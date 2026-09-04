@@ -1,3 +1,17 @@
+# v0.6.1 (2026-09-04)
+
+## Fixes & Enhancements
+- **Chat & Gateway**: Fixed HTTP 500 runtime crash during model testing by importing missing `extractThinking` and `prefetchRemoteImages` in `chatCore.js`.
+- **Thinking Defaults**: Restored provider-level thinking default injection logic using `extractThinking` verification to ensure dashboard-configured thinking levels are honored across all client formats.
+- **Tool Call Sanitization**: Added defensive null/malformed guards in `getToolCallIds` and `ensureToolCallIds` (`toolCall.js`) preventing crashes on undefined/null tool entries.
+- **Response Model Echo**: Preserved client-requested model name in OpenAI→Claude responses instead of upstream provider model name, preventing Claude Code session restore rejections.
+- **Stream Fallback**: Added stream abort and combo fallback trigger when upstream returns empty content with terminal error in `native_finish_reason` across `stream.js`, `sseToJsonHandler.js`, and `nonStreamingHandler.js`.
+- **Fallback & Rate Limits**: Added generic parser fallback for `resetsAtMs` in upstream error parsing to ensure 429 reset locks are respected.
+- **CORS Support**: Allowed CORS preflight (`OPTIONS`) requests on public LLM endpoints (`/v1/*`, `/v1beta/*`, `/codex/*`).
+- **Headroom**: Rewrote static asset and link paths in Headroom dashboard proxy responses.
+- **Assistant Prefill**: Included `SERVER_TOOL_USE` in assistant prefill tool checks.
+- **Model Capabilities**: Added GLM-5.3-Flash and DeepSeek V4 Vision patterns, and updated GLM-5.3 context window to 1m.
+
 # v0.6.0 (2026-09-04)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router Sync)

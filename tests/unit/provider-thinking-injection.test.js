@@ -114,7 +114,7 @@ async function dispatch({ clientBody, providerThinking }) {
 
   await handleChatCore({
     body,
-    modelInfo: { provider: "github", model: MODEL },
+    modelInfo: { provider: "anthropic", model: MODEL },
     credentials: { apiKey: "sk-test" },
     providerThinking,
     clientRawRequest: { endpoint: "/v1/chat/completions", body, headers: {} },
