@@ -1,6 +1,6 @@
 {
   "name": "ezrouter-app",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "EzRouter web dashboard",
   "private": true,
   "scripts": {

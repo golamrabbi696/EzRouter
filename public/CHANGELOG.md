@@ -1,3 +1,10 @@
+# v0.6.3 (2026-09-05)
+
+## Fixes & Enhancements
+- **CLI & Process Cleanup**: Added `next-server` process title matching in `killAllAppProcesses` and targeted `-sTCP:LISTEN` in `killProcessOnPort` to ensure background server processes and occupied ports are cleanly terminated on CLI start.
+- **Database Log Noise Reduction**: Silenced benign SQLite fallback warnings (`better-sqlite3` ABI version mismatch on upgraded Node runtimes) in `driver.js` when built-in `node:sqlite` or `sql.js` successfully initializes.
+- **Crash Log Filtering & Telemetry**: Captured process termination signals (`signal=SIGTERM`/`SIGKILL`) in CLI event handlers and filtered non-fatal runtime notices from crash logs to prevent false-alarm crash reports.
+
 # v0.6.2 (2026-09-04)
 
 ## Fixes & Enhancements
