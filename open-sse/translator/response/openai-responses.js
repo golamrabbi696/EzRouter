@@ -423,6 +423,13 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     state.toolCallIndex = 0;
     state.currentToolCallId = null;
     state.firstContentSent = false; // Track to send role: "assistant" in first delta chunk
+    // item_id → chat tool_calls index. Deltas carry item_id; keying on it (not
+    // stream position) keeps parallel calls separate when upstream emits all
+    // output_item.added events before any done/delta. Lazily created so callers
+    // that build their own state object (stream.js) need no changes.
+    state.respToolChatIndex ??= new Map();
+    // Indices that already received argument deltas (guards done-with-args).
+    state.respToolArgsEmitted ??= new Set();
   }
 
   // Text content delta
@@ -444,21 +451,27 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Function call started (standard function_call or custom_tool_call)
+  // Function call started (standard function_call or custom_tool_call).
+  // Index is assigned here (not on done): attributing deltas by stream position
+  // merges parallel calls into index 0 whenever upstream emits all addeds
+  // before dones — the client then concatenates N JSON payloads into one
+  // tool input and fails validation. The server item id is the correlator.
   if (eventType === "response.output_item.added" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
     const item = data.item;
-    const callId = item.call_id || fallbackToolCallId();
-    state.currentToolCallId = callId;
-    // Parallel calls arrive as batched added events before any done, so the
-    // index must be assigned here (per call_id), not at done time. Otherwise
-    // every parallel call shares index 0 and downstream merges them into one
-    // tool_use with concatenated JSON (Claude InputValidationError).
-    state.toolCallIdToIndex ??= {};
-    let callIndex = state.toolCallIdToIndex[callId];
-    if (callIndex === undefined) {
-      callIndex = state.toolCallIndex;
-      state.toolCallIdToIndex[callId] = callIndex;
-      state.toolCallIndex++;
+    state.currentToolCallId = item.call_id || fallbackToolCallId();
+    state.respToolChatIndex ??= new Map();
+    const key = item.id || data.item_id || state.currentToolCallId;
+    let idx;
+    if (key && state.respToolChatIndex.has(key)) {
+      idx = state.respToolChatIndex.get(key); // duplicate added (retry) — reuse
+    } else {
+      idx = state.toolCallIndex++;
+      if (key) state.respToolChatIndex.set(key, idx);
+    }
+    if (item.call_id) {
+      state.respToolChatIndex.set(item.call_id, idx);
+      state.respToolChatIndex.set(`fc_${item.call_id}`, idx);
+      state.respToolChatIndex.set(`ctc_${item.call_id}`, idx);
     }
 
     return buildChunk(
@@ -467,7 +480,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
         !state.firstContentSent ? (state.firstContentSent = true, { role: "assistant", content: null }) : {},
         {
           tool_calls: [{
-            index: callIndex,
+            index: idx,
             id: state.currentToolCallId,
             type: OPENAI_BLOCK.FUNCTION,
             function: { name: item.name || "", arguments: "" }
@@ -477,38 +490,53 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     );
   }
 
-  // Function call arguments delta (standard or custom_tool_call variant)
+  // Function call arguments delta (standard or custom_tool_call variant).
+  // Routed by item_id so interleaved parallel fragments stay on their own call.
   if (eventType === "response.function_call_arguments.delta" || eventType === "response.custom_tool_call_input.delta") {
     const argsDelta = data.delta || "";
     if (!argsDelta) return null;
 
-    // Route the delta to its own call via item_id (fc_<call_id>/ctc_<call_id>).
-    // Falls back to the most recent call, then to legacy shared-index behavior.
-    let callIndex = state.toolCallIndex;
-    const rawItemId = typeof data.item_id === "string" ? data.item_id : "";
-    const deltaCallId = rawItemId.replace(/^(fc|ctc)_/, "");
-    if (deltaCallId && state.toolCallIdToIndex?.[deltaCallId] !== undefined) {
-      callIndex = state.toolCallIdToIndex[deltaCallId];
-    } else if (state.currentToolCallId && state.toolCallIdToIndex?.[state.currentToolCallId] !== undefined) {
-      callIndex = state.toolCallIdToIndex[state.currentToolCallId];
+    let idx;
+    if (data.item_id && state.respToolChatIndex?.has(data.item_id)) {
+      idx = state.respToolChatIndex.get(data.item_id);
+    } else if (state.currentToolCallId && state.respToolChatIndex?.has(state.currentToolCallId)) {
+      idx = state.respToolChatIndex.get(state.currentToolCallId);
+    } else {
+      idx = Math.max(0, (state.toolCallIndex || 1) - 1);
     }
-
+    state.respToolArgsEmitted ??= new Set();
+    state.respToolArgsEmitted.add(idx);
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-      { tool_calls: [{ index: callIndex, function: { arguments: argsDelta } }] }
+      { tool_calls: [{ index: idx, function: { arguments: argsDelta } }] }
     );
   }
 
   // Function call done (standard or custom_tool_call variant).
-  // Index was already assigned at added time; done is a no-op for indexing so
-  // batched parallel dones cannot shift later calls.
+  // Index was assigned at added-time; nothing to advance. Some upstreams send
+  // complete arguments only here (no deltas) — emit them once in that case.
   if (eventType === "response.output_item.done" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
+    const key = data.item?.id || data.item_id || data.item?.call_id;
+    const idx = (key && state.respToolChatIndex?.get(key)) ?? Math.max(0, (state.toolCallIndex || 1) - 1);
+    const fullArgs = data.item?.arguments;
+    if (typeof fullArgs === "string" && fullArgs) {
+      state.respToolArgsEmitted ??= new Set();
+      if (!state.respToolArgsEmitted.has(idx)) {
+        state.respToolArgsEmitted.add(idx);
+        return buildChunk(
+          { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+          { tool_calls: [{ index: idx, function: { arguments: fullArgs } }] }
+        );
+      }
+    }
     return null;
   }
 
   // Arguments-done arrives per call ahead of output_item.done on strict
   // Responses streams; also a no-op for indexing.
   if (eventType === "response.function_call_arguments.done" || eventType === "response.custom_tool_call_input.done") {
+    return null;
+  }
     return null;
   }
 
