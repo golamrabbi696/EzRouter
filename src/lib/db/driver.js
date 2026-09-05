@@ -4,31 +4,33 @@ import { ensureDirs, DATA_FILE } from "./paths.js";
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
 
-async function tryBunSqlite() {
+async function tryBunSqlite(errors) {
   // Bun runtime only — built-in, no install needed
   if (!process.versions.bun) return null;
   try {
     const { createBunSqliteAdapter } = await import("./adapters/bunSqliteAdapter.js");
     return await createBunSqliteAdapter(DATA_FILE);
   } catch (e) {
-    console.warn(`[DB] bun:sqlite unavailable: ${e.message}`);
+    if (process.env.DEBUG_DB) console.warn(`[DB] bun:sqlite unavailable: ${e.message}`);
+    if (errors) errors.push(`bun:sqlite: ${e.message}`);
     return null;
   }
 }
 
-async function tryBetterSqlite() {
+async function tryBetterSqlite(errors) {
   // Skip on Bun — better-sqlite3 native bindings unsupported
   if (process.versions.bun) return null;
   try {
     const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
     return createBetterSqliteAdapter(DATA_FILE);
   } catch (e) {
-    console.warn(`[DB] better-sqlite3 unavailable: ${e.message}`);
+    if (process.env.DEBUG_DB) console.warn(`[DB] better-sqlite3 unavailable: ${e.message}`);
+    if (errors) errors.push(`better-sqlite3: ${e.message}`);
     return null;
   }
 }
 
-async function tryNodeSqlite() {
+async function tryNodeSqlite(errors) {
   // Built-in since Node 22.5.0 — no install needed. Skip under Bun (no node:sqlite).
   if (process.versions.bun) return null;
   const [maj, min] = process.versions.node.split(".").map(Number);
@@ -37,31 +39,34 @@ async function tryNodeSqlite() {
     const { createNodeSqliteAdapter } = await import("./adapters/nodeSqliteAdapter.js");
     return await createNodeSqliteAdapter(DATA_FILE);
   } catch (e) {
-    console.warn(`[DB] node:sqlite unavailable: ${e.message}`);
+    if (process.env.DEBUG_DB) console.warn(`[DB] node:sqlite unavailable: ${e.message}`);
+    if (errors) errors.push(`node:sqlite: ${e.message}`);
     return null;
   }
 }
 
-async function trySqlJs() {
+async function trySqlJs(errors) {
   try {
     const { createSqlJsAdapter } = await import("./adapters/sqljsAdapter.js");
     return await createSqlJsAdapter(DATA_FILE);
   } catch (e) {
-    console.warn(`[DB] sql.js unavailable: ${e.message}`);
+    if (process.env.DEBUG_DB) console.warn(`[DB] sql.js unavailable: ${e.message}`);
+    if (errors) errors.push(`sql.js: ${e.message}`);
     return null;
   }
 }
 
 async function initAdapter() {
   ensureDirs();
+  const errors = [];
   // Order per runtime:
   //   Bun:  bun:sqlite → sql.js
   //   Node: better-sqlite3 → node:sqlite (≥22.5) → sql.js
-  let adapter = await tryBunSqlite();
-  if (!adapter) adapter = await tryBetterSqlite();
-  if (!adapter) adapter = await tryNodeSqlite();
-  if (!adapter) adapter = await trySqlJs();
-  if (!adapter) throw new Error("[DB] No SQLite driver available (bun/better/node/sql.js all failed)");
+  let adapter = await tryBunSqlite(errors);
+  if (!adapter) adapter = await tryBetterSqlite(errors);
+  if (!adapter) adapter = await tryNodeSqlite(errors);
+  if (!adapter) adapter = await trySqlJs(errors);
+  if (!adapter) throw new Error(`[DB] No SQLite driver available (bun/better/node/sql.js all failed):\n${errors.join("\n")}`);
 
   if (!state.logged) {
     console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);

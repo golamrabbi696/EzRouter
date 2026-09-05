@@ -299,7 +299,8 @@ function killAllAppProcesses(appPort) {
             // Avoids killing editors/grep/strace/cursor that just have "ezrouter" in cmdline.
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("ezrouter") && (cmd.includes("cli.js") || cmd.includes("\\ezrouter") || cmd.includes("/ezrouter")));
+              (cmd.includes("node") && cmd.includes("ezrouter") && (cmd.includes("cli.js") || cmd.includes("\\ezrouter") || cmd.includes("/ezrouter"))) ||
+              cmd.includes("next-server");
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
@@ -324,7 +325,8 @@ function killAllAppProcesses(appPort) {
             // Avoids killing grep/strace/editors/cursor that incidentally match "ezrouter".
             const cmd = line.toLowerCase();
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("ezrouter") && (cmd.includes("cli.js") || cmd.includes("/ezrouter")));
+              (cmd.includes("node") && cmd.includes("ezrouter") && (cmd.includes("cli.js") || cmd.includes("/ezrouter"))) ||
+              cmd.includes("next-server");
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];
@@ -437,13 +439,17 @@ function killProcessOnPort(port) {
       } else {
         // macOS/Linux
         try {
-          const pidOutput = execSync(`lsof -ti:${port}`, {
+          const pidOutput = execSync(`lsof -ti:${port} -sTCP:LISTEN`, {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore']
           }).trim();
           if (pidOutput) {
-            pid = pidOutput.split('\n')[0];
-            execSync(`kill -9 ${pid} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
+            const portPids = pidOutput.split('\n').map(p => p.trim()).filter(Boolean);
+            portPids.forEach(p => {
+              if (p !== process.pid.toString()) {
+                execSync(`kill -9 ${p} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
+              }
+            });
           }
         } catch (e) {
           // Port is free or error
@@ -850,16 +856,16 @@ function startServer(updatePromise) {
       else { cleanup(); process.exit(1); }
     });
 
-    server.on("close", (code) => {
+    server.on("close", (code, signal) => {
       if (isShuttingDown || code === 0) {
         process.exit(code || 0);
         return;
       }
-      tryRestart(code);
+      tryRestart(code, signal);
     });
   }
 
-  function tryRestart(code) {
+  function tryRestart(code, signal) {
     const aliveMs = Date.now() - serverStartTime;
     // Reset counter if last run was stable
     if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
@@ -882,11 +888,20 @@ function startServer(updatePromise) {
 
     restartCount++;
     const delay = Math.min(1000 * restartCount, 10000);
-    console.error(`\n⚠️  Server exited (code=${code ?? "unknown"}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
+    const exitReason = code !== null && code !== undefined ? `code=${code}` : (signal ? `signal=${signal}` : "code=unknown");
+    console.error(`\n⚠️  Server exited (${exitReason}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
     if (crashLog.length) {
-      console.error("\n--- Server crash log ---");
-      crashLog.forEach(l => console.error(l));
-      console.error("--- End crash log ---\n");
+      const meaningfulLogs = crashLog.filter(l =>
+        !l.includes("[MODULE_TYPELESS_PACKAGE_JSON]") &&
+        !l.includes("Reparsing as ES module") &&
+        !l.includes("To eliminate this warning") &&
+        !l.includes("[DB] better-sqlite3 unavailable")
+      );
+      if (meaningfulLogs.length) {
+        console.error("\n--- Server crash log ---");
+        meaningfulLogs.forEach(l => console.error(l));
+        console.error("--- End crash log ---\n");
+      }
     }
 
     setTimeout(() => {
