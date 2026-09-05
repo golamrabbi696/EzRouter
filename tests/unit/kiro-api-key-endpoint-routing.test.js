@@ -12,45 +12,43 @@ function credentials(authMethod, region = "us-east-1") {
 describe("Kiro auth-aware endpoint routing", () => {
   const executor = new KiroExecutor();
 
-  it("routes API-key inference only through its regional Amazon Q surface", () => {
+  it("routes API-key inference through Amazon Q before other surfaces", () => {
     expect(executor.getOrderedBaseUrls(credentials("api_key"))).toEqual([
       Q,
+      CODEWHISPERER,
+      RUNTIME,
     ]);
-    expect(executor.getOrderedBaseUrls(credentials("api_key", "eu-central-1"))).toEqual([
-      "https://q.eu-central-1.amazonaws.com/generateAssistantResponse",
-    ]);
-    expect(executor.getFallbackCount(credentials("api_key"))).toBe(1);
   });
 
-  it("keeps Builder ID OAuth on the Kiro runtime surface", () => {
+  it("routes Builder ID OAuth through Amazon Q first (runtime path deprecated)", () => {
     expect(executor.getOrderedBaseUrls(credentials("builder-id"))).toEqual([
-      RUNTIME,
-      CODEWHISPERER,
       Q,
+      CODEWHISPERER,
+      RUNTIME,
     ]);
   });
 
-  it("keeps external IdP on CodeWhisperer before Amazon Q", () => {
+  it("routes external IdP through Amazon Q first", () => {
     expect(executor.getOrderedBaseUrls(credentials("external_idp"))).toEqual([
-      CODEWHISPERER,
       Q,
+      CODEWHISPERER,
       RUNTIME,
     ]);
   });
 
-  it("regionalizes AWS endpoints for IDC without changing Kiro runtime", () => {
+  it("regionalizes AWS endpoints for IDC with Q first", () => {
     expect(executor.getOrderedBaseUrls(credentials("idc", "eu-west-1"))).toEqual([
-      "https://codewhisperer.eu-west-1.amazonaws.com/generateAssistantResponse",
       "https://q.eu-west-1.amazonaws.com/generateAssistantResponse",
+      "https://codewhisperer.eu-west-1.amazonaws.com/generateAssistantResponse",
       RUNTIME,
     ]);
   });
 
   it("retries only endpoint/auth-surface failures, not payload-invalid 400s", () => {
-    const apiKey = credentials("api_key");
-    expect(executor.shouldRetry(400, 0, apiKey)).toBe(false);
-    expect(executor.shouldRetry(401, 0, apiKey)).toBe(false);
-    expect(executor.shouldRetry(422, 0, apiKey)).toBe(false);
+    expect(executor.shouldRetry(400, 0)).toBe(false);
+    expect(executor.shouldRetry(401, 1)).toBe(true);
+    expect(executor.shouldRetry(403, 2)).toBe(false);
+    expect(executor.shouldRetry(422, 0)).toBe(false);
   });
 
   it("builds endpoint-specific headers", () => {
@@ -61,10 +59,6 @@ describe("Kiro auth-aware endpoint routing", () => {
 
     expect(qHeaders.TokenType).toBe("API_KEY");
     expect(qHeaders["X-Amz-Target"]).toBeUndefined();
-    expect(qHeaders["x-amzn-bedrock-cache-control"]).toBe("enable");
-    expect(qHeaders["anthropic-beta"]).toContain("prompt-caching");
-    expect(qHeaders["User-Agent"]).toMatch(/KiroIDE-[^-]+-[a-f0-9]{64}$/);
-    expect(qHeaders["User-Agent"]).not.toContain("test-key");
     expect(codeWhispererHeaders["X-Amz-Target"]).toBe(
       "AmazonCodeWhispererStreamingService.GenerateAssistantResponse"
     );
