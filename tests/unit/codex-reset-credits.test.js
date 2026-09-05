@@ -98,6 +98,17 @@ describe("Codex reset credits", () => {
     });
   });
 
+  it("surfaces structured upstream errors as readable messages", async () => {
+    mocks.proxyAwareFetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: { message: "Reset credits are unavailable for this account" } }),
+    });
+
+    const { getCodexRateLimitResetCredits } = await import("../../open-sse/services/usage/codex.js");
+    await expect(getCodexRateLimitResetCredits("token")).rejects.toThrow("Reset credits are unavailable for this account");
+  });
+
   it("selects the highest-priority ChatGPT account when consuming a reset credit", async () => {
     mocks.proxyAwareFetch.mockResolvedValue({
       ok: true,
