@@ -1,3 +1,15 @@
+# v0.6.4 (2026-09-05)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #3767 - #3813)
+- **EzRouter MCP Gateway**: Integrated full MCP Gateway with multi-server aggregation, process-scoped stdio & HTTP clients, transient error retries, exponential backoff with jitter, SSE session leak prevention, and server-side OAuth (discovery, client registration, CIMD, token exchange, and automatic token refresh). Includes dedicated dashboard UI (`/dashboard/mcp-gateway`, servers, keys) and DB migrations 005 and 006.
+- **API Key Scoping & Policies**: Added fine-grained provider and model scoping for API keys via `KeyScopePicker` and `withScopeAuth` middleware, backed by schema migration 003.
+- **Combo Weights & Policy Engine**: Added configurable combo model weights, round-robin sticky limits, and fusion strategy support stored directly in SQLite (`004-combo-config.js`). Integrated `toolHistoryPruner` and capacity adapters.
+- **Security & Relay Hardening**: Stripped client IP and proxy headers (`x-forwarded-for`, `forwarded`, `x-real-ip`) in relay forwarders. Added SSRF protection for Cowork MCP tools probe and hardened MCP Gateway key generation to local/loopback requests.
+- **Claude & Reasoning**: Added Claude non-streaming format translation and SSE ping keep-alive heartbeats, tool-arg deduplication in streaming responses, late usage forwarding, and adaptive auto effort normalization.
+- **Antigravity & Gemini**: Added Gemini 3.7 Flash support, Antigravity weekly quota tracking, Antigravity token refresh rate-limit guards, and Gemini non-streaming token summation fallbacks.
+- **Providers & Models**: Added Opencode-go Muse Spark 1.3 session support and quota tracking, Codebuddy-CN model catalog alignment with GLM thinking levels, GPT-5.6 image model aliases, search private endpoint allowlist, and 503 circuit breaker status distinction.
+- **CI & Test Runner**: Configured Vitest test runner for MCP gateway test suites and updated GitHub Actions test workflow.
+
 # v0.6.3 (2026-09-05)
 
 ## Fixes & Enhancements
