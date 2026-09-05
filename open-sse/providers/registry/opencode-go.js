@@ -21,6 +21,9 @@ export default {
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},
+    usage: {
+      url: "https://opencode.ai/zen/go/v1/usage",
+    },
   },
   // Multi-endpoint: pick the transport matching the client sourceFormat to skip
   // translation. Guarded per-model by `supportedFormats` (see chatCore) because
@@ -50,4 +53,9 @@ export default {
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "ox-alpha-free", name: "Ox Alpha Free", supportedFormats: ["openai"] },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
+  usageUrl: "https://opencode.ai/zen/go/v1/usage",
 };
