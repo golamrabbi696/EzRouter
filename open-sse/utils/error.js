@@ -1,5 +1,31 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, isPermanentModelError } from "../config/errorConfig.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { parseProviderResetMs } from "../services/accountFallback.js";
+
+function extractResetsAtMs(response, message) {
+  try {
+    const retryAfter = response?.headers?.get?.("retry-after");
+    if (retryAfter) {
+      const sec = parseFloat(retryAfter);
+      if (Number.isFinite(sec) && sec > 0) return Date.now() + Math.round(sec * 1000);
+      const date = Date.parse(retryAfter);
+      if (Number.isFinite(date) && date > Date.now()) return date;
+    }
+    const rateLimitReset = response?.headers?.get?.("x-ratelimit-reset");
+    if (rateLimitReset) {
+      let v = parseFloat(rateLimitReset);
+      if (Number.isFinite(v)) {
+        if (v < 1e12) v *= 1000;
+        if (v > Date.now()) return Math.round(v);
+      }
+    }
+    const deltaMs = parseProviderResetMs(message);
+    if (deltaMs && deltaMs > 0) {
+      return Date.now() + deltaMs;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 /**
  * Build OpenAI-compatible error response body

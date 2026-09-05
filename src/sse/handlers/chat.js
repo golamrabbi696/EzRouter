@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
+import { getSettings } from "@/lib/localDb";
 import { isRoutableProvider } from "@/shared/constants/providers.js";
 import { getModelInfo, getComboModels, getComboConfig } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";

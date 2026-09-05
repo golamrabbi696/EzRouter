@@ -363,7 +363,7 @@ function applyFormat(fmt, body, cfg, caps, provider, model) {
     }
     case "ollama": {
       if (none && canDisable) { body.think = false; break; }
-      const out = toOllamaThink(eff, supportedLevels);
+      const out = toOllamaThink(eff, caps?.thinkingLevels);
       if (out !== null && out !== undefined) body.think = out;
       break;
     }

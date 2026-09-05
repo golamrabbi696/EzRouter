@@ -75,6 +75,7 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let passthroughFinishSeen = false;
   let finalized = false;
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that

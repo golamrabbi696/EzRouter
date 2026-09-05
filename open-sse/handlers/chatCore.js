@@ -1,6 +1,6 @@
 import { detectFormat } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { stripThinkingSuffix, extractThinking } from "../translator/concerns/thinkingUnified.js";
+import { stripThinkingSuffix, extractThinking, applyThinking } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";

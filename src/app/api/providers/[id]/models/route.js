@@ -20,6 +20,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
+import { fetchWithConnectionProxy } from "../test/testUtils.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 

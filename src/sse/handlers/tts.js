@@ -81,7 +81,7 @@ async function handleSingleModelTts(body, modelStr, request, responseFormat, lan
   //   outputFormat  — provider-native encoding, e.g. "mp3_44100_192", "pcm_16000"
   const options = {
     language,
-    style,
+    style: body.style,
     stability: body.stability,
     languageCode: body.language_code ?? body.languageCode,
     speed: body.speed,
