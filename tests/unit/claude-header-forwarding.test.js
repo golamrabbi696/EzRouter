@@ -138,6 +138,41 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
     expect(betaVal).not.toContain("claude-code-20250219");
   });
 
+  it("sends context-management beta for a Claude model on a custom host", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
+      },
+      true,
+      undefined,
+      "claude-opus-5"
+    );
+
+    const betaFlags = (headers["Anthropic-Beta"] || headers["anthropic-beta"] || "")
+      .split(",").map(s => s.trim());
+    expect(betaFlags).toContain("context-management-2025-06-27");
+    // The first-party identity flag is still stripped for a non-Anthropic host.
+    expect(betaFlags).not.toContain("claude-code-20250219");
+  });
+
+  it("gates the beta flags on the model id, not the provider prefix", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
+      },
+      true,
+      undefined,
+      "kimi-k3"
+    );
+
+    const betaVal = headers["Anthropic-Beta"] || headers["anthropic-beta"] || "";
+    expect(betaVal).not.toContain("context-management-2025-06-27");
+  });
+
   it("keeps Claude identity headers for claude-cli profile on non-Anthropic host", () => {
     const executor = new DefaultExecutor("anthropic-compatible-custom");
     const headers = executor.buildHeaders(

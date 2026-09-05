@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
@@ -172,7 +172,7 @@ export class DefaultExecutor extends BaseExecutor {
     return BEARER;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = undefined, model = "") {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
@@ -182,6 +182,12 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider === "claude" && credentials?._clientSessionId) {
       delete headers["x-claude-code-session-id"];
       headers["X-Claude-Code-Session-Id"] = credentials._clientSessionId;
+    }
+
+    const isClaudeModel = typeof model === "string" && /^claude-/.test(model);
+    if (model && (this.provider === "claude"
+      || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel))) {
+      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
