@@ -44,3 +44,10 @@ jobs:
       - name: Run tool-disclosure unit tests
         run: npx vitest run --reporter=verbose unit/tool-filter.test.js unit/tool-disclosure.test.js unit/tool-disclosure-e2e.test.js
         working-directory: tests
+
+      - name: Run MCP gateway unit tests
+        run: npx vitest run --passWithNoTests
+
+      - name: Build
+        run: npm run build
+
