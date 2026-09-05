@@ -27,6 +27,7 @@ const navItems = [
   { href: "/dashboard/convoy", label: "Input Guard", icon: "filter_alt" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/mcp-gateway", label: "MCP Gateway", icon: "hub" },
 ];
 
 const debugItems = [

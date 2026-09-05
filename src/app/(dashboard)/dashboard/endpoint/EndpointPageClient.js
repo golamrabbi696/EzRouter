@@ -17,7 +17,7 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
-<<<<<<< HEAD
+import KeyScopePicker from "./components/KeyScopePicker";
 
 const TOKEN_LIMIT_PRESETS = [
   { label: "100K", value: "100000" },
@@ -148,24 +148,18 @@ function EditApiKeyModal({ apiKey, activeProviders, modelAliases, onClose, onSav
 
 EditApiKeyModal.propTypes = { apiKey: PropTypes.object.isRequired, activeProviders: PropTypes.array.isRequired, modelAliases: PropTypes.object.isRequired, onClose: PropTypes.func.isRequired, onSave: PropTypes.func.isRequired };
 
-=======
-import KeyScopePicker from "./components/KeyScopePicker";
->>>>>>> bdfd67e44a (feat(api-keys): add model/provider scoping for API keys)
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-<<<<<<< HEAD
   const [newKeyExpiresAt, setNewKeyExpiresAt] = useState("");
   const [newKeyTokenLimit, setNewKeyTokenLimit] = useState("");
   const [newKeyModels, setNewKeyModels] = useState([]);
   const [showKeyModelSelect, setShowKeyModelSelect] = useState(false);
   const [activeProviders, setActiveProviders] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
-=======
   const [newKeyScope, setNewKeyScope] = useState(null);
->>>>>>> bdfd67e44a (feat(api-keys): add model/provider scoping for API keys)
   const [createdKey, setCreatedKey] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);

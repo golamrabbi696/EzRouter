@@ -21,6 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bridge = { sessions: new Map(), nextSid: 0 };
 
+vi.mock("@/dashboardGuard", () => ({
+  hasValidCliToken: () => Promise.resolve(true),
+}));
+
 vi.mock("@/lib/mcp/stdioSseBridge", () => ({
   findPlugin: (name) => (name === "known" ? { name, command: "node", args: [] } : null),
   registerSession: (name, sendFn) => {

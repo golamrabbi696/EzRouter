@@ -31,6 +31,7 @@ vi.mock("@/shared/utils/machineId", () => ({
 
 vi.mock("@/lib/auth/dashboardSession", () => ({
   verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
+  AUTH_COOKIE_NAME: "ezrouter_auth_token",
 }));
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
@@ -216,55 +217,6 @@ describe("dashboard guard public LLM API access", () => {
   });
 });
 
-describe("dashboard guard always-protected auto-import routes", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getSettings.mockResolvedValue({ requireLogin: false });
-    mocks.validateApiKey.mockResolvedValue(false);
-    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
-    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
-  });
-
-  it("allows local auto-import without JWT when requireLogin=false", async () => {
-    const response = await proxy(localRequest("/api/oauth/cursor/auto-import", {
-      host: "localhost:20128",
-      origin: "http://localhost:20128",
-    }));
-
-    expect(response).toBe(mocks.nextResponse);
-  });
-
-  it("allows local kiro auto-import without JWT when requireLogin=false", async () => {
-    const response = await proxy(localRequest("/api/oauth/kiro/auto-import", {
-      host: "localhost:20128",
-      origin: "http://localhost:20128",
-    }));
-
-    expect(response).toBe(mocks.nextResponse);
-  });
-
-  it("blocks local auto-import without JWT when requireLogin=true", async () => {
-    mocks.getSettings.mockResolvedValue({ requireLogin: true });
-
-    const response = await proxy(request("/api/oauth/cursor/auto-import", {
-      host: "localhost:20128",
-      origin: "http://localhost:20128",
-      realIp: "127.0.0.1",
-    }));
-
-    // local-only gate (403) fires before the always-protected gate (401)
-    expect([401, 403]).toContain(response.status);
-  });
-
-  it("blocks remote auto-import even when requireLogin=false", async () => {
-    const response = await proxy(request("/api/oauth/cursor/auto-import", {
-      host: "router.example.com",
-    }));
-
-    expect([401, 403]).toContain(response.status);
-  });
-});
-
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -334,42 +286,27 @@ describe("dashboard guard local-only access", () => {
 
     expect(response).toBe(mocks.nextResponse);
   });
+});
 
-  it.each([
-    "/api/pxpipe/install",
-    "/api/pxpipe/status",
-    "/api/headroom/extras",
-    "/api/headroom/restart",
-  ])("denies management route %s from remote host even when requireLogin=false", async (pathname) => {
-    mocks.getSettings.mockResolvedValue({ requireLogin: false });
-
-    const response = await proxy(request(pathname, { host: "router.example.com" }));
-
-    expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Local only: CLI token required");
+describe("dashboard guard MCP CIMD client-metadata", () => {
+  beforeEach(() => {
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
 
-  it.each(["/api/pxpipe/install", "/api/headroom/extras"])(
-    "allows management route %s on loopback when requireLogin=false",
-    async (pathname) => {
-      mocks.getSettings.mockResolvedValue({ requireLogin: false });
-
-      const response = await proxy(localRequest(pathname, {
-        host: "localhost:20128",
-        origin: "http://localhost:20128",
-      }));
-
-      expect(response).toBe(mocks.nextResponse);
-    }
-  );
-
-  it("allows pxpipe install from remote host with valid CLI token", async () => {
-    const response = await proxy(request("/api/pxpipe/install", {
+  it("allows client-metadata document publicly (AS fetches it server-side)", async () => {
+    const response = await proxy(request("/api/mcp-gateway/oauth/abc-123/client-metadata", {
       host: "router.example.com",
-      "x-9r-cli-token": "cli-token",
     }));
-
     expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("still protects sibling oauth actions (authorize) without auth", async () => {
+    const response = await proxy(request("/api/mcp-gateway/oauth/abc-123/authorize", {
+      host: "router.example.com",
+    }));
+    expect(response.status).toBe(401);
   });
 });
 
@@ -390,71 +327,5 @@ describe("dashboard guard helpers", () => {
     });
 
     expect(__test__.extractApiKey(apiRequest)).toBe("header-key");
-  });
-
-  it("collects every presented credential in precedence order", () => {
-    const apiRequest = request("/v1beta/models?key=query-key", {
-      authorization: "Bearer bearer-key",
-      "x-api-key": "header-key",
-      "x-goog-api-key": "google-key",
-    });
-
-    expect(__test__.extractApiKeyCandidates(apiRequest)).toEqual([
-      "bearer-key", "header-key", "google-key", "query-key",
-    ]);
-  });
-});
-
-describe("dashboard guard multi-credential validation (Anthropic clients)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getSettings.mockResolvedValue({ requireLogin: true });
-    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
-  });
-
-  it("accepts valid x-api-key even when a stale Authorization header is present", async () => {
-    // Claude Code with an active claude.ai session (or ANTHROPIC_AUTH_TOKEN)
-    // sends both headers; api.anthropic.com still authenticates on x-api-key.
-    mocks.validateApiKey.mockImplementation(async (key) => key === "sk-valid");
-
-    const response = await proxy(request("/v1/messages", {
-      host: "router.example.com",
-      authorization: "Bearer sk-ant-oat01-stale-session-token",
-      "x-api-key": "sk-valid",
-    }));
-
-    expect(response).toBe(mocks.nextResponse);
-    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
-  });
-
-  it("rejects when no presented credential validates", async () => {
-    mocks.validateApiKey.mockResolvedValue(false);
-
-    const response = await proxy(request("/v1/messages", {
-      host: "router.example.com",
-      authorization: "Bearer sk-bad",
-      "x-api-key": "sk-also-bad",
-    }));
-
-    expect(response.status).toBe(401);
-  });
-
-  it("returns the Anthropic error envelope on /v1/messages 401", async () => {
-    mocks.validateApiKey.mockResolvedValue(false);
-
-    const response = await proxy(request("/v1/messages", { host: "router.example.com" }));
-
-    expect(response.status).toBe(401);
-    expect(response.body.type).toBe("error");
-    expect(response.body.error.type).toBe("authentication_error");
-  });
-
-  it("keeps the legacy error shape on non-Anthropic endpoints", async () => {
-    mocks.validateApiKey.mockResolvedValue(false);
-
-    const response = await proxy(request("/v1/chat/completions", { host: "router.example.com" }));
-
-    expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
   });
 });

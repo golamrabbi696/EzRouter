@@ -5,12 +5,16 @@ import m001 from "./001-initial.js";
 import m002 from "./002-convoy-provider-scope.js";
 import m003 from "./002-api-key-policies.js";
 import m004 from "./004-combo-config.js";
+import m005 from "./005-mcp-gateway.js";
+import m006 from "./006-mcp-grant-tools.js";
 
 export const MIGRATIONS = [
   m001,
   m002,
   { ...m003, version: 3 },
   m004,
+  m005,
+  m006,
 ].sort((a, b) => a.version - b.version);
 
 export function latestVersion() {

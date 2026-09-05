@@ -9,19 +9,15 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
-<<<<<<< HEAD
 import { isRoutableProvider } from "@/shared/constants/providers.js";
-import { getModelInfo, getComboModels } from "../services/model.js";
-=======
 import { getModelInfo, getComboModels, getComboConfig } from "../services/model.js";
->>>>>>> 1615622142 (feat: replace Gemini 3.5 Flash with 3.7 Flash and add combo weights/config support)
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse, createErrorResult, clientStatusForUpstream, clientStatusForBreakerOpen } from "open-sse/utils/error.js";
-import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
+import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -178,10 +174,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboModels = comboCfg.models;
       const chatSettings = await getSettings();
       const comboStrategies = chatSettings.comboStrategies || {};
-<<<<<<< HEAD
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
-=======
       const dbPolicy = comboCfg.policy || {};
       const settingsStrategy = comboStrategies[modelStr] || {};
       const comboStrategy = dbPolicy.strategy || settingsStrategy.fallbackStrategy || chatSettings.comboStrategy || "fallback";
@@ -193,7 +185,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const augmentedMembers = comboStrategy === "weighted"
         ? augmentModelsWithCapacityAdapter(members.map((m) => m.id), requiredCapabilities, chatSettings).map((id) => members.find((m) => m.id === id) || { id, weight: 1 })
         : null;
->>>>>>> 1615622142 (feat: replace Gemini 3.5 Flash with 3.7 Flash and add combo weights/config support)
 
       if (comboStrategy === "fusion") {
         const fusionCfg = comboCfg.fusion || settingsStrategy;
@@ -216,14 +207,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       }
 
-<<<<<<< HEAD
-      const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-      return handleComboChat({
-        body,
-        models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-=======
       const comboStickyLimit = policy.sticky ?? chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
@@ -235,7 +218,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, translationCache),
           adapterAdded
         ),
->>>>>>> 1615622142 (feat: replace Gemini 3.5 Flash with 3.7 Flash and add combo weights/config support)
         log,
         comboName: modelStr,
         comboStrategy,
