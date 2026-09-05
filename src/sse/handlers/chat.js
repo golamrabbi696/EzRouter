@@ -10,6 +10,7 @@ import {
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { isRoutableProvider } from "@/shared/constants/providers.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -215,8 +216,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        if (isRoutableProvider(provider)) {
+          log.warn("AUTH", `No active credentials for provider: ${provider}`);
+          return errorResponse(
+            HTTP_STATUS.NOT_FOUND,
+            `No active credentials for provider: ${provider}. Connect an account for this provider in the dashboard.`,
+            { code: "provider_not_configured" },
+          );
+        }
+        log.warn("AUTH", `Unknown provider: ${provider}`);
+        return errorResponse(
+          HTTP_STATUS.NOT_FOUND,
+          `Unknown provider "${provider}" in model "${provider}/${model}". See /v1/models for what this router serves.`,
+        );
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");

@@ -131,6 +131,16 @@ export function resolveProviderId(aliasOrId) {
   return provider?.id || aliasOrId;
 }
 
+/**
+ * Is this something the router could route to at all, as opposed to a name it has
+ * never heard of?
+ */
+export function isRoutableProvider(aliasOrId) {
+  if (!aliasOrId) return false;
+  if (getProviderByAlias(aliasOrId)) return true;
+  return isOpenAICompatibleProvider(aliasOrId) || isAnthropicCompatibleProvider(aliasOrId);
+}
+
 // Helper: Get alias from provider ID
 // Per-account requests-per-minute defaults. NVIDIA NIM enforces ~40 RPM per
 // API key, so cap there by default rather than discovering it via 429s.

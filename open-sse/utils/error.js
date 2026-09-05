@@ -5,10 +5,11 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
  * Build OpenAI-compatible error response body
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
- * @param {string} [code] - Upstream error code
+ * @param {string|object} [overrides] - Upstream error code string or { type, code } overrides
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message, code) {
+export function buildErrorBody(statusCode, message, overrides = null) {
+  const opts = typeof overrides === "string" ? { code: overrides } : (overrides || {});
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
@@ -17,8 +18,8 @@ export function buildErrorBody(statusCode, message, code) {
   return {
     error: {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
-      type: errorInfo.type,
-      code: code ?? errorInfo.code
+      type: opts.type || errorInfo.type,
+      code: opts.code !== undefined ? opts.code : errorInfo.code
     }
   };
 }
@@ -27,11 +28,11 @@ export function buildErrorBody(statusCode, message, code) {
  * Create error Response object (for non-streaming)
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
- * @param {string} [code] - Upstream error code
+ * @param {string|object} [overrides] - Upstream error code or { type, code } overrides
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, code) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message, code)), {
+export function errorResponse(statusCode, message, overrides = null) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, overrides)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
