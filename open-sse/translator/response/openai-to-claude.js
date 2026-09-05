@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK, OPENAI_FINISH } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { repairDuplicatedJsonArguments, appendToolArgs } from "../concerns/toolArgs.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -10,18 +11,25 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 // is then a no-op. Kept intentionally; do NOT couple to request's empty prefix.
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
-// Sanitize tool call arguments to fix bad params from non-Anthropic models
+// Sanitize tool call arguments to fix bad params from non-Anthropic models.
+// Fast path: single parse for the common valid case; repair only on failure.
 function sanitizeToolArgs(toolName, argsJson) {
+  let args;
   try {
-    const args = JSON.parse(argsJson);
-    const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
-      ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
-      : toolName;
-    if (name === "Read") sanitizeReadArgs(args);
-    return JSON.stringify(args);
+    args = JSON.parse(argsJson);
   } catch {
-    return argsJson;
+    const repairedJson = repairDuplicatedJsonArguments(argsJson);
+    try {
+      args = JSON.parse(repairedJson);
+    } catch {
+      return repairedJson;
+    }
   }
+  const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
+    ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
+    : toolName;
+  if (name === "Read") sanitizeReadArgs(args);
+  return JSON.stringify(args);
 }
 
 function sanitizeReadArgs(args) {
@@ -69,7 +77,10 @@ function stopTextBlock(state, results) {
 
 // Helper: flush buffered tool args + close every open tool_use block
 function flushToolBlocks(state, results) {
+  if (!state.toolCalls) return;
   for (const [idx, toolInfo] of state.toolCalls) {
+    if (toolInfo.closed) continue;
+    toolInfo.closed = true;
     // Emit buffered + sanitized args as single delta before stop
     const buffered = state.toolArgBuffers?.get(idx);
     if (buffered) {
@@ -269,7 +280,8 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const current = state.toolArgBuffers.get(idx) || "";
+          state.toolArgBuffers.set(idx, appendToolArgs(current, tc.function.arguments));
         }
       }
     }
@@ -280,38 +292,50 @@ export function openaiToClaudeResponse(chunk, state) {
   // sets state.finishReason (for stream.js usage injection); keying on it would
   // suppress this flush and drop the buffered tool-call input_json_delta. The flag
   // also dedupes repeated finish_reason chunks from OpenAI-compatible models.
-  if (choice.finish_reason && !state.claudeFinishHandled) {
-    state.claudeFinishHandled = true;
-    if (state.claudeTerminalEmitted) return results.length > 0 ? results : null;
-    state.claudeTerminalEmitted = true;
+  if (choice.finish_reason) {
+    if (!state.claudeFinishHandled) {
+      state.claudeFinishHandled = true;
+      if (state.claudeTerminalEmitted) return results.length > 0 ? results : null;
+      state.claudeTerminalEmitted = true;
 
-    stopThinkingBlock(state, results);
-    stopTextBlock(state, results);
-    flushToolBlocks(state, results);
+      stopThinkingBlock(state, results);
+      stopTextBlock(state, results);
+      flushToolBlocks(state, results);
 
-    // Mark finish for later usage injection in stream.js
-    state.finishReason = choice.finish_reason;
+      // Mark finish for later usage injection in stream.js
+      state.finishReason = choice.finish_reason;
 
-    if (choice.finish_reason === OPENAI_FINISH.ERROR) {
-      // Upstream aborted the turn (e.g. Gemini MALFORMED_FUNCTION_CALL or an error
-      // object embedded in a 200 stream). A clean end_turn here makes the client
-      // treat a broken turn as a finished answer; a mid-stream error event is
-      // retryable by Anthropic clients.
-      const message = state.upstreamError?.message ||
-        "Upstream aborted the response (malformed function call or empty candidate)";
-      results.push({
-        type: "error",
-        error: { type: "api_error", message }
-      });
-    } else {
-      // Use tracked usage (will be estimated in stream.js if not valid)
-      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      if (choice.finish_reason === OPENAI_FINISH.ERROR) {
+        // Upstream aborted the turn (e.g. Gemini MALFORMED_FUNCTION_CALL or an error
+        // object embedded in a 200 stream). A clean end_turn here makes the client
+        // treat a broken turn as a finished answer; a mid-stream error event is
+        // retryable by Anthropic clients.
+        const message = state.upstreamError?.message ||
+          "Upstream aborted the response (malformed function call or empty candidate)";
+        results.push({
+          type: "error",
+          error: { type: "api_error", message }
+        });
+      } else {
+        // Use tracked usage (will be estimated in stream.js if not valid)
+        const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+        results.push({
+          type: "message_delta",
+          delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+          usage: finalUsage
+        });
+        results.push({ type: "message_stop" });
+      }
+    } else if (state.usage && !state.messageStopSent) {
+      // Later finish chunk (commonly finish_reason:"stop" carrying usage).
+      // Tool blocks are already closed; emit a usage-only message_delta so the
+      // client still receives final usage without re-opening/duplicating blocks.
+      state.messageStopSent = true;
       results.push({
         type: "message_delta",
         delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-        usage: finalUsage
+        usage: state.usage
       });
-      results.push({ type: "message_stop" });
     }
   }
 
