@@ -1,3 +1,12 @@
+# v0.6.5 (2026-09-05)
+
+## Fixes & Enhancements
+- **Chat & Model Testing**: Restored missing `getSettings` import in `src/sse/handlers/chat.js` resolving `HTTP 500: getSettings is not defined` crash when testing models or invoking chat routes.
+- **Provider Models & Testing**: Exported and imported `fetchWithConnectionProxy` across `src/app/api/providers/[id]/models/route.js` and `testUtils.js`.
+- **Streaming & SSE**: Declared missing `passthroughFinishSeen` stream scope flag in `open-sse/utils/stream.js` preventing runtime crashes on duplicate finish chunks.
+- **Thinking & Translators**: Restored missing `applyThinking` import in `chatCore.js`, correctly referenced `caps.thinkingLevels` in `thinkingUnified.js`, and implemented `extractResetsAtMs` in `error.js`.
+- **OpenCode & TTS**: Restored missing `discoverPublicIp` and `isPrivateIp` helpers in `open-sse/executors/opencode.js`, and fixed `style: body.style` assignment in `src/sse/handlers/tts.js`.
+
 # v0.6.4 (2026-09-05)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #3767 - #3813)
