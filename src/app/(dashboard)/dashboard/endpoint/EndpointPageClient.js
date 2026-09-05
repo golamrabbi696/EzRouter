@@ -1429,7 +1429,6 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setScopeEditingKey(null);
                 setScopeEditDraft(null);
->>>>>>> bdfd67e44a (feat(api-keys): add model/provider scoping for API keys)
               }}
               variant="ghost"
               fullWidth
