@@ -114,7 +114,8 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  return { shouldFallback: false, cooldownMs: 0 };
+  // Default fallback for unhandled errors (30s transient cooldown)
+  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
 export function isAccountUnavailable(unavailableUntil) {
