@@ -75,7 +75,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [testingModelId, setTestingModelId] = useState(null);
+  const [testingModelIds, setTestingModelIds] = useState(() => new Set());
   const [modelTestResults, setModelTestResults] = useState({});
 
   const handleTestModel = async (modelId) => {
@@ -83,8 +83,8 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       await onExternalTestModel(modelId);
       return;
     }
-    if (testingModelId) return;
-    setTestingModelId(modelId);
+    if (testingModelIds.has(modelId)) return;
+    setTestingModelIds((prev) => new Set(prev).add(modelId));
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -96,7 +96,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
     } finally {
-      setTestingModelId(null);
+      setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
     }
   };
 
@@ -210,7 +210,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
               testStatus={externalTestResults?.[id] || modelTestResults[id]}
-              isTesting={externalTestingModelIds?.has(id) || testingModelId === id}
+              isTesting={externalTestingModelIds?.has(id) || testingModelIds.has(id)}
             />
           ))}
         </div>
