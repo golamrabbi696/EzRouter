@@ -262,7 +262,7 @@ wire_api = "responses"
 ${mode === "native" ? `supports_websockets = ${nativeReadiness?.supportsWebSockets === true}` : ""}
 
 [model_providers.${providerId}.auth]
-command = "9router"
+command = "ezrouter"
 args = ["codex", "auth-token", "--data-dir", "${dataDir}"]
 refresh_interval_ms = 0
 

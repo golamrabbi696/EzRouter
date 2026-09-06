@@ -85,7 +85,7 @@ function normalizeUniversalBaseUrl(baseUrl) {
 
 function authConfig() {
   return {
-    command: "9router",
+    command: "ezrouter",
     args: ["codex", "auth-token", "--data-dir", DATA_DIR],
     refresh_interval_ms: 0,
   };

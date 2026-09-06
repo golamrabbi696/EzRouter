@@ -1,3 +1,9 @@
+# v0.6.6 (2026-09-07)
+
+## Fixes & Enhancements
+- **Process Isolation & Third-Party App Compatibility**: Restricted `killAllAppProcesses` in `cli/cli.js` so `next-server` processes are only targeted if their working directory (`cwd`) explicitly belongs to EzRouter or legacy 9router. Explicitly excluded Open Design desktop app (`open-design`, `Open Design.app`) and third-party Next.js standalone servers to prevent accidental `SIGKILL` signals and crash loops.
+- **CLI Binary Alias & Codex Auth Bridge**: Added `"9router": "./cli.js"` alias to `cli/package.json`'s `bin` map to support backward-compatible invocations (e.g. legacy `9router codex auth-token`). Updated Codex tool generator and route to configure `command = "ezrouter"`.
+
 # v0.6.5 (2026-09-05)
 
 ## Fixes & Enhancements
