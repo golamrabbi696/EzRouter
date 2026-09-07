@@ -1,4 +1,4 @@
-import { buildModelsList } from "../route.js";
+import { getCachedModelsList } from "../route.js";
 import { extractApiKey } from "@/sse/services/auth.js";
 import { getApiKeyScopeByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
@@ -51,14 +51,21 @@ export async function GET(request, { params }) {
     const scope = apiKey ? await getApiKeyScopeByKey(apiKey) : null;
 
     if (kindFilter) {
-      const data = await buildModelsList(kindFilter);
+      const data = await getCachedModelsList(kindFilter);
       return json({ object: "list", data: filterModelsByScope(data, scope) });
     }
 
     // Match the same LLM catalog exposed by GET /v1/models. A catch-all
     // parameter is required because provider-prefixed IDs contain a slash.
-    const models = filterModelsByScope(await buildModelsList([LLM_KIND]), scope);
-    const matchedModel = models.find((candidate) => candidate.id === identifier);
+    const models = filterModelsByScope(await getCachedModelsList([LLM_KIND]), scope);
+    let matchedModel = models.find((candidate) => candidate.id === identifier);
+
+    if (!matchedModel) {
+      // The cached list may predate a model added moments ago. Rebuild fresh
+      // before declaring the model missing.
+      const fresh = filterModelsByScope(await getCachedModelsList([LLM_KIND], { forceFresh: true }), scope);
+      matchedModel = fresh.find((candidate) => candidate.id === identifier);
+    }
 
     if (!matchedModel) {
       return json(

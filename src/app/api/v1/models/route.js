@@ -682,6 +682,82 @@ export async function buildModelsList(kindFilter, options = {}) {
   return dedupedModels.filter((model) => allowedModels.includes(model.id));
 }
 
+// ── Response cache ───────────────────────────────────────────────────────────
+// /v1/models is fetched by CLI tools (opencode, cline, ...) on startup, but
+// buildModelsList performs per-provider live catalog calls (compatible /models
+// discovery with 5s timeouts each, plus the live resolvers above) sequentially,
+// so a single request can block for many seconds on slow networks — clients
+// abort on their own shorter timeouts and end up with an empty model picker.
+// Cache the last successful build per kind filter and serve it immediately
+// while a rebuild refreshes the cache in the background (stale-while-revalidate):
+// after the first successful build, no client ever waits on upstream fetches.
+const MODELS_CACHE_TTL_MS = 30_000;
+const modelsCache = new Map(); // cacheKey -> { data, builtAt, building? }
+
+function modelsCacheKey(kindFilter, skipDynamicFetch, apiKeyId) {
+  return `${skipDynamicFetch ? "internal" : "full"}::${apiKeyId || "public"}::${kindFilter.join("|")}`;
+}
+
+/**
+ * buildModelsList with a short TTL + stale-while-revalidate.
+ * @param {string[]} kindFilter - forwarded to buildModelsList
+ * @param {{skipDynamicFetch?: boolean, forceFresh?: boolean, apiKey?: object}} options
+ *   forceFresh rebuilds synchronously and repopulates the cache instead of
+ *   serving stale data (used by exact-model lookups on cache misses).
+ */
+export async function getCachedModelsList(kindFilter, options = {}) {
+  const key = modelsCacheKey(kindFilter, options.skipDynamicFetch === true, options.apiKey?.id);
+  const entry = modelsCache.get(key);
+
+  if (options.forceFresh === true) {
+    const data = await buildModelsList(kindFilter, options);
+    modelsCache.set(key, { data, builtAt: Date.now() });
+    return data;
+  }
+
+  if (entry?.building) {
+    // A rebuild is already in flight: return the current list immediately when
+    // one exists, otherwise wait for the in-flight build to finish.
+    return entry.data ?? entry.building;
+  }
+
+  if (entry && Date.now() - entry.builtAt < MODELS_CACHE_TTL_MS) {
+    return entry.data;
+  }
+
+  const building = buildModelsList(kindFilter, options)
+    .then((data) => {
+      // A failed rebuild can come back as a legitimately-parsed but empty list
+      // (buildModelsList swallows per-source DB errors). Don't let a transient
+      // failure blank out a non-empty cached list — keep serving stale data.
+      const current = modelsCache.get(key);
+      const hasUsableCache = Array.isArray(current?.data) && current.data.length > 0;
+      if (data.length === 0 && hasUsableCache) {
+        return current.data;
+      }
+      modelsCache.set(key, { data, builtAt: Date.now() });
+      return data;
+    })
+    .catch((err) => {
+      // Hard failure: keep serving the previous list and drop the in-flight
+      // marker so the next request retries.
+      const current = modelsCache.get(key);
+      if (current?.data) modelsCache.set(key, { data: current.data, builtAt: current.builtAt });
+      else modelsCache.delete(key);
+      throw err;
+    });
+
+  modelsCache.set(key, entry ? { ...entry, building } : { data: null, builtAt: 0, building });
+
+  if (entry) {
+    // Stale but usable: refresh in the background, answer with the old list now.
+    building.catch(() => {});
+    return entry.data;
+  }
+
+  return building;
+}
+
 /**
  * Handle CORS preflight
  */
@@ -705,7 +781,7 @@ export async function GET(request) {
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
     const policy = await getModelListPolicy(request);
     if (policy.error) return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401, headers: { "Access-Control-Allow-Origin": "*" } });
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
+    const data = await getCachedModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
     const apiKey = extractApiKey(request);
     const scope = apiKey ? await getApiKeyScopeByKey(apiKey) : null;
     return Response.json({ object: "list", data: filterModelsByScope(data, scope) }, {
