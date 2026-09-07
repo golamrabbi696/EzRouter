@@ -174,7 +174,7 @@ export default function APIPageClient({ machineId }) {
  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
 
  // Cloudflare Tunnel state
-  const [tunnelChecking, setTunnelChecking] = useState(true);
+  const [tunnelChecking, setTunnelChecking] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelReachable, setTunnelReachable] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
@@ -366,7 +366,6 @@ export default function APIPageClient({ machineId }) {
   };
 
   const loadSettings = async () => {
-    setTunnelChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
         fetch("/api/settings"),
