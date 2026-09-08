@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import { clientRequestedStreaming } from "../../open-sse/handlers/chatCore/streamMode.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
@@ -53,5 +54,36 @@ describe("clientRequestedStreaming", () => {
 
   it("survives a missing body", () => {
     expect(clientRequestedStreaming(undefined, FORMATS.OPENAI)).toBe(false);
+  });
+});
+
+// The tests above exercise clientRequestedStreaming in isolation. They all keep
+// passing if chatCore.js goes back to its own `body.stream !== false`, because
+// nothing here observes the call site — reverting the wiring alone left this
+// file green, which is exactly the shape of bug this PR is about. handleChatCore
+// takes ~30 collaborators and cannot be driven from a unit test, so pin the
+// wiring at the source level instead.
+describe("chatCore reads the stream mode from streamMode.js (#3492)", () => {
+  const source = readFileSync(
+    new URL("../../open-sse/handlers/chatCore.js", import.meta.url),
+    "utf8",
+  );
+
+  it("imports the helper", () => {
+    expect(source).toMatch(
+      /import\s*\{\s*clientRequestedStreaming[^}]*\}\s*from\s*["']\.\/chatCore\/streamMode\.js["']/,
+    );
+  });
+
+  it("derives the streaming decision from it", () => {
+    expect(source).toMatch(/const\s+clientRequestedStreaming\s*=\s*(!isCompactRequest\s*&&\s*)?requestedStreaming\(\s*body\s*,\s*sourceFormat\s*\)/);
+    expect(source).toMatch(/let\s+stream\s*=\s*(isCompactRequest\s*\?\s*false\s*:\s*\()?providerRequiresStreaming\s*\?\s*true\s*:\s*clientRequestedStreaming\)?/);
+  });
+
+  it("no longer decides the response framing with `body.stream !== false`", () => {
+    // The Accept-header branch still reads `body.stream !== true`; only the
+    // `!== false` spelling, which is what treated an absent key as streaming,
+    // must be gone.
+    expect(source).not.toMatch(/body\.stream\s*!==\s*false/);
   });
 });
