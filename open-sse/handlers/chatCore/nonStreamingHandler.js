@@ -7,7 +7,7 @@ import { createErrorResult } from "../../utils/error.js";
 import { canonicalEchoModel } from "../../services/model.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
-import { parseSSEToOpenAIResponse, parseGeminiSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { parseSSEToOpenAIResponse, parseGeminiSSEToOpenAIResponse, pickAssistantMessageForChatCompletion } from "./sseToJsonHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
@@ -420,34 +420,55 @@ export async function handleNonStreamingResponse({
     const isSSE = providerResponse?.headers?.get?.("content-type")?.includes("text/event-stream");
 
     if (isSSE) {
-      const sseText = await providerResponse.text();
-      const isGeminiSse = [
-        FORMATS.ANTIGRAVITY,
-        FORMATS.GEMINI,
-        FORMATS.GEMINI_CLI,
-        FORMATS.VERTEX,
-      ].includes(targetFormat) || [
-        FORMATS.ANTIGRAVITY,
-        FORMATS.GEMINI,
-        FORMATS.GEMINI_CLI,
-        FORMATS.VERTEX,
-      ].includes(PROVIDERS[provider]?.format);
+      if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+        const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+        const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+        const rUsage = jsonResponse.usage || {};
+        const rStatus = jsonResponse.status || "stop";
+        const done = rStatus === "completed" || rStatus === "done";
+        const finishReason = done ? "stop" : (rStatus === "incomplete" ? "length" : rStatus);
+        responseBody = {
+          id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
+          model: jsonResponse.model || model,
+          choices: [{ index: 0, message: { role: "assistant", content: textContent || "" }, finish_reason: finishReason }],
+          usage: {
+            prompt_tokens: rUsage.input_tokens || 0,
+            completion_tokens: rUsage.output_tokens || 0,
+            total_tokens: rUsage.total_tokens || (rUsage.input_tokens || 0) + (rUsage.output_tokens || 0)
+          }
+        };
+      } else {
+        const sseText = await providerResponse.text();
+        const isGeminiSse = [
+          FORMATS.ANTIGRAVITY,
+          FORMATS.GEMINI,
+          FORMATS.GEMINI_CLI,
+          FORMATS.VERTEX,
+        ].includes(targetFormat) || [
+          FORMATS.ANTIGRAVITY,
+          FORMATS.GEMINI,
+          FORMATS.GEMINI_CLI,
+          FORMATS.VERTEX,
+        ].includes(PROVIDERS[provider]?.format);
 
-      const parsed = isGeminiSse
-        ? parseGeminiSSEToOpenAIResponse(sseText, model)
-        : parseSSEToOpenAIResponse(sseText, model);
+        const parsed = isGeminiSse
+          ? parseGeminiSSEToOpenAIResponse(sseText, model)
+          : parseSSEToOpenAIResponse(sseText, model);
 
-      if (!parsed) {
-        trackDone?.();
-        appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+        if (!parsed) {
+          trackDone?.();
+          appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+        }
+        if (parsed.error) {
+          trackDone?.();
+          appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
+        }
+        responseBody = parsed;
       }
-      if (parsed.error) {
-        trackDone?.();
-        appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
-      }
-      responseBody = parsed;
     } else {
       try {
         responseBody = await providerResponse.json();
