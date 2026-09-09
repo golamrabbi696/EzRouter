@@ -522,9 +522,13 @@ export function createSSEStream(options = {}) {
       }
     },
 
-    // The client hung up. Nothing more can be written, but everything that was
-    // already generated is worth recording — with whatever usage the provider
-    // had reported by then.
+    // A client that goes away mid-stream cancels the readable, and the Streams
+    // spec then calls `cancel` instead of `flush` -- never both. Recording lived
+    // only in `flush`, so an aborted request left no usage row, no request detail
+    // and nothing in Recent Requests, even though the provider had already
+    // generated (and been charged for) the partial answer. finalizeStream() is
+    // idempotent, so the terminal-event path in transform() still wins when the
+    // client closes after the answer completed.
     cancel() {
       try {
         finalizeStream();
