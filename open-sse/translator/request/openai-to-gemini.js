@@ -16,7 +16,8 @@ import {
   generateRequestId,
   generateSessionId,
   generateProjectId,
-  cleanJSONSchemaForAntigravity
+  cleanJSONSchemaForAntigravity,
+  normalizeGeminiContents
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
@@ -49,58 +50,6 @@ function readAssistantExtraContentSignature(msg) {
   return typeof sig === "string" && sig.length > 0 ? sig : null;
 }
 
-function normalizeGeminiContents(contents) {
-  const out = [];
-  for (const c of contents || []) {
-    if (!c?.role || !Array.isArray(c.parts) || c.parts.length === 0) continue;
-    const last = out.at(-1);
-    if (last?.role === c.role) {
-      const lastHasFnResp = last.parts.some(p => p?.functionResponse);
-      const currHasFnResp = c.parts.some(p => p?.functionResponse);
-      const lastHasText = last.parts.some(p => p?.text);
-      const currHasText = c.parts.some(p => p?.text);
-
-      // Vertex AI / Gemini requires functionResponse parts to be in their own user turn.
-      // Do not merge user functionResponse turn with user text turn.
-      if (c.role === GEMINI_ROLE.USER && ((lastHasFnResp && currHasText) || (lastHasText && currHasFnResp))) {
-        out.push({ ...c, parts: [...c.parts] });
-      } else {
-        last.parts.push(...c.parts);
-      }
-    } else {
-      out.push({ ...c, parts: [...c.parts] });
-    }
-  }
-
-  // Gemini / Vertex AI strictly require that the last turn in contents is a "user" turn.
-  // Requests ending with a model turn return HTTP 400 ("Requests ending with a model turn are not supported.").
-  if (out.length > 0 && out.at(-1).role === GEMINI_ROLE.MODEL) {
-    const lastTurn = out.at(-1);
-    const functionCalls = lastTurn.parts.filter(p => p?.functionCall);
-
-    if (functionCalls.length > 0) {
-      const functionResponses = functionCalls.map(p => ({
-        functionResponse: {
-          ...(p.functionCall.id ? { id: p.functionCall.id } : {}),
-          name: p.functionCall.name,
-          response: { result: "No response provided" }
-        }
-      }));
-      out.push({
-        role: GEMINI_ROLE.USER,
-        parts: functionResponses
-      });
-    } else {
-      out.push({
-        role: GEMINI_ROLE.USER,
-        parts: [{ text: "Continue" }]
-      });
-    }
-  }
-
-  return out;
-}
-
 // Replace client-identifying "opencode" mentions inside system prompts with
 // provider-neutral naming so Gemini/Antigravity backends don't reject
 // requests carrying another client's branding.
@@ -112,7 +61,6 @@ function sanitizeSystemPrompt(text) {
     return "antigravity";
   });
 }
-
 // Core: Convert OpenAI request to Gemini format (base for all variants)
 function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE, sessionId = null) {
   const result = {
@@ -234,12 +182,17 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
           }
 
           // Check if there are actual tool responses in the next messages
+          const isIntermediate = i < body.messages.length - 1;
           const hasActualResponses = toolCallIds.some(fid => toolResponses[fid] !== undefined);
 
-          if (hasActualResponses) {
+          if (hasActualResponses || isIntermediate) {
             const toolParts = [];
             for (const fid of toolCallIds) {
-              if (toolResponses[fid] === undefined) continue;
+              let resp = toolResponses[fid];
+              if (resp === undefined) {
+                if (isIntermediate) resp = "";
+                else continue;
+              }
 
               let name = tcID2Name[fid];
               if (!name) {
@@ -250,7 +203,6 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
                 name = m ? m[1] : fid;
               }
 
-              let resp = toolResponses[fid];
               let parsedResp = tryParseJSON(resp);
               if (parsedResp === null || typeof parsedResp !== "object" || Array.isArray(parsedResp)) {
                 parsedResp = { result: parsedResp !== null ? parsedResp : resp };

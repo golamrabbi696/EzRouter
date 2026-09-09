@@ -507,3 +507,62 @@ export function cleanJSONSchemaForAntigravity(schema) {
   return cleaned;
 }
 
+// Merge adjacent same-role messages, strip empty parts, ensure initial and final user turns
+export function normalizeGeminiContents(contents) {
+  const out = [];
+  for (const c of contents || []) {
+    if (!c?.role || !Array.isArray(c.parts)) continue;
+    const parts = c.parts.filter(p => p && Object.keys(p).length > 0);
+    if (parts.length === 0) continue;
+    const last = out.at(-1);
+    if (last?.role === c.role) {
+      const lastHasFnResp = last.parts.some(p => p?.functionResponse);
+      const currHasFnResp = parts.some(p => p?.functionResponse);
+      const lastHasText = last.parts.some(p => p?.text);
+      const currHasText = parts.some(p => p?.text);
+
+      // Vertex AI / Gemini requires functionResponse parts to be in their own user turn.
+      if (c.role === "user" && ((lastHasFnResp && currHasText) || (lastHasText && currHasFnResp))) {
+        out.push({ ...c, parts: [...parts] });
+      } else {
+        last.parts.push(...parts);
+      }
+    } else {
+      out.push({ ...c, parts: [...parts] });
+    }
+  }
+
+  if (out.length > 0 && out[0].role !== "user") {
+    out.unshift({ role: "user", parts: [{ text: "..." }] });
+  }
+
+  // Gemini / Vertex strictly require that the last turn in contents is a "user" turn.
+  if (out.length > 0 && out.at(-1).role === "model") {
+    const lastTurn = out.at(-1);
+    const functionCalls = lastTurn.parts.filter(p => p?.functionCall);
+
+    if (functionCalls.length > 0) {
+      const functionResponses = functionCalls.map(p => ({
+        functionResponse: {
+          ...(p.functionCall.id ? { id: p.functionCall.id } : {}),
+          name: p.functionCall.name,
+          response: { result: "No response provided" }
+        }
+      }));
+      out.push({
+        role: "user",
+        parts: functionResponses
+      });
+    } else {
+      out.push({
+        role: "user",
+        parts: [{ text: "Continue" }]
+      });
+    }
+  }
+
+  return out;
+}
+
+
+
