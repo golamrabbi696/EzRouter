@@ -215,8 +215,10 @@ export function fixToolUseOrdering(messages) {
 // Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
-// 9router provider prefixes are valid for routing the top-level model, but
-// Anthropic server tools expect an upstream model ID in their nested `model`.
+// Anthropic server tools (Advisor, Task/subagent) expect an upstream model ID
+// in their nested `model` field — passing "cc/claude-fable-5" through as-is
+// gets rejected by Anthropic. normalizeClaudePassthrough only ever touched
+// the top-level model; this strips the same prefixes from tools[].model.
 const CLAUDE_PROVIDER_MODEL_PREFIXES = ["cc/", "claude/"];
 
 function normalizeClaudeServerToolModels(tools) {
@@ -319,8 +321,10 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
     }
   }
 
-  // 4. Normalize nested server tool model IDs without changing the routing model
+  // 4. Normalize nested server tool model IDs (Advisor, Task/subagent)
+  // without changing the top-level routing model.
   normalizeClaudeServerToolModels(body.tools);
+
   // 5. Drop thinking blocks whose signature is not Claude's (combo mixes models,
   // so foreign signatures leak into history and Anthropic rejects them).
   const thinkingEnabled = body.thinking?.type === "enabled";

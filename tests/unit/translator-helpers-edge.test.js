@@ -26,7 +26,7 @@ describe("normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1)",
   });
 });
 
-describe("normalizeClaudePassthrough — server tool models", () => {
+describe("normalizeClaudePassthrough — server tool models (decolua/9router#2582, #2642)", () => {
   it("strips 9router's cc/ prefix from an Advisor server tool only", () => {
     const body = {
       model: "cc/claude-opus-4-8",

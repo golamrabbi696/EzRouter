@@ -37,6 +37,7 @@ export const ANTHROPIC_BETA_BASE = [
   "interleaved-thinking-2025-05-14",
   "context-management-2025-06-27",
   "prompt-caching-scope-2026-01-05",
+  "advisor-tool-2026-03-01",
 ];
 
 // Heavy agentic beta flags: Claude Code enables these for Opus/Sonnet
@@ -72,6 +73,7 @@ export const CLAUDE_CLI_SPOOF_HEADERS = {
   "X-Stainless-Os": mapStainlessOs(),
   "X-Stainless-Timeout": "600"
 };
+
 
 // Shared baseUrls
 export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
