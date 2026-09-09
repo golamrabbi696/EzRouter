@@ -18,10 +18,10 @@ RUN npm run build
 
 FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
-RUN apk --no-cache add su-exec wget
+RUN apk --no-cache add tzdata su-exec wget
 
 ENV NODE_ENV=production
-ENV PORT=20128
+ENV PORT=20126
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
@@ -55,7 +55,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 20128
+EXPOSE 20126
 
 ENTRYPOINT ["/entrypoint.sh"]
 # Bun is the mandatory runtime per migration task
