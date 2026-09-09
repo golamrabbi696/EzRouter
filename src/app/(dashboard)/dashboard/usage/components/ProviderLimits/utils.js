@@ -375,7 +375,55 @@ export function parseQuotaData(provider, data) {
 
       case "antigravity":
         if (data.quotas) {
-          Object.entries(data.quotas).forEach(([modelKey, quota]) => {
+          const entries = Object.entries(data.quotas);
+          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly"]);
+          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
+          const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
+          const imageModels = entries.filter(([k]) => k.includes("image"));
+          const weeklyModels = entries.filter(([k]) => weeklyKeys.has(k));
+          const otherModels = entries.filter(([k]) => !k.startsWith("gemini-") && !k.startsWith("claude-") && !k.includes("image") && !weeklyKeys.has(k));
+
+          if (geminiModels.length > 0) {
+            const rep = geminiModels.reduce((min, cur) =>
+              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+            )[1];
+            normalizedQuotas.push({
+              name: "Gemini (Flash / Pro)",
+              modelKey: "gemini",
+              used: rep.used || 0,
+              total: rep.total || 0,
+              resetAt: rep.resetAt || null,
+              remainingPercentage: rep.remainingPercentage,
+            });
+          }
+
+          if (claudeModels.length > 0) {
+            const rep = claudeModels.reduce((min, cur) =>
+              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+            )[1];
+            normalizedQuotas.push({
+              name: "Claude (Sonnet / Opus)",
+              modelKey: "claude",
+              used: rep.used || 0,
+              total: rep.total || 0,
+              resetAt: rep.resetAt || null,
+              remainingPercentage: rep.remainingPercentage,
+            });
+          }
+
+          weeklyModels.forEach(([modelKey, quota]) => {
+            normalizedQuotas.push({
+              name: quota.displayName || modelKey,
+              modelKey,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+
+          const nonGrouped = [...imageModels, ...otherModels];
+          nonGrouped.forEach(([modelKey, quota]) => {
             normalizedQuotas.push({
               name: quota.displayName || modelKey,
               modelKey: modelKey, // Keep modelKey for sorting
