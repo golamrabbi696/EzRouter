@@ -23,6 +23,7 @@ export default {
     quirks: {
       dropOutputConfig: true,
       ensureThinkingSignature: true,
+      requireClaudeToolType: true,
     },
     reasoningInject: {
       scope: "all",
