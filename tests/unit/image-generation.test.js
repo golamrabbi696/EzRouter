@@ -451,7 +451,7 @@ describe("handleImageGenerationCore", () => {
 
     expect(result.success).toBe(true);
     const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(requestBody.model).toBe("gpt-5.4-mini");
+    expect(requestBody.model).toBe("gpt-5.5");
     expect(requestBody.tools).toEqual([{
       type: "image_generation",
       action: "edit",
@@ -567,19 +567,6 @@ describe("handleImageGenerationCore", () => {
     expect(result.status).toBe(429);
     expect(result.resetsAtMs).toBe(Date.parse(resetAt));
     expect(result.error).toContain("RESOURCE_EXHAUSTED");
-=======
-    const fetchCall = global.fetch.mock.calls[0];
-    const requestBody = JSON.parse(fetchCall[1].body);
-    expect(requestBody.model).toBe("gpt-5.5");
-    expect(requestBody.tools).toEqual([
-      { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
-    ]);
-    expect(requestBody.tool_choice).toEqual({ type: "image_generation" });
-    expect(requestBody.reasoning).toEqual({ effort: "medium", summary: "auto" });
-
-    const responseBody = await result.response.json();
-    expect(responseBody.data[0].b64_json).toBe("base64codeximage");
->>>>>>> 832a34659e (feat(codex): add GPT Image 2.5, Flare and Sunburst image models)
   });
 
   it("generates image with Cloudflare Workers AI JSON response", async () => {

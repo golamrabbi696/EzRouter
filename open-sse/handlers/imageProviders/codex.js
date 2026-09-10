@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { resolveCodexAccountId } from "../../services/codexAccount.js";
-import { CODEX_CLI_VERSION } from "../../config/appConstants.js";
+import {
+  CODEX_CLI_VERSION,
+  CODEX_IMAGE_ERROR_TEXT_LIMIT,
+  CODEX_IMAGE_NO_RESULT_ERROR,
+} from "../../config/codexConstants.js";
+
+import { detectImageMime, encodeDataUri, parseDataUri } from "../../translator/concerns/image.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
@@ -31,10 +37,41 @@ function resolveCodexImageModels(model) {
   return { responsesModel: stripImageSuffix(model), toolModel: null };
 }
 
-function toDataUrl(input) {
-  if (!input || typeof input !== "string") return null;
-  if (/^data:image\//i.test(input) || /^https?:\/\//i.test(input)) return input;
-  return `data:image/png;base64,${input}`;
+function decodeBase64Image(input) {
+  const normalized = String(input || "").replace(/\s+/g, "");
+  if (!normalized || normalized.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    return null;
+  }
+
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const buffer = Buffer.from(padded, "base64");
+  if (!buffer.length) return null;
+
+  const canonical = buffer.toString("base64").replace(/=+$/, "");
+  if (canonical !== normalized.replace(/=+$/, "")) return null;
+
+  const mimeType = detectImageMime(buffer);
+  return mimeType ? { base64: buffer.toString("base64"), mimeType } : null;
+}
+
+function toDataUrl(input, label) {
+  if (!input || typeof input !== "string") {
+    throw new Error(`Invalid reference image at ${label}. Use an image URL, image data URL, or raw image base64.`);
+  }
+
+  const trimmed = input.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+  const parsed = parseDataUri(trimmed);
+  if (parsed?.mimeType?.startsWith("image/")) {
+    const decoded = decodeBase64Image(parsed.base64);
+    if (decoded) return encodeDataUri(decoded.mimeType, decoded.base64);
+  }
+
+  const decoded = decodeBase64Image(trimmed);
+  if (decoded) return encodeDataUri(decoded.mimeType, decoded.base64);
+
+  throw new Error(`Invalid reference image at ${label}. Use an image URL, image data URL, or raw image base64.`);
 }
 
 function buildContent(prompt, refs, detail = CODEX_REF_DETAIL) {
@@ -54,6 +91,7 @@ async function parseStream(response, log, callbacks = {}) {
   const decoder = new TextDecoder();
   let buffer = "";
   let imageB64 = null;
+  let outputText = "";
   let lastEvent = null;
   let bytesReceived = 0;
   let lastProgressLogMs = 0;
@@ -77,6 +115,19 @@ async function parseStream(response, log, callbacks = {}) {
         else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
       }
       if (!eventName) continue;
+      let data;
+      try { data = JSON.parse(dataStr); } catch { /* Ignore non-JSON SSE frames. */ }
+      // HTTP 200 can carry an upstream failure. Preserve its reason so callers
+      // can distinguish client-version, quota and content errors from no output.
+      const failed = eventName === "error" || eventName === "response.failed" ||
+        data?.response?.status === "failed" || data?.response?.status === "incomplete";
+      if (failed) {
+        const error = data?.response?.error || data?.error;
+        const message = error?.message || (typeof error === "string" ? error : null) ||
+          data?.message || data?.response?.incomplete_details?.reason || "Codex image response failed.";
+        await reader.cancel().catch(() => {});
+        throw new Error(message);
+      }
       if (eventName !== lastEvent) {
         log?.info?.("IMAGE", `codex progress: ${eventName}`);
         lastEvent = eventName;
@@ -90,7 +141,6 @@ async function parseStream(response, log, callbacks = {}) {
 
       if (eventName === "response.image_generation_call.partial_image" && dataStr) {
         try {
-          const data = JSON.parse(dataStr);
           if (callbacks.onPartialImage && data?.partial_image_b64) {
             callbacks.onPartialImage({ b64_json: data.partial_image_b64, index: data.partial_image_index });
           }
@@ -99,15 +149,19 @@ async function parseStream(response, log, callbacks = {}) {
 
       if (eventName === "response.output_item.done" && dataStr) {
         try {
-          const data = JSON.parse(dataStr);
           const item = data?.item;
           if (item?.type === "image_generation_call" && item.result) {
             imageB64 = item.result;
+          }
+          if (item?.type === "message" && Array.isArray(item.content)) {
+            outputText += item.content.map((part) => part.refusal || part.text || "").join(" ");
+            outputText = outputText.slice(0, CODEX_IMAGE_ERROR_TEXT_LIMIT);
           }
         } catch {}
       }
     }
   }
+  if (!imageB64 && outputText) throw new Error(`${CODEX_IMAGE_NO_RESULT_ERROR} ${outputText}`);
   return imageB64;
 }
 
@@ -125,7 +179,7 @@ function buildSseResponse(providerResponse, log, onSuccess) {
           onPartialImage: (info) => send("partial_image", info),
         });
         if (!b64) {
-          send("error", { message: "Codex did not return an image. Account may not be entitled (Plus/Pro required)." });
+          send("error", { message: CODEX_IMAGE_NO_RESULT_ERROR });
         } else {
           if (onSuccess) await onSuccess();
           send("done", { created: nowSec(), data: [{ b64_json: b64 }] });
@@ -167,9 +221,12 @@ export default {
   },
   buildBody: (model, body) => {
     const refs = [];
-    if (Array.isArray(body.images)) body.images.forEach((i) => { const u = toDataUrl(i); if (u) refs.push(u); });
-    const single = toDataUrl(body.image);
-    if (single) refs.push(single);
+    if (Array.isArray(body.images)) {
+      body.images.forEach((image, index) => refs.push(toDataUrl(image, `images[${index}]`)));
+    }
+    if (body.image != null && body.image !== "") {
+      refs.push(toDataUrl(body.image, "image"));
+    }
     const detail = body.image_detail || CODEX_REF_DETAIL;
     const { responsesModel, toolModel } = resolveCodexImageModels(model);
     const imgTool = { type: "image_generation", output_format: (body.output_format || "png").toLowerCase() };
@@ -180,12 +237,16 @@ export default {
     if (body.size && body.size !== "") imgTool.size = body.size;
     if (body.quality && body.quality !== "") imgTool.quality = body.quality;
     if (body.background && body.background !== "") imgTool.background = body.background;
+    if (body.moderation) imgTool.moderation = body.moderation;
+    if (Number.isFinite(Number(body.output_compression))) imgTool.output_compression = Number(body.output_compression);
+    if (Number.isFinite(Number(body.partial_images))) imgTool.partial_images = Number(body.partial_images);
     return {
       model: responsesModel,
       instructions: "",
       input: [{ type: "message", role: "user", content: buildContent(body.prompt, refs, detail) }],
       tools: [imgTool],
-      tool_choice: toolModel ? { type: "image_generation" } : "auto",
+      // /images/generations must produce an image even when the prompt could be answered as text.
+      tool_choice: toolModel ? { type: "image_generation" } : "required",
       parallel_tool_calls: false,
       prompt_cache_key: randomUUID(),
       stream: true,
@@ -200,7 +261,7 @@ export default {
     }
     const b64 = await parseStream(response, log);
     if (!b64) {
-      throw new Error("Codex did not return an image. Account may not be entitled (Plus/Pro required).");
+      throw new Error(CODEX_IMAGE_NO_RESULT_ERROR);
     }
     return { created: nowSec(), data: [{ b64_json: b64 }] };
   },
