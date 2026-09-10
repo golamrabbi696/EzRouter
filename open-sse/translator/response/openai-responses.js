@@ -537,8 +537,6 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   if (eventType === "response.function_call_arguments.done" || eventType === "response.custom_tool_call_input.done") {
     return null;
   }
-    return null;
-  }
 
   // Response completed
   if (eventType === "response.completed" || eventType === "response.done") {
