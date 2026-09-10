@@ -21,9 +21,9 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { comboTokenLimits, splitModelRef } from "open-sse/services/comboLimits.js";
+import { comboCapabilities } from "open-sse/services/comboCapabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -348,6 +348,8 @@ export async function buildModelsList(kindFilter, options = {}) {
       const { contextWindow, maxOutput } = comboTokenLimits(combo.models, capsForModelRef);
       if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
       if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
+      const caps = comboCapabilities(combo.models, capsForModelRef);
+      if (caps) entry.capabilities = caps;
     }
     models.push(entry);
   }
