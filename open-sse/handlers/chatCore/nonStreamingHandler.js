@@ -10,6 +10,7 @@ import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse, parseGeminiSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
+import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
@@ -457,6 +458,11 @@ export async function handleNonStreamingResponse({
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
       }
     }
+
+    // Unwrap before any consumer reads choices/usage so non-stream clients get a
+    // bare OpenAI body and usage tracking sees data.usage. No-op unless the
+    // provider opts in via transport.quirks.clineEnvelope.
+    responseBody = unwrapClineEnvelope(responseBody, provider);
 
     reqLogger?.logProviderResponse?.(providerResponse?.status, providerResponse?.statusText, providerResponse?.headers, responseBody);
 
