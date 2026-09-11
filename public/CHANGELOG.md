@@ -1,3 +1,17 @@
+# v0.6.7 (2026-09-11)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #3803 - #3954)
+- **Codex Image Stream Error Handling**: Preserved concrete upstream stream errors (`response.failed`, `status: failed/incomplete`, text output refusals) instead of generic entitlement failures (`#3853`). Maintained full support and input validation for multi-reference images, compression, and moderation options. Added GPT Image 2.5, Flare, and Sunburst image model support (`#3943`).
+- **Codex CLI System Prompt Hoisting**: Hoisted client system prompt into instructions instead of stacking Codex defaults (`#3954`). Aligned single-sourced `CODEX_CLI_VERSION` across registry, image generation, and discovery headers (`0.154.0`). Added Unicode-property tool schema pattern stripping (`#3938`).
+- **Kiro MITM & Terminal Frames**: Resolved Kiro duplicate chat requests via native terminal frames and lifecycle deduplication guard (`#3919`), while supporting dual text/content payload formats. Removed top-level `systemPrompt` on wire payloads to prevent HTTP 400 invalid request errors (`#3949`).
+- **Network & Socket Keep-Alive**: Capped keep-alive timeout at 30s with safe replay retry on dead sockets to prevent stale connections from hanging provider requests until restart (`#3941`).
+- **Stream Lifecycle & Client Hangup**: Accurately records turn usage and cleans up stream state when client hangs up mid-stream (`#3907`).
+- **Claude & Translator Improvements**: Re-checked prefill invariant after each dropped turn to avoid empty turns (`#3936`). Forwarded Advisor server-tool beta flag and normalized nested model IDs (`#3931`). Capped re-anchored `cache_control` at the upstream 4-marker budget and maintained single-object content turns (`#3948`). Scoped Claude tool type defaulting to gateways that need it (`#3926`). Preserved Anthropic-only tool types for DeepSeek forwarding (`#3947`).
+- **Dashboard & UI**: Model selector now hides inactive and hidden providers (`#3934`), and prioritizes enabled providers ahead of unused ones (`#3935`). Non-blocking tunnel health check on endpoint page (`#3852`). Console-log auto-scroll fix stops dragging reader back to the newest line when reading older logs (`#3872`). Combo error reporting reports individual model status with that same model's message (`#3873`).
+- **MITM Performance**: Cached derived sudo-password encryption key to speed up MITM proxy operations (`#3900`).
+- **Docker & Environment**: Added `tzdata` and support for `TZ` environment variable in Dockerfile (`#3908`), while maintaining strict default port `20126`.
+- **Providers & Models**: Added DeepSeek V4.1 Flash for Codebuddy-CN (`#3940`) and OpenCode Go (`#3942`). Added Video Generation for OpenRouter and Vertex AI (Veo) with URL path escaping security guard (`#3912`, `da6aa90128`). Added ClinePass token refresh and unwrapped Cline/Airforce envelopes (`#3923`, `#3950`). Added Xiaomi MiMo dual auth support (`#3921`, `73cb89143c`).
+
 # v0.6.6 (2026-09-07)
 
 ## Fixes & Enhancements
