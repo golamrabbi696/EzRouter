@@ -21,7 +21,8 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel, withDeclaredCapabilities } from "open-sse/providers/capabilities.js";
 import { comboTokenLimits, splitModelRef } from "open-sse/services/comboLimits.js";
 import { comboCapabilities } from "open-sse/services/comboCapabilities.js";
 
@@ -489,6 +490,12 @@ export async function buildModelsList(kindFilter, options = {}) {
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const customModelKindById = new Map();
+      // User-declared per-model capabilities from the dashboard (kv customModels
+      // "caps"). These are explicit statements about a model the operator added
+      // by hand, so they must win over the pattern-matched guesses below —
+      // otherwise a hand-declared "vision: true" is silently overwritten by a
+      // PATTERN_CAPABILITIES match and /v1/models reports the model as text-only.
+      const customModelCapsById = new Map();
       const customModelIds = customModels
         .filter((m) => {
           if (!m?.id) return false;
@@ -501,7 +508,10 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .map((m) => {
           const modelId = String(m.id).trim();
-          if (modelId) customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
+          if (modelId) {
+            customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
+            if (m.caps && typeof m.caps === "object") customModelCapsById.set(modelId, m.caps);
+          }
           return modelId;
         })
         .filter((modelId) => modelId !== "");
@@ -550,9 +560,14 @@ export async function buildModelsList(kindFilter, options = {}) {
         // { id, name } — no per-model capability data. Fall back to the same
         // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
-        const caps = liveCapabilitiesById.get(modelId)
+        // Priority: live catalog > service kind > pattern-matched guess, with any
+        // operator declaration from the dashboard layered on top. The declaration
+        // wins because it is first-hand knowledge about a hand-added model, while
+        // everything below it is inferred from the model name.
+        const inferredCaps = liveCapabilitiesById.get(modelId)
           || capabilitiesFromServiceKind(customKind || liveKind)
           || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
+        const caps = withDeclaredCapabilities(inferredCaps, customModelCapsById.get(modelId));
         if (caps) model.capabilities = caps;
         // Token limits under the snake_case names the OpenAI/OpenRouter
         // convention uses. `capabilities.contextWindow` is camelCase and nested,
