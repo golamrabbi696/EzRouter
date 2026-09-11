@@ -283,6 +283,45 @@ export const PROVIDER_CAPABILITIES = {
     // contract). maxOutput 128000 per the server's product-config payload.
     "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
   },
+  // CodeBuddy intl — same gateway catalog as CN, so deepseek-v4.1-flash mirrors
+  // the codebuddy-cn entry (the openai-style reasoning_effort format matters:
+  // the generic *deepseek-v4* pattern would otherwise pick the vendor-native
+  // "deepseek" thinking shape, which the CodeBuddy gateway does not accept).
+  "codebuddy-intl": {
+    "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+  },
+  // Qoder — upstream exposes opaque internal ids (dfmodel, kmodel, …); the
+  // registry `name` is display-only and capability lookup matches on the raw
+  // id, so every qoder model would fall through to DEFAULT_CAPABILITIES
+  // (200K) without this map. contextWindow follows the real model family's
+  // spec: the /algo/api/v2/model/list max_input_tokens under-reports some
+  // windows (GLM-5.3 / Kimi-K3 / Qwen3.8-Max claim 180K but accept more).
+  // max_output_tokens arrives as 0 for every model, so outputs are
+  // best-guess from the real model family. Vision tags below follow the
+  // upstream is_vl flag. The executor uploads inlined images to
+  // /api/v2/image/upload and leaves image_urls/chat_context.imageUrls null
+  // (same as qodercli). reasoning:true on all of them — every model can
+  // reason; the upstream is_reasoning flag only drives model_config selection.
+  // thinkingFormat keeps the true-model family for documentation/UI, but
+  // thinkingCanDisable:false everywhere: the executor only forwards
+  // messages/tools/max_tokens, and thinking is fixed upstream via
+  // modelConfig.is_reasoning — client thinking intent is dropped, so "none"
+  // must never be offered as an option.
+  "qoder": {
+    "ultimate":       { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Opus 5
+    "performance":    { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Sonnet 5
+    "dmodel":         { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Pro
+    "dfmodel":        { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Flash
+    "gmodel":         { reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },      // GLM-5.3
+    "gfmodel":        { vision: true, reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // GLM-5.3-Flash
+    "kmodel_latest":  { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Kimi-K3
+    "kmodel":         { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 65536 },  // Kimi-K2.7-Code
+    "mmodel":         { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 512000 }, // MiniMax-M3
+    "qmodel_latest":  { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Max
+    "qmodel":         { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Plus
+    "qfmodel":        { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.8-Flash
+    "qmodel_38max":   { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Qwen3.8-Max
+  },
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
@@ -302,6 +341,16 @@ export const PROVIDER_CAPABILITIES = {
     "muse-spark-1.2-contributor": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
     "muse-spark-1.2": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
     "muse-spark-1.1": { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 },
+  },
+  // Ollama Cloud — the generic *deepseek-v4* pattern misses the vision badge
+  // the library page publishes for this model (text+image in, 1M context).
+  // ponytail: thinkingFormat stays "deepseek" to preserve today's body shape;
+  // Ollama's native toggle is the top-level `think` field (bool or
+  // low/medium/high/max), which no format in thinkingUnified.js emits yet —
+  // openai-to-ollama.js drops it. Wire a "think" format when thinking on
+  // Ollama Cloud is actually needed.
+  "ollama": {
+    "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   },
 };
 
