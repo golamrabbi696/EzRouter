@@ -8,6 +8,7 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyByValue, getSettings } from "@/lib/localDb";
 import { extractApiKey } from "@/sse/services/auth.js";
 import { getListedModels as getOpencodeCatalog } from "@/lib/opencodeCatalog";
+import { parseModel } from "@/sse/services/model.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getApiKeyScopeByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
@@ -22,9 +23,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel, withDeclaredCapabilities } from "open-sse/providers/capabilities.js";
-import { comboTokenLimits, splitModelRef } from "open-sse/services/comboLimits.js";
-import { comboCapabilities } from "open-sse/services/comboCapabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel, withDeclaredCapabilities, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -235,7 +234,68 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
-function comboToEntry(combo) {
+// Boolean capability flags are unioned across members (OR): a feature is
+// available to the combo if any member supports it.
+const COMBO_BOOLEAN_CAPS = [
+  "vision", "pdf", "audioInput", "videoInput", "imageOutput",
+  "audioOutput", "search", "tools", "reasoning",
+  "thinkingCanDisable", "thinkingEffortSupported",
+];
+
+/**
+ * Aggregate capabilities across a combo's member models so the /v1/models entry
+ * carries the same shape as a concrete model. Numeric limits are the MINIMUM
+ * across members (a request can route to any member, so the combo is bounded by
+ * the smallest window); boolean features are the UNION; format scalars take the
+ * first non-null. Nested combos are flattened (mirrors the chat path, which
+ * re-expands a bare combo name as a single model). `seen` guards against cycles.
+ * @param {string[]} memberStrings - combo.models entries (provider/model, alias, or nested combo name)
+ * @param {Map<string,object>} comboByName - name -> combo, for nested expansion
+ * @param {Set<string>} [seen] - names already visited (cycle guard)
+ * @returns {object|null} merged capabilities, or null if no resolvable members
+ */
+function mergeComboCapabilities(memberStrings, comboByName, seen = new Set()) {
+  if (!Array.isArray(memberStrings) || memberStrings.length === 0) return null;
+
+  const merged = { ...DEFAULT_CAPABILITIES };
+  let resolvedAny = false;
+  let seenFinite = false;
+
+  for (const member of memberStrings) {
+    if (typeof member !== "string") continue;
+
+    let caps;
+    if (member.includes("/")) {
+      const { provider, model } = parseModel(member);
+      caps = getCapabilitiesForModel(provider, model);
+    } else if (comboByName?.has(member)) {
+      if (seen.has(member)) continue; // cycle guard
+      seen.add(member);
+      caps = mergeComboCapabilities(comboByName.get(member).models, comboByName, seen);
+    } else {
+      caps = getCapabilitiesForModel(null, member);
+    }
+    if (!caps) continue;
+
+    for (const key of COMBO_BOOLEAN_CAPS) {
+      if (caps[key]) merged[key] = true;
+    }
+    if (merged.thinkingFormat === null && caps.thinkingFormat != null) merged.thinkingFormat = caps.thinkingFormat;
+    if (merged.thinkingRange === null && caps.thinkingRange != null) merged.thinkingRange = caps.thinkingRange;
+    if (Number.isFinite(caps.contextWindow)) {
+      merged.contextWindow = seenFinite ? Math.min(merged.contextWindow, caps.contextWindow) : caps.contextWindow;
+    }
+    if (Number.isFinite(caps.maxOutput)) {
+      merged.maxOutput = seenFinite ? Math.min(merged.maxOutput, caps.maxOutput) : caps.maxOutput;
+    }
+    resolvedAny = true;
+    seenFinite = true;
+  }
+
+  return resolvedAny ? merged : null;
+}
+
+function comboToEntry(combo, comboByName) {
   const entry = {
     id: combo.name,
     object: "model",
@@ -243,6 +303,13 @@ function comboToEntry(combo) {
   };
   if (combo.kind === "webSearch" || combo.kind === "webFetch") {
     entry.kind = combo.kind;
+  } else {
+    const caps = mergeComboCapabilities(combo.models, comboByName);
+    if (caps) {
+      entry.capabilities = caps;
+      entry.context_length = caps.contextWindow;
+      entry.max_completion_tokens = caps.maxOutput;
+    }
   }
   return entry;
 }
@@ -272,6 +339,8 @@ export async function buildModelsList(kindFilter, options = {}) {
   } catch (e) {
     console.log("Could not fetch combos");
   }
+  // Name -> combo, used to flatten nested combos when merging capabilities.
+  const comboByName = new Map(combos.map((c) => [c.name, c]));
 
   let settings = {};
   try {
@@ -284,7 +353,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     const comboOnlyModels = [];
     for (const combo of combos) {
       if (!comboMatchesKinds(combo, kindFilter)) continue;
-      const entry = comboToEntry(combo);
+      const entry = comboToEntry(combo, comboByName);
       if (seenModelIds.has(entry.id)) continue;
       seenModelIds.add(entry.id);
       comboOnlyModels.push(entry);
@@ -323,35 +392,10 @@ export async function buildModelsList(kindFilter, options = {}) {
 
   const models = [];
 
-  const aliasToProviderId = Object.fromEntries(
-    Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
-  );
-  const capsForModelRef = (ref) => {
-    const { alias, modelId } = splitModelRef(ref);
-    return getCapabilitiesForModel(aliasToProviderId[alias] || alias, modelId);
-  };
-
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
-    const entry = {
-      id: combo.name,
-      object: "model",
-      owned_by: "combo",
-    };
-    if (combo.kind === "webSearch" || combo.kind === "webFetch") {
-      entry.kind = combo.kind;
-    } else {
-      // Same snake_case token limits individual models carry, so a client
-      // sizing its context window off /v1/models does not fall back to
-      // guessing from the name. A combo can route to any member, so the pool
-      // can only promise what its smallest member accepts.
-      const { contextWindow, maxOutput } = comboTokenLimits(combo.models, capsForModelRef);
-      if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
-      if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
-      const caps = comboCapabilities(combo.models, capsForModelRef);
-      if (caps) entry.capabilities = caps;
-    }
+    const entry = comboToEntry(combo, comboByName);
     models.push(entry);
   }
 
