@@ -217,11 +217,7 @@ function convertConstToEnum(obj) {
     delete obj.const;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertConstToEnum(value);
-    }
-  }
+  forEachChildSchema(obj, convertConstToEnum);
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
@@ -236,11 +232,7 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertEnumValuesToStrings(value);
-    }
-  }
+  forEachChildSchema(obj, convertEnumValuesToStrings);
 }
 
 // Merge allOf schemas
@@ -270,11 +262,7 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      mergeAllOf(value);
-    }
-  }
+  forEachChildSchema(obj, mergeAllOf);
 }
 
 // Select best schema from anyOf/oneOf
@@ -328,11 +316,7 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenAnyOfOneOf(value);
-    }
-  }
+  forEachChildSchema(obj, flattenAnyOfOneOf);
 }
 
 // Flatten type arrays
@@ -344,9 +328,24 @@ function flattenTypeArrays(obj) {
     obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenTypeArrays(value);
+  forEachChildSchema(obj, flattenTypeArrays);
+}
+
+// Keys whose value is a MAP of schemas (name -> schema), not a schema itself.
+// A tool may legitimately declare a property named "properties" or "items", so a
+// blind `Object.values()` walk would treat the map as a schema node and mutate it.
+const SCHEMA_MAPS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"];
+
+// Visit child schemas without ever mistaking a schema map for a schema.
+function forEachChildSchema(obj, fn) {
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object") continue;
+    if (SCHEMA_MAPS.includes(key)) {
+      for (const sub of Object.values(value)) if (sub && typeof sub === "object") fn(sub);
+    } else if (Array.isArray(value)) {
+      for (const item of value) if (item && typeof item === "object") fn(item);
+    } else {
+      fn(value);
     }
   }
 }
@@ -358,17 +357,7 @@ function flattenTypeArrays(obj) {
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  // Descend into the property name-map values (each is a schema node)
-  if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
-    for (const propValue of Object.values(obj.properties)) {
-      ensureObjectType(propValue);
-    }
-  }
-  // Descend into other object-valued keys except the name-map itself
-  for (const [key, value] of Object.entries(obj)) {
-    if (key === "properties") continue;
-    if (value && typeof value === "object") ensureObjectType(value);
-  }
+  forEachChildSchema(obj, ensureObjectType);
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -386,11 +375,7 @@ function convertPrefixItems(obj) {
     delete obj.prefixItems;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertPrefixItems(value);
-    }
-  }
+  forEachChildSchema(obj, convertPrefixItems);
 }
 
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
@@ -399,7 +384,47 @@ function ensureArrayItems(obj) {
   if (obj.type === "array" && !obj.items) {
     obj.items = { type: "string" };
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+  forEachChildSchema(obj, ensureArrayItems);
+}
+
+// Expand shorthand string schemas into real Schema objects.
+//
+// JSON Schema requires every subschema to be an object, but agent and MCP tool
+// definitions routinely use the shorthand `{ value: "object" }` for
+// `{ value: { type: "object" } }`. Gemini's proto has no union for this and
+// rejects the whole request:
+//   Invalid value at 'tools[0].function_declarations[N].parameters
+//   .properties[M].value' (...Schema), "object"
+//
+// Every other pass here recurses only into `typeof x === "object"`, so a string
+// subschema is invisible to them — this must run first, and must rewrite the
+// parent's slot rather than the (primitive, unmodifiable) value itself.
+const SCHEMA_SLOTS = ["items", "additionalItems", "contains", "if", "then", "else", "not", "propertyNames", "unevaluatedItems", "contentSchema"];
+
+function expandStringSchemas(obj) {
+  if (!obj || typeof obj !== "object") return;
+
+  const expand = (value) => (typeof value === "string" ? { type: value } : value);
+
+  for (const slot of SCHEMA_SLOTS) {
+    if (typeof obj[slot] === "string") obj[slot] = expand(obj[slot]);
+  }
+
+  for (const mapKey of SCHEMA_MAPS) {
+    const map = obj[mapKey];
+    if (!map || typeof map !== "object" || Array.isArray(map)) continue;
+    for (const [key, value] of Object.entries(map)) {
+      if (typeof value === "string") map[key] = expand(value);
+    }
+  }
+
+  // `additionalProperties: false` is a valid boolean and is stripped later;
+  // only a string form is shorthand for a schema.
+  if (typeof obj.additionalProperties === "string") {
+    obj.additionalProperties = expand(obj.additionalProperties);
+  }
+
+  forEachChildSchema(obj, expandStringSchemas);
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -408,6 +433,10 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   // Mutate directly (schema is only used once per request)
   let cleaned = schema;
+
+  // Phase 0: Expand shorthand string subschemas — must run before any pass that
+  // recurses on `typeof x === "object"`, which would otherwise skip them entirely.
+  expandStringSchemas(cleaned);
 
   // Phase 1: Convert and prepare
   convertConstToEnum(cleaned);
@@ -441,19 +470,8 @@ export function cleanJSONSchemaForAntigravity(schema) {
       }
     }
 
-    // Descend into schema nodes only; the property name-map keys are user
-    // parameter names (issue #2884).
-    if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
-      for (const propValue of Object.values(obj.properties)) {
-        cleanupRequired(propValue);
-      }
-    }
-    for (const [key, value] of Object.entries(obj)) {
-      if (key === "properties") continue;
-      if (value && typeof value === "object") {
-        cleanupRequired(value);
-      }
-    }
+    // Recurse into nested objects
+    forEachChildSchema(obj, cleanupRequired);
   }
 
   cleanupRequired(cleaned);
@@ -487,19 +505,8 @@ export function cleanJSONSchemaForAntigravity(schema) {
       }
     }
 
-    // Recurse into schema nodes only (property name-map keys are user
-    // parameter names — issue #2884)
-    if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
-      for (const propValue of Object.values(obj.properties)) {
-        addPlaceholders(propValue);
-      }
-    }
-    for (const [key, value] of Object.entries(obj)) {
-      if (key === "properties") continue;
-      if (value && typeof value === "object") {
-        addPlaceholders(value);
-      }
-    }
+    // Recurse into nested objects
+    forEachChildSchema(obj, addPlaceholders);
   }
 
   addPlaceholders(cleaned);
