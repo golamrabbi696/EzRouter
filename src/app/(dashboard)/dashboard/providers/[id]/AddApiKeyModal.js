@@ -9,8 +9,26 @@ import { buildProviderSpecificData as buildSpecificData } from "@/shared/utils/p
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
+const NONE_PROXY_POOL_VALUE = "__none__";
+
+const createInitialFormData = () => ({
+  name: "",
+  apiKey: "",
+  defaultModel: "",
+  priority: 1,
+  proxyPoolId: NONE_PROXY_POOL_VALUE,
+  baseUrl: "",
+  ollamaHostUrl: "",
+});
+
+const createInitialAzureData = () => ({
+  azureEndpoint: "",
+  apiVersion: "2024-10-01-preview",
+  deployment: "",
+  organization: "",
+});
+
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, providerNode, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
-  const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
@@ -28,20 +46,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
-  const [formData, setFormData] = useState({
-    name: "",
-    apiKey: "",
-    defaultModel: "",
-    priority: 1,
-    proxyPoolId: NONE_PROXY_POOL_VALUE,
-    baseUrl: "",
-  });
-  const [azureData, setAzureData] = useState({
-    azureEndpoint: "",
-    apiVersion: "2024-10-01-preview",
-    deployment: "",
-    organization: "",
-  });
+  const [formData, setFormData] = useState(createInitialFormData);
+  const [azureData, setAzureData] = useState(createInitialAzureData);
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [vertexData, setVertexData] = useState({ location: "global", reasoningEffort: "high" });
   const [region, setRegion] = useState(defaultRegion);
@@ -57,6 +63,20 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
+
+  // Reset state and close
+  const handleClose = () => {
+    setFormData(createInitialFormData());
+    setAzureData(createInitialAzureData());
+    setCloudflareData({ accountId: "" });
+    setVertexData({ location: "global", reasoningEffort: "high" });
+    setRegion(defaultRegion);
+    setValidationResult(null);
+    setMode("single");
+    setBulkText("");
+    setBulkResult(null);
+    onClose();
+  };
 
   const buildProviderSpecificData = () => {
     if (isCompatible && providerNode) {
@@ -147,7 +167,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         setValidating(false);
       }
 
-      await onSave({
+      const saved = await onSave({
         name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
         apiKey: formData.apiKey,
         defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
@@ -156,6 +176,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         testStatus: isValid ? "active" : "unknown",
         providerSpecificData: buildProviderSpecificData()
       });
+      if (saved) handleClose();
     } finally {
       setSaving(false);
     }
@@ -216,7 +237,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   if (!provider) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         {/* Mode switcher */}
         <div className="flex gap-2">
@@ -249,7 +270,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               <Button onClick={handleBulkSubmit} fullWidth disabled={saving || !bulkText.trim()}>
                 {saving ? "Adding..." : "Add All Keys"}
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+              <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
             </div>
           </div>
         )}
@@ -460,7 +481,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
+          <Button onClick={handleClose} variant="ghost" fullWidth>
             Cancel
           </Button>
         </div>
