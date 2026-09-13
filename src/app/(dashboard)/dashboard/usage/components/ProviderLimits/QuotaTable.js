@@ -139,7 +139,10 @@ export default function QuotaTable({
           <tbody>
             {currentPageRows.map((quota) => {
               const isUnlimited = quota.unlimited === true;
-              const colors = getColorClasses(quota.remaining);
+              const isCreditBalance = quota.isCreditBalance === true;
+              const colors = isCreditBalance
+                ? { text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500", bgLight: "bg-blue-500/10", emoji: "💰" }
+                : getColorClasses(quota.remaining);
               const countdown = formatResetTime(quota.resetAt);
               const resetDisplay = formatResetTimeDisplay(quota.resetAt);
               // recurring defaults true: a missing flag means the quota
@@ -184,18 +187,24 @@ export default function QuotaTable({
 
                   <td className={`${cellPad} w-[45%]`}>
                     <div className={compact ? "space-y-1" : "space-y-1.5"}>
-                      <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
-                        quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
-                      }`}>
-                        <div
-                          className={`h-full transition-all duration-300 ${colors.bg}`}
-                          style={{ width: `${Math.min(quota.remaining, 100)}%` }}
-                        />
-                      </div>
+                      {!isUnlimited && !isCreditBalance && (
+                        <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
+                          quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
+                        }`}>
+                          <div
+                            className={`h-full transition-all duration-300 ${colors.bg}`}
+                            style={{ width: `${Math.min(quota.remaining, 100)}%` }}
+                          />
+                        </div>
+                      )}
 
                       <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
                         <span className="text-text-muted">
-                          {quota.percentageOnly ? (
+                          {isUnlimited ? (
+                            `${quota.used.toLocaleString()} used · Unlimited`
+                          ) : isCreditBalance ? (
+                            `Credit: ${quota.total.toFixed(2)} ${quota.name.split(" ")[2] || ""}`
+                          ) : quota.percentageOnly ? (
                             <span title={quota.quotaNote || "The provider does not expose an absolute request count."}>
                               count unavailable
                             </span>
@@ -203,8 +212,8 @@ export default function QuotaTable({
                             <>{quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}</>
                           )}
                         </span>
-                        <span className={`font-medium ${colors.text}`}>
-                          {quota.remaining}%
+                        <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text}`}>
+                          {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
                         </span>
                       </div>
                     </div>
