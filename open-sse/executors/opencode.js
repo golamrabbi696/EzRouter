@@ -14,7 +14,6 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-<<<<<<< HEAD
 // Machine's real public IPv4, discovered once (direct https — intentionally
 // NOT the patched proxy-aware fetch, so we learn the home/public egress even
 // while the outbound proxy is enabled).
