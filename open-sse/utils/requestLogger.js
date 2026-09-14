@@ -69,28 +69,31 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-const SENSITIVE_HEADER_NAMES = new Set([
-  "authorization",
-  "proxy-authorization",
-  "cookie",
-  "set-cookie",
-  "x-api-key",
-  "api-key",
-  "x-goog-api-key",
-]);
+// Substring match, so `x-goog-api-key`, `proxy-authorization` and a provider's own
+// `*-token` header are all covered without listing each one.
+const SENSITIVE_HEADER_KEYS = ["authorization", "api-key", "cookie", "token", "secret"];
 
-// Normalize and mask sensitive data without mutating the input headers.
+// Mask sensitive data in headers.
+// Enough of the value survives to tell two credentials apart, which is what the log
+// is for. A SHORT value is masked whole: anything 20 characters or under becomes '***',
+// and longer values preserve prefix and suffix.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
   const entries = typeof headers.entries === "function" ? headers.entries() : Object.entries(headers);
+  const masked = {};
 
-  return Object.fromEntries(Array.from(entries, ([name, value]) => {
-    const lowerName = name.toLowerCase();
-    const sensitive = SENSITIVE_HEADER_NAMES.has(lowerName)
-      || lowerName.includes("token")
-      || lowerName.includes("secret");
-    return [name, sensitive ? "[REDACTED]" : value];
-  }));
+  for (const [name, value] of entries) {
+    const lowerKey = name.toLowerCase();
+    if (SENSITIVE_HEADER_KEYS.some(sk => lowerKey.includes(sk))) {
+      if (value === undefined || value === null) continue;
+      const text = String(value);
+      masked[name] = text.length > 20 ? text.slice(0, 10) + "..." + text.slice(-5) : "***";
+    } else {
+      masked[name] = value;
+    }
+  }
+
+  return masked;
 }
 
 // No-op logger when logging is disabled
