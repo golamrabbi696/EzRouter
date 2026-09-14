@@ -413,8 +413,12 @@ export const PATTERN_CAPABILITIES = [
 
   // ── DeepSeek (thinking.enabled + reasoning_effort; r1 = thinking-only) ─
   // DeepSeek Vision pattern on top for deepseek-v4-flash-vision-exp overriding normal V4
-  { pattern: "*deepseek-v4*vision*", caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
-  { pattern: "*deepseek-v4*",   caps: { reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
+  { pattern: "*deepseek-v4*vision*", caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 384000 } },
+  // v4.1 has real image input (probed live on Alibaba MaaS: correct color
+  // read from a PNG). v4-pro / v4-flash-0731 accept image blocks but ignore
+  // them (answered "Unknown"), so vision stays scoped to v4.1.
+  { pattern: "*deepseek-v4.1*", caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*deepseek-v4*",   caps: { reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 384000 } },
   { pattern: "*reasoner*",      caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
   { pattern: "*deepseek-r*",    caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
   { pattern: "*deepseek-chat*", caps: { contextWindow: 128000 } },
