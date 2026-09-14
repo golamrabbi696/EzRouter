@@ -290,6 +290,22 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
               )}
             </div>
           )}
+          {fastMode && (
+            <Tooltip text="Always overrides the client's service tier for this account. On sends service_tier: priority; off removes the client's service tier. Off by default.">
+              <button
+                type="button"
+                role="switch"
+                aria-label="Codex fast mode"
+                aria-checked={fastMode.on}
+                disabled={updatingFastMode}
+                onClick={handleToggleFastMode}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 ${fastMode.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">{updatingFastMode ? "progress_activity" : fastMode.on ? "toggle_on" : "toggle_off"}</span>
+                <span className="text-[10px] leading-tight">Fast mode</span>
+              </button>
+            </Tooltip>
+          )}
           {autoPing && (
             <Tooltip text={autoPingTooltip}>
               <button

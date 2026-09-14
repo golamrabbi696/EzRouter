@@ -1259,6 +1259,26 @@ export default function ProviderLimits() {
                             <span className="material-symbols-outlined text-[17px]">schedule</span>
                           </button>
                         </Tooltip>
+                        <Tooltip text={`Fast mode is ${conn.providerSpecificData?.codexFastMode === true ? "on" : "off"}. Overrides this account's requests with service_tier: priority.`}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCodexFastMode(conn, conn.providerSpecificData?.codexFastMode !== true)}
+                            disabled={isLoading || rowBusy}
+                            role="switch"
+                            aria-label="Toggle Codex fast mode"
+                            aria-checked={conn.providerSpecificData?.codexFastMode === true}
+                            className={`flex h-8 min-w-14 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              conn.providerSpecificData?.codexFastMode === true
+                                ? "border-primary/30 bg-primary/10 text-primary"
+                                : "border-black/10 text-text-muted hover:bg-black/5 hover:text-primary dark:border-white/10 dark:hover:bg-white/5"
+                            }`}
+                          >
+                            <span className={`material-symbols-outlined text-[16px] ${isUpdatingFastMode ? "animate-spin" : ""}`}>
+                              {isUpdatingFastMode ? "progress_activity" : "speed"}
+                            </span>
+                            <span>Fast</span>
+                          </button>
+                        </Tooltip>
                       </>
                     )}
                     {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
