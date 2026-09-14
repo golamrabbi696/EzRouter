@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
-import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
+import { calculateCostFromTokens, MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 import { extractUsageFromResponse } from "../../open-sse/handlers/chatCore/requestDetail.js";
 
@@ -170,6 +170,26 @@ describe("provider-reported exact cost extraction", () => {
     [{ usage: { prompt_tokens: 1, completion_tokens: 2, cost_in_usd_ticks: 2_500_000_000 } }, "cost_in_usd_ticks", 2_500_000_000],
   ])("keeps exact total from non-streaming usage", (response, field, expected) => {
     expect(extractUsageFromResponse(response)[field]).toBe(expected);
+  });
+
+  it("includes GPT-5.6 Luna long-context pricing", () => {
+    expect(MODEL_PRICING["gpt-5.6-luna"].long_context).toMatchObject({
+      threshold: 272000,
+      input: 0.4,
+      output: 1.8,
+      cached: 0.04,
+      cache_creation: 0.5,
+    });
+  });
+
+  it("includes Grok 4.6 long-context pricing", () => {
+    expect(MODEL_PRICING["grok-4.6"].long_context).toMatchObject({
+      threshold: 200000,
+      inclusive: true,
+      input: 4,
+      output: 12,
+      cached: 1,
+    });
   });
 });
 
