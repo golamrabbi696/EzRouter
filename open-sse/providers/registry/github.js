@@ -22,6 +22,7 @@ export default {
     countTokensUrl: "https://api.githubcopilot.com/v1/messages/count_tokens",
     countTokensPreflightRatio: 0.5,
     countTokensTimeoutMs: 10000,
+    autoUrl: "https://api.githubcopilot.com/auto",
     headers: {
       "copilot-integration-id": "vscode-chat",
       "editor-version": "vscode/1.110.0",
@@ -39,12 +40,16 @@ export default {
       chatVersion: "0.38.0",
       userAgent: "GitHubCopilotChat/0.38.0",
       apiVersion: "2025-04-01",
+      autoApiVersion: "2026-08-01",
+      autoTimeoutMs: 5000,
+      autoSessionRefreshWindowMs: 300000,
     },
     usage: {
       url: "https://api.github.com/copilot_internal/user",
     },
   },
   models: [
+    { id: "auto", name: "Auto" },
     { id: "gpt-5.2", name: "GPT-5.2" },
     { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
     { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },

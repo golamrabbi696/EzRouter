@@ -409,9 +409,11 @@ export async function handleNonStreamingResponse({
   pxpipe = null,
   onRequestSuccess = null,
   pricingMultiplier = 1,
+  statisticsModel = null,
 }) {
   const provider = modelInfo?.provider || pProp;
   const model = modelInfo?.model || mProp;
+  const recordedModel = statisticsModel || model;
   const effectiveConnId = credentials?.connectionId || connectionId;
   const effectiveApiKey = credentials?.apiKey || apiKey;
   const requestStartTime = Date.now();
@@ -514,7 +516,7 @@ export async function handleNonStreamingResponse({
 
     const usage = extractUsageFromResponse(responseBody);
     appendLog?.({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
+    saveUsageStats({ provider, model: recordedModel, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
     const translatedResponse = needsTranslation(targetFormat, sourceFormat)
@@ -582,7 +584,7 @@ export async function handleNonStreamingResponse({
     const totalLatency = Date.now() - requestStartTime;
     saveRequestDetail(buildRequestDetail({
       provider,
-      model,
+      model: recordedModel,
       connectionId: effectiveConnId,
       latency: { ttft: totalLatency, total: totalLatency },
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },

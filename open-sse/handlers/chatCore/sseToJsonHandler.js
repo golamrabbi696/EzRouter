@@ -285,7 +285,8 @@ export function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log, pricingMultiplier }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, statisticsModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log, pricingMultiplier }) {
+  const recordedModel = statisticsModel || model;
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -293,7 +294,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   trackDone();
 
   const ctx = {
-    provider, model, connectionId,
+    provider, model: recordedModel, connectionId,
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null
   };
@@ -329,7 +330,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       const usage = jsonResponse.usage || {};
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
+      saveUsageStats({ provider, model: recordedModel, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
       // Same cache-inclusive total for the recorded detail, so the DB and the
@@ -453,7 +454,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     const usage = parsed.usage || {};
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
+    saveUsageStats({ provider, model: recordedModel, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
     const totalLatency = Date.now() - requestStartTime;
