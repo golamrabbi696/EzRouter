@@ -29,6 +29,7 @@ async function resolveGetProvider(request, connectionId, requestId) {
     const conn = await getProviderConnectionById(connectionId).catch(() => null);
     if (conn?.provider && (getVideoConfig(conn.provider) || isCustomVideoProvider(conn.provider))) return conn.provider;
   }
+  const queried = new URL(request.url).searchParams.get("provider");
   if (queried && (getVideoConfig(queried) || isCustomVideoProvider(queried))) return queried;
   // Self-identifying job ids (e.g. Vertex operation paths) resolve without a pin.
   const byJobId = findProviderByJobId(requestId);
