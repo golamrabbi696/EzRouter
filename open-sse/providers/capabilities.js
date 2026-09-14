@@ -573,4 +573,3 @@ export function withDeclaredCapabilities(base, declared) {
 
   return { ...DEFAULT_CAPABILITIES, ...(base ?? {}), ...overlay };
 }
-}
