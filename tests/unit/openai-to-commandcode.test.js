@@ -210,7 +210,10 @@ describe("openaiToCommandCodeRequest — tools schema conversion", () => {
     }, true);
     const blocks = out.params.messages[0].content;
     expect(blocks).toContainEqual({ type: "text", text: "look" });
-    expect(blocks).toContainEqual({ type: "image", image: "data:image/png;base64,BBBB" });
+    expect(blocks).toContainEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "BBBB" },
+    });
   });
 
   it("does not include tools field when input has none", () => {
