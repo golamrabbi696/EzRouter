@@ -596,7 +596,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs, clientStatusForUpstream(statusCode, message));
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onEmptyStream, pxpipe: pxpipeSummary, reqTag, log, targetFormat: providerResponseFormat || targetFormat };
+  const pricingMultiplier = credentials?.providerSpecificData?.fastMode === true
+    ? executor.config.fastMode?.pricingMultiplier || 1
+    : 1;
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onEmptyStream, pxpipe: pxpipeSummary, reqTag, log, targetFormat: providerResponseFormat || targetFormat, pricingMultiplier };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

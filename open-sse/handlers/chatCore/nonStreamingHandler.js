@@ -408,6 +408,7 @@ export async function handleNonStreamingResponse({
   translatedBody = null,
   pxpipe = null,
   onRequestSuccess = null,
+  pricingMultiplier = 1,
 }) {
   const provider = modelInfo?.provider || pProp;
   const model = modelInfo?.model || mProp;
@@ -513,7 +514,7 @@ export async function handleNonStreamingResponse({
 
     const usage = extractUsageFromResponse(responseBody);
     appendLog?.({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+    saveUsageStats({ provider, model, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
     const translatedResponse = needsTranslation(targetFormat, sourceFormat)

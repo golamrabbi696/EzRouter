@@ -5,6 +5,7 @@ import { buildErrorBody } from "../../open-sse/utils/error.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { handleComboChat } from "../../open-sse/services/combo.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { PROVIDERS } from "../../open-sse/config/providers.js";
 
 function streamFromText(text) {
   const encoder = new TextEncoder();
@@ -45,7 +46,7 @@ describe("Codex fast tier and capacity handling", () => {
       input: "hi",
       reasoning_effort: "max",
       service_tier: "fast",
-    }, true, {});
+    }, true, { providerSpecificData: { fastMode: true } });
 
     expect(body.service_tier).toBe("priority");
     expect(body.reasoning.effort).toBe("xhigh");
@@ -75,6 +76,13 @@ describe("Codex fast tier and capacity handling", () => {
 
     expect(body.model).toBe("gpt-5.6-sol-max");
     expect(body.reasoning.effort).toBe("xhigh");
+  });
+
+  it("exposes generic fast-mode request and pricing metadata", () => {
+    expect(PROVIDERS.codex.fastMode).toEqual({
+      request: { field: "service_tier", value: "priority" },
+      pricingMultiplier: 2,
+    });
   });
 
   it("uses ChatGPT workspace header fallback", () => {

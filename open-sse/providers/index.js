@@ -36,6 +36,7 @@ for (const entry of REGISTRY) {
   if (entry.transport) {
     PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth, entry.protocolProfile);
     if (entry.transports) PROVIDERS[entry.id].transports = entry.transports;
+    if (entry.fastMode) PROVIDERS[entry.id].fastMode = entry.fastMode;
   }
   if (entry.models !== undefined) PROVIDER_MODELS[entry.alias || entry.id] = entry.models.map(normalizeModel);
   if (entry.oauth) {

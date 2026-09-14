@@ -5,6 +5,7 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -107,6 +108,14 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    if (providerSpecificData?.fastMode !== undefined) {
+      if (!AI_PROVIDERS[existing.provider]?.fastMode) {
+        return NextResponse.json({ error: "Fast mode is not supported by this provider." }, { status: 400 });
+      }
+      if (typeof providerSpecificData.fastMode !== "boolean") {
+        return NextResponse.json({ error: "Fast mode must be a boolean." }, { status: 400 });
+      }
+    }
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
