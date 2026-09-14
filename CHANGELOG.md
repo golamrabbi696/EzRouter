@@ -1,16 +1,49 @@
-# v0.6.7 (2026-09-11)
+# v0.6.7 (2026-09-14)
 
-## Upstream Synchronization & Core Enhancements (decolua/9router #3803 - #3954)
-- **Codex Image Stream Error Handling**: Preserved concrete upstream stream errors (`response.failed`, `status: failed/incomplete`, text output refusals) instead of generic entitlement failures (`#3853`). Maintained full support and input validation for multi-reference images, compression, and moderation options. Added GPT Image 2.5, Flare, and Sunburst image model support (`#3943`).
-- **Codex CLI System Prompt Hoisting**: Hoisted client system prompt into instructions instead of stacking Codex defaults (`#3954`). Aligned single-sourced `CODEX_CLI_VERSION` across registry, image generation, and discovery headers (`0.154.0`). Added Unicode-property tool schema pattern stripping (`#3938`).
-- **Kiro MITM & Terminal Frames**: Resolved Kiro duplicate chat requests via native terminal frames and lifecycle deduplication guard (`#3919`), while supporting dual text/content payload formats. Removed top-level `systemPrompt` on wire payloads to prevent HTTP 400 invalid request errors (`#3949`).
-- **Network & Socket Keep-Alive**: Capped keep-alive timeout at 30s with safe replay retry on dead sockets to prevent stale connections from hanging provider requests until restart (`#3941`).
-- **Stream Lifecycle & Client Hangup**: Accurately records turn usage and cleans up stream state when client hangs up mid-stream (`#3907`).
-- **Claude & Translator Improvements**: Re-checked prefill invariant after each dropped turn to avoid empty turns (`#3936`). Forwarded Advisor server-tool beta flag and normalized nested model IDs (`#3931`). Capped re-anchored `cache_control` at the upstream 4-marker budget and maintained single-object content turns (`#3948`). Scoped Claude tool type defaulting to gateways that need it (`#3926`). Preserved Anthropic-only tool types for DeepSeek forwarding (`#3947`).
-- **Dashboard & UI**: Model selector now hides inactive and hidden providers (`#3934`), and prioritizes enabled providers ahead of unused ones (`#3935`). Non-blocking tunnel health check on endpoint page (`#3852`). Console-log auto-scroll fix stops dragging reader back to the newest line when reading older logs (`#3872`). Combo error reporting reports individual model status with that same model's message (`#3873`).
-- **MITM Performance**: Cached derived sudo-password encryption key to speed up MITM proxy operations (`#3900`).
-- **Docker & Environment**: Added `tzdata` and support for `TZ` environment variable in Dockerfile (`#3908`), while maintaining strict default port `20126`.
-- **Providers & Models**: Added DeepSeek V4.1 Flash for Codebuddy-CN (`#3940`) and OpenCode Go (`#3942`). Added Video Generation for OpenRouter and Vertex AI (Veo) with URL path escaping security guard (`#3912`, `da6aa90128`). Added ClinePass token refresh and unwrapped Cline/Airforce envelopes (`#3923`, `#3950`). Added Xiaomi MiMo dual auth support (`#3921`, `73cb89143c`).
+## Upstream Synchronization & Core Enhancements (decolua/9router #3803 - #4062)
+- **Security & Logging Hardening**:
+  - Masked sensitive credential headers in request logs (`#4022`).
+  - Guaranteed MITM hosts cleanup on process shutdown/crash and guarded tool DNS restore (`#4014`).
+- **OAuth & Account Reliability**:
+  - Parsed numeric epoch `expiresAt` timestamps so imported connections reliably refresh (`#3997`).
+  - Prevented account cooldowns for request-scoped 4xx client errors (`#4059`).
+  - Surfaced actionable failure reasons when connection testing fails instead of a generic error (`#4030`).
+  - Reset credential form state on modal close so reopened dialogs start empty (`#4027`).
+- **Streaming & Translation Accuracy**:
+  - Stopped blocking Ollama upstream NDJSON stream as non-SSE body (`#4002`).
+  - Skipped RTK compression/ponytail injection on media-carrying requests (`#4056`).
+  - Stripped `output_config.format` for Claude passthrough targets (`#4050`).
+  - Preserved Responses tool-output images as native image blocks (`#4058`).
+  - Surfaced prompt-cache reads to chat/completions clients and stopped double-counting in usage logs (`#3984`).
+- **Antigravity & Gemini**:
+  - Enforced `maxOutputTokens > thinkingBudget` and properly injected `thinkingConfig` (`#3981`).
+  - Resolved schema map vs schema recursion bug (`#3999`).
+  - Preserved multiple system messages in Gemini `systemInstruction` (`#3973`).
+  - Supported `IMAGE` and `DOCUMENT` blocks for Antigravity Claude envelope (`#3968`).
+- **Provider Capabilities & Models**:
+  - Enabled vision capability on DeepSeek V4.1 (`#4053`).
+  - Declared `thinkingCanDisable: false` on OpenAI reasoning models to clamp to minimal reasoning instead of unsupported `"none"` (`#4048`).
+  - Merged member capabilities, context window, and max completion tokens into combo `/v1/models` entries, flattening nested combos (`#4034`).
+  - Honored operator-declared custom model capabilities over default patterns (`#3974`).
+  - Forwarded CommandCode images instead of `[image omitted]` and formatted credit amounts with dot decimal (`#4004`, `#4025`).
+  - Routed OpenCode Go Muse Spark and Grok models to Responses endpoint with reasoning cleanups and free tool choice normalization (`#3975`, `#4061`, `#4062`).
+  - Added Cline free-tier models and API-key auth support (`#3967`).
+  - Aligned Vertex GA Veo model IDs and resolved polling from self-identifying job IDs (`#3964`, `#3965`).
+  - Improved DeepSeek credit balance display with distinct styling and currency badge (`#3955`, `#4021`).
+  - Configured and validated Google PSE search engine IDs (`#4047`).
+- **CLI & Dashboard UI**:
+  - Persisted model IDs when creating TUI combos (`#4046`).
+  - Added modal fullscreen toggle and persisted quota tracker filter preferences (`#4057`).
+  - Detected Python 3.14 installs on Windows for Headroom extras status (`#3978`).
+  - Integrated Persian (fa) translations and translated session affinity and scheduling UI across all 34 locales (`#4028`, `#4055`).
+- **Prior Upstream Updates (#3803 - #3954)**:
+  - Codex Image Stream error handling and model additions (`#3853`, `#3943`).
+  - Codex CLI system prompt hoisting and Unicode schema pattern stripping (`#3938`, `#3954`).
+  - Kiro MITM terminal frames and payload deduplication (`#3919`, `#3949`).
+  - Network socket keep-alive 30s cap with safe replay (`#3941`).
+  - Stream lifecycle turn usage recording on client hangup (`#3907`).
+  - Claude re-anchored cache control cap and tool type scoping (`#3926`, `#3936`, `#3948`).
+  - DeepSeek V4.1 Flash, OpenRouter/Vertex Video Gen with URL escaping guard (`#3912`, `#3940`, `#3942`).
 
 # v0.6.6 (2026-09-07)
 
