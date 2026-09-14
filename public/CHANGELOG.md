@@ -1,3 +1,42 @@
+# v0.6.8 (2026-09-14)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #3955 - #4062)
+- **Security & Logging Hardening**:
+  - Masked sensitive credential headers in request logs (`#4022`).
+  - Guaranteed MITM hosts cleanup on process shutdown/crash and guarded tool DNS restore (`#4014`).
+- **OAuth & Account Reliability**:
+  - Parsed numeric epoch `expiresAt` timestamps so imported connections reliably refresh (`#3997`).
+  - Prevented account cooldowns for request-scoped 4xx client errors (`#4059`).
+  - Surfaced actionable failure reasons when connection testing fails instead of a generic error (`#4030`).
+  - Reset credential form state on modal close so reopened dialogs start empty (`#4027`).
+- **Streaming & Translation Accuracy**:
+  - Stopped blocking Ollama upstream NDJSON stream as non-SSE body (`#4002`).
+  - Skipped RTK compression/ponytail injection on media-carrying requests (`#4056`).
+  - Stripped `output_config.format` for Claude passthrough targets (`#4050`).
+  - Preserved Responses tool-output images as native image blocks (`#4058`).
+  - Surfaced prompt-cache reads to chat/completions clients and stopped double-counting in usage logs (`#3984`).
+- **Antigravity & Gemini**:
+  - Enforced `maxOutputTokens > thinkingBudget` and properly injected `thinkingConfig` (`#3981`).
+  - Resolved schema map vs schema recursion bug (`#3999`).
+  - Preserved multiple system messages in Gemini `systemInstruction` (`#3973`).
+  - Supported `IMAGE` and `DOCUMENT` blocks for Antigravity Claude envelope (`#3968`).
+- **Provider Capabilities & Models**:
+  - Enabled vision capability on DeepSeek V4.1 (`#4053`).
+  - Declared `thinkingCanDisable: false` on OpenAI reasoning models to clamp to minimal reasoning instead of unsupported `"none"` (`#4048`).
+  - Merged member capabilities, context window, and max completion tokens into combo `/v1/models` entries, flattening nested combos (`#4034`).
+  - Honored operator-declared custom model capabilities over default patterns (`#3974`).
+  - Forwarded CommandCode images instead of `[image omitted]` and formatted credit amounts with dot decimal (`#4004`, `#4025`).
+  - Routed OpenCode Go Muse Spark and Grok models to Responses endpoint with reasoning cleanups and free tool choice normalization (`#3975`, `#4061`, `#4062`).
+  - Added Cline free-tier models and API-key auth support (`#3967`).
+  - Aligned Vertex GA Veo model IDs and resolved polling from self-identifying job IDs (`#3964`, `#3965`).
+  - Improved DeepSeek credit balance display with distinct styling and currency badge (`#3955`, `#4021`).
+  - Configured and validated Google PSE search engine IDs (`#4047`).
+- **CLI & Dashboard UI**:
+  - Persisted model IDs when creating TUI combos (`#4046`).
+  - Added modal fullscreen toggle and persisted quota tracker filter preferences (`#4057`).
+  - Detected Python 3.14 installs on Windows for Headroom extras status (`#3978`).
+  - Integrated Persian (fa) translations and translated session affinity and scheduling UI across all 34 locales (`#4028`, `#4055`).
+
 # v0.6.7 (2026-09-11)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #3803 - #3954)
