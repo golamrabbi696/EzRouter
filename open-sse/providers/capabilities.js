@@ -200,6 +200,17 @@ const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: tr
 export const PROVIDER_CAPABILITIES = {
   "qoder": QODER_PROVIDER_MODEL_CAPS,
   "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
+
+  // DeepSeek's own API (api.deepseek.com). Flash reads images — see
+  // https://api-docs.deepseek.com/guides/vision — and the retired
+  // `deepseek-v4-flash` / `-vision-exp` ids are served by the same V4.1-Flash
+  // model, so they share its 1M window and 384K output ceiling. v4-pro stays
+  // text-only on purpose (DeepSeek lists its Vision support as "not supported").
+  "deepseek": {
+    "deepseek-flash":               { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash":            { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
