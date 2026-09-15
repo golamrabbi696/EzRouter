@@ -1,7 +1,7 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
+import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, enrichUsageCost, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
@@ -228,13 +228,21 @@ export function createSSEStream(options = {}) {
                 // Same split the non-estimated branch below already makes: the
                 // client copy carries the buffer, `usage` keeps the real number.
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI, { buffer: false });
-                parsed.usage = filterUsageForFormat(addBufferToUsage(estimated), FORMATS.OPENAI);
+                parsed.usage = enrichUsageCost(
+                  filterUsageForFormat(addBufferToUsage(estimated), FORMATS.OPENAI),
+                  provider,
+                  model
+                );
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
-                parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
+                parsed.usage = enrichUsageCost(
+                  filterUsageForFormat(buffered, FORMATS.OPENAI),
+                  provider,
+                  model
+                );
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (idFixed || fieldsInjected) {
@@ -393,12 +401,20 @@ export function createSSEStream(options = {}) {
               // state.usage is what gets logged (see the comment on the branch
               // below); only the emitted item carries the buffer.
               const estimated = estimateUsage(body, totalContentLength, sourceFormat, { buffer: false });
-              item.usage = filterUsageForFormat(addBufferToUsage(estimated), sourceFormat);
+              item.usage = enrichUsageCost(
+                filterUsageForFormat(addBufferToUsage(estimated), sourceFormat),
+                provider,
+                model
+              );
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
-              item.usage = filterUsageForFormat(buffered, sourceFormat);
+              item.usage = enrichUsageCost(
+                filterUsageForFormat(buffered, sourceFormat),
+                provider,
+                model
+              );
             }
 
             const output = formatSSE(item, sourceFormat);

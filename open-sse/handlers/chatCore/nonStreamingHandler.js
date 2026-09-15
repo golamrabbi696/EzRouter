@@ -2,7 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat, enrichUsageCost } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { canonicalEchoModel } from "../../services/model.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
@@ -558,7 +558,11 @@ export async function handleNonStreamingResponse({
     }
 
     if (translatedResponse?.usage) {
-      translatedResponse.usage = filterUsageForFormat(translatedResponse.usage, sourceFormat);
+      translatedResponse.usage = enrichUsageCost(
+        filterUsageForFormat(translatedResponse.usage, sourceFormat),
+        provider,
+        model
+      );
     }
 
     // Strip reasoning_content only when content is non-empty.
