@@ -259,10 +259,12 @@ function mergeComboCapabilities(memberStrings, comboByName, seen = new Set()) {
 
   const merged = { ...DEFAULT_CAPABILITIES };
   let resolvedAny = false;
-  let seenFinite = false;
+  let seenContext = false;
+  let seenOutput = false;
 
-  for (const member of memberStrings) {
-    if (typeof member !== "string") continue;
+  for (const raw of memberStrings) {
+    const member = typeof raw === "string" ? raw.trim() : String(raw?.model || raw?.id || "").trim();
+    if (!member) continue;
 
     let caps;
     if (member.includes("/")) {
@@ -282,14 +284,15 @@ function mergeComboCapabilities(memberStrings, comboByName, seen = new Set()) {
     }
     if (merged.thinkingFormat === null && caps.thinkingFormat != null) merged.thinkingFormat = caps.thinkingFormat;
     if (merged.thinkingRange === null && caps.thinkingRange != null) merged.thinkingRange = caps.thinkingRange;
-    if (Number.isFinite(caps.contextWindow)) {
-      merged.contextWindow = seenFinite ? Math.min(merged.contextWindow, caps.contextWindow) : caps.contextWindow;
+    if (Number.isFinite(caps.contextWindow) && caps.contextWindow > 0) {
+      merged.contextWindow = seenContext ? Math.min(merged.contextWindow, caps.contextWindow) : caps.contextWindow;
+      seenContext = true;
     }
-    if (Number.isFinite(caps.maxOutput)) {
-      merged.maxOutput = seenFinite ? Math.min(merged.maxOutput, caps.maxOutput) : caps.maxOutput;
+    if (Number.isFinite(caps.maxOutput) && caps.maxOutput > 0) {
+      merged.maxOutput = seenOutput ? Math.min(merged.maxOutput, caps.maxOutput) : caps.maxOutput;
+      seenOutput = true;
     }
     resolvedAny = true;
-    seenFinite = true;
   }
 
   return resolvedAny ? merged : null;
