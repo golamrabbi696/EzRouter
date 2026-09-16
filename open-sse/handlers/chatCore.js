@@ -111,6 +111,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
+  // Per-request opt-out: client can bypass all token savers via header
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
+  // Cursor's translator rewrites tool_result into user text, so RTK must run on
+  // the source body before translation. Every other pair translates the tool
+  // shapes 1:1 — keep the post-translate pass there so those providers are
+  // untouched (and a retry never re-compresses an already-compressed body).
+  const preTranslateRtk = provider === "cursor"
+    ? compressMessages(body, tokenSaverEnabled && rtkEnabled)
+    : null;
+  const preTranslateRtkLine = formatRtkLog(preTranslateRtk);
+  if (preTranslateRtkLine) console.log(preTranslateRtkLine);
+
   const isCompactRequest = body._compact === true;
   const clientRequestedStreaming = !isCompactRequest && requestedStreaming(body, sourceFormat);
   const providerRequiresStreaming = !isCompactRequest && PROVIDERS[provider]?.forceStream === true;
@@ -334,9 +347,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
   }
 
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
-
   // On a translation-cache hit, the body already has all savers applied — skip
   // re-running them to avoid double-injecting caveman/ponytail system prompts.
   const fromCache = cacheHit && !!translatedBody;
@@ -349,10 +359,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const xf = [];
 
   if (!fromCache) {
-    // RTK: compress tool_result content
-    const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
+    // RTK: compress tool_result content. Skipped when already done pre-translate.
+    const rtkStats = preTranslateRtk || compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
     rtkLine = formatRtkLog(rtkStats);
     if (rtkLine) console.log(rtkLine);
+    if (rtkStats?.hits?.length) xf.push(`RTK:${rtkStats.hits.length}`);
 
     // Tool history pruner: cap tool turns / truncate oversized results (fail-open, in-place)
     const prunerStats = tokenSaverEnabled ? pruneToolHistory(translatedBody, toolHistoryPruning) : null;
