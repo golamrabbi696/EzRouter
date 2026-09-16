@@ -6,6 +6,7 @@
 // - trae.js: disabled because Trae SOLO does not support tool calling
 // - windsurf.js: disabled because its gRPC stream does not handle ToolCallChunk
 
+import providerAinetcafe from "./ainetcafe.js";
 import providerAlicodeIntl from "./alicode-intl.js";
 import providerAlicode from "./alicode.js";
 import providerAlimsIntl from "./alims-intl.js";
@@ -138,6 +139,7 @@ import providerYoucom from "./youcom.js";
 import providerZed from "./zed.js";
 
 export default [
+  providerAinetcafe,
   providerAlicodeIntl,
   providerAlicode,
   providerAlimsIntl,
