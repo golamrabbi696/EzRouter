@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { isMuseSparkModel, isOpencodeResponsesModel } from "../providers/models/helpers.js";
+import { modelTargetFormat } from "../providers/models/schema.js";
+import { getProviderModels } from "../config/providerModels.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -45,17 +46,11 @@ function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
 }
 
-// Models served by /zen/go/v1/responses; other models stay on /chat/completions or /messages.
-const RESPONSES_MODELS = new Set([
-  "grok-4.6",
-  "gpt-5.6-luna",
-  "muse-spark-1.2-contributor",
-  "muse-spark-1.3-contributor",
-]);
-
+// Responses-only per the provider registry (grok-4.6, gpt-5.6-luna, muse-spark, …).
+// Reading the registry keeps this in sync with config — never hardcode model ids here.
 function isResponsesModel(model) {
-  const base = baseModelId(model);
-  return RESPONSES_MODELS.has(base) || isOpencodeResponsesModel(base);
+  const entry = getProviderModels("opencode-go").find((m) => m.id === baseModelId(model));
+  return modelTargetFormat(entry) === "openai-responses";
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and
