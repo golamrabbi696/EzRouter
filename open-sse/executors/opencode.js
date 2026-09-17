@@ -8,15 +8,14 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyOcEgress } from "../utils/ocEgress.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
-<<<<<<< HEAD
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
+import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 
-<<<<<<< HEAD
 // Machine's real public IPv4, discovered once (direct https — intentionally
 // NOT the patched proxy-aware fetch, so we learn the home/public egress even
 // while the outbound proxy is enabled).
@@ -61,10 +60,7 @@ function isPrivateIp(ip) {
   return false;
 }
 
-const OPENCODE_UA = "opencode/latest/1.18.18/cli";
 const MAX_TOOL_NAME_LEN = 128;
-import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
-=======
 const OPENCODE_UA = "opencode/1.18.31";
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
@@ -81,8 +77,6 @@ function hasValidOpencodeVersion(ua) {
   const minor = parseInt(m[2], 10);
   return major > 1 || (major === 1 && minor >= 17);
 }
-
->>>>>>> 6091ff597e (fix(opencode): resolve 403 FreeTierError with canonical session format and valid User-Agent)
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
   "muse-spark-1.2-contributor-free",

@@ -368,8 +368,22 @@ export async function POST(request, { params }) {
       });
     }
 
+    if (action === "register-session") {
+      // Register proxy session out of URL query (state) + body (codeVerifier).
+      // Zed's codeVerifier encodes the RSA private key — must stay out of URL/logs.
+      const searchParams = new URL(request.url).searchParams;
+      const state = searchParams.get("state") || body?.state;
+      if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
+      let ok = false;
+      if (provider === "trae") ok = registerTraeSession({ state });
+      else if (provider === "windsurf") ok = registerWindsurfSession({ state });
+      else if (provider === "zed") ok = registerZedSession({ state, codeVerifier: body?.codeVerifier, systemId: body?.systemId });
+      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed" }, { status: 400 });
+      return NextResponse.json({ success: ok });
+    }
+
     if (action === "exchange") {
-      const { code, redirectUri, codeVerifier, state, meta } = body;
+      const { code, redirectUri, codeVerifier, state, meta, systemId } = body;
       // Xiaomi MiMo: no token exchange needed — the callback already decrypted the sk.
       // Just read the session result and create the connection.
       if (provider === "xiaomi-mimo") {
@@ -525,7 +539,13 @@ export async function POST(request, { params }) {
       }
 
       // Synchronized token exchange (prevents race condition with auto-relay)
-      const result = await performSynchronizedExchange(provider, code, redirectUri, codeVerifier, state, meta);
+      // systemId (Zed) is merged into meta so the login attempt's own id is
+      // used instead of a freshly prepared one. Ignored by other providers.
+      const effectiveMeta = {
+        ...(meta || {}),
+        ...(systemId ? { systemId } : {}),
+      };
+      const result = await performSynchronizedExchange(provider, code, redirectUri, codeVerifier, state, effectiveMeta);
 
       return NextResponse.json(result);
     }
