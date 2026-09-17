@@ -7,6 +7,7 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { applyOcEgress } from "../utils/ocEgress.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
+<<<<<<< HEAD
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -60,11 +61,13 @@ function isPrivateIp(ip) {
 
 const OPENCODE_UA = "opencode/latest/1.18.18/cli";
 const MAX_TOOL_NAME_LEN = 128;
+import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
   "muse-spark-1.2-contributor-free",
   "muse-spark-1.3-contributor-free",
 ]);
+const MESSAGES_MODELS = new Set(["union-alpha"]);
 
 function generateRequestId() {
   return `msg_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -82,6 +85,10 @@ function baseModelId(model) {
 function isResponsesModel(model) {
   const base = baseModelId(model);
   return RESPONSES_MODELS.has(base) || isMuseSparkModel(base);
+}
+
+function isMessagesModel(model) {
+  return MESSAGES_MODELS.has(baseModelId(model));
 }
 
 function resolveOpencodeSession(body, credentials) {
@@ -221,11 +228,12 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rt = credentials?.runtimeTransport;
     if (rt?.baseUrl) return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
     const base = this.config.baseUrl;
-    return isResponsesModel(model)
-      ? `${base}/zen/v1/responses`
-      : `${base}/zen/v1/chat/completions`;
+    if (isResponsesModel(model)) return `${base}/zen/v1/responses`;
+    if (isMessagesModel(model)) return `${base}/zen/v1/messages`;
+    return `${base}/zen/v1/chat/completions`;
   }
 
+<<<<<<< HEAD
   // OpenCode Zen's free tier is rate-limited per real egress IP (daily
   // budget per IP, reset at UTC midnight). There is NO automatic switching:
   // when the current IP's budget is exhausted the gateway answers
@@ -240,7 +248,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     return super.execute(args);
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = "") {
     const raw = credentials?.rawHeaders || {};
     const lower = {};
     for (const [k, v] of Object.entries(raw)) lower[k.toLowerCase()] = v;
@@ -262,7 +270,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rawIp = (lower["x-9r-real-ip"] || lower["x-real-ip"] || "").trim();
     const clientIp = rawIp && !isPrivateIp(rawIp) ? rawIp : (rawIp ? discoverPublicIp() : "");
 
-    return {
+    const headers = {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
@@ -273,5 +281,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       ...(clientIp ? { "x-real-ip": clientIp } : {}),
       "Accept": stream ? "text/event-stream" : "*/*",
     };
+    if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+    return headers;
   }
 }

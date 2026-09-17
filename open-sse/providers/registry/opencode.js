@@ -30,6 +30,7 @@ export default {
     { id: "ox-alpha", name: "Ox Alpha", upstreamModelId: "x-preview-f-free", targetFormat: "openai", supportedFormats: ["openai"] },
     { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.3-contributor-free", name: "Muse Spark 1.3 Contributor Free", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+    { id: "union-alpha", name: "Union Alpha Free", targetFormat: "claude", supportedFormats: ["claude"] },
     { id: "mimo-v2.5-free", name: "MiMo v2.5 Free", targetFormat: "openai", supportedFormats: ["openai"] },
     { id: "hy3-free", name: "Hunyuan 3 Free", targetFormat: "openai", supportedFormats: ["openai"] },
     { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning Free", targetFormat: "openai", supportedFormats: ["openai"] },
