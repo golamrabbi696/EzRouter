@@ -19,7 +19,10 @@ import {
 import { parseDataUri } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
-import { normalizeKiroToolSpecs } from "../concerns/kiroConversation.js";
+import {
+  normalizeKiroToolSpecs,
+  kiroEmptyUserContent,
+} from "../concerns/kiroConversation.js";
 
 /** Render a single tool call as a readable text line. */
 function toolCallToText(name, input) {
@@ -200,7 +203,8 @@ function convertMessages(messages, toolSpecs, model, nameMap = new Map()) {
 
   const flushPending = () => {
     if (currentRole === "user") {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      const content = pendingUserContent.join("\n\n").trim()
+        || kiroEmptyUserContent(pendingToolResults.length > 0);
       const userMsg = {
         userInputMessage: {
           content: content,
