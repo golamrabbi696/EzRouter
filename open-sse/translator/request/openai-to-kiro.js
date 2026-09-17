@@ -19,6 +19,7 @@ import {
 import { parseDataUri } from "../concerns/image.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { normalizeKiroToolSpecs } from "../concerns/kiroConversation.js";
 
 /** Render a single tool call as a readable text line. */
 function toolCallToText(name, input) {
@@ -176,11 +177,11 @@ function safeJSONParse(str, fallback) {
  *
  * Returns { history, currentMessage }.
  */
-function convertMessages(messages, tools, model) {
+function convertMessages(messages, toolSpecs, model, nameMap = new Map()) {
   let history = [];
   let currentMessage = null;
 
-  const clientProvidedTools = tools && tools.length > 0;
+  const clientProvidedTools = Array.isArray(toolSpecs) && toolSpecs.length > 0;
 
   // When the client did not send tools, flatten any tool calls/results in the
   // history into plain text (see flattenToolInteractions). This keeps the
@@ -226,28 +227,7 @@ function convertMessages(messages, tools, model) {
         if (!userMsg.userInputMessage.userInputMessageContext) {
           userMsg.userInputMessage.userInputMessageContext = {};
         }
-        userMsg.userInputMessage.userInputMessageContext.tools = tools.map(t => {
-          const name = t.function?.name || t.name;
-          let description = t.function?.description || t.description || "";
-
-          if (!description.trim()) {
-            description = `Tool: ${name}`;
-          }
-
-          const schema = t.function?.parameters || t.parameters || t.input_schema || {};
-          // Normalize schema: Kiro requires required[] and proper type/properties
-          const normalizedSchema = Object.keys(schema).length === 0
-            ? { type: "object", properties: {}, required: [] }
-            : { ...schema, required: schema.required ?? [] };
-
-          return {
-            toolSpecification: {
-              name,
-              description,
-              inputSchema: { json: normalizedSchema }
-            }
-          };
-        });
+        userMsg.userInputMessage.userInputMessageContext.tools = toolSpecs;
         toolsInjectedToFirstUserMsg = true;
       }
 
@@ -381,13 +361,13 @@ function convertMessages(messages, tools, model) {
             if (tc.function) {
               return {
                 toolUseId: tc.id || uuidv4(),
-                name: tc.function.name,
+                name: nameMap.get(tc.function.name) || tc.function.name,
                 input: safeJSONParse(tc.function.arguments, {})
               };
             } else {
               return {
                 toolUseId: tc.id || uuidv4(),
-                name: tc.name,
+                name: nameMap.get(tc.name) || tc.name,
                 input: tc.input || {}
               };
             }
@@ -531,7 +511,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(body, upstreamModel);
   const usesNativeGptEffort = usesKiroNativeGptEffort(body, upstreamModel);
 
-  const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
+  const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
+  const { history, currentMessage } = convertMessages(messages, toolSpecs, upstreamModel, nameMap);
 
   // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
   // account-specific. Injecting the shared builder-id/social *default* placeholder
@@ -612,6 +593,13 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     enumerable: false
   });
 
+  // Kiro tool specs get sanitized names (`mcp__a__b` → `mcp_a_b`); keep the
+  // reverse map so tool calls stream back under the client's own names.
+  const restoredToolNames = new Map();
+  for (const [original, sanitized] of nameMap) {
+    if (original !== sanitized) restoredToolNames.set(sanitized, original);
+  }
+  if (restoredToolNames.size) payload._toolNameMap = restoredToolNames;
   return payload;
 }
 

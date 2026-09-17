@@ -14,10 +14,10 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { randomUUID } from "crypto";
-import { ROLE, OPENAI_BLOCK } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { stripThinkingSuffix } from "../concerns/thinkingUnified.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
-import { parseDataUri } from "../concerns/image.js";
+import { parseDataUri, encodeDataUri } from "../concerns/image.js";
 
 function flattenText(content) {
   if (content == null) return "";
@@ -44,11 +44,41 @@ function toImageBlock(part) {
   if (parsed) {
     return {
       type: OPENAI_BLOCK.IMAGE,
-      source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 },
+      image: encodeDataUri(parsed.mimeType, parsed.base64),
+      mimeType: parsed.mimeType,
+      mediaType: parsed.mimeType,
     };
   }
   if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
-    return { type: OPENAI_BLOCK.IMAGE, source: { type: "url", url } };
+    return {
+      type: OPENAI_BLOCK.IMAGE,
+      image: url,
+      mimeType: "image/png",
+      mediaType: "image/png",
+    };
+  }
+
+  if (part.type === OPENAI_BLOCK.IMAGE || part.type === CLAUDE_BLOCK.IMAGE) {
+    if (typeof part.image === "string" && part.image.startsWith("data:")) {
+      const parsed = parseDataUri(part.image);
+      const mime = part.mimeType || parsed?.mimeType || "image/png";
+      return {
+        type: OPENAI_BLOCK.IMAGE,
+        image: part.image,
+        mimeType: mime,
+        mediaType: mime,
+      };
+    }
+    const source = part.source;
+    if (source?.type === "base64" && typeof source.data === "string") {
+      const mime = source.media_type || "image/png";
+      return {
+        type: OPENAI_BLOCK.IMAGE,
+        image: encodeDataUri(mime, source.data),
+        mimeType: mime,
+        mediaType: mime,
+      };
+    }
   }
   return null;
 }

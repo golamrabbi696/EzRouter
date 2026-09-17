@@ -37,6 +37,7 @@ import {
 } from "../../config/kiroConstants.js";
 import { DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
+import { normalizeKiroToolSpecs } from "../concerns/kiroConversation.js";
 
 /** Stringify a tool_use input as a readable line. */
 function toolUseToText(name, input) {
@@ -112,7 +113,7 @@ function flattenClaudeToolInteractions(messages) {
  * Kiro requires alternating user/assistant turns; consecutive same-role
  * messages are merged.
  */
-function convertClaudeMessagesToKiro(messages, tools, model) {
+function convertClaudeMessagesToKiro(messages, toolSpecs, model, nameMap = new Map()) {
   const history = [];
   let currentMessage = null;
 
@@ -123,25 +124,7 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
   let currentRole = null;
   let toolsInjected = false;
 
-  const clientProvidedTools = Array.isArray(tools) && tools.length > 0;
-
-  const buildToolSpecs = () =>
-    tools.map((t) => {
-      const name = t.name;
-      const description = t.description || `Tool: ${name}`;
-      const schema = t.input_schema || {};
-      const normalizedSchema =
-        Object.keys(schema).length === 0
-          ? { type: "object", properties: {}, required: [] }
-          : { ...schema, required: schema.required ?? [] };
-      return {
-        toolSpecification: {
-          name,
-          description,
-          inputSchema: { json: normalizedSchema },
-        },
-      };
-    });
+  const clientProvidedTools = Array.isArray(toolSpecs) && toolSpecs.length > 0;
 
   const flushPending = () => {
     if (currentRole === ROLE.USER) {
@@ -161,7 +144,7 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
         if (!userMsg.userInputMessage.userInputMessageContext) {
           userMsg.userInputMessage.userInputMessageContext = {};
         }
-        userMsg.userInputMessage.userInputMessageContext.tools = buildToolSpecs();
+        userMsg.userInputMessage.userInputMessageContext.tools = toolSpecs;
         toolsInjected = true;
       }
 
@@ -198,11 +181,21 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
             if (typeof block.content === "string") {
               resultContent = block.content;
             } else if (Array.isArray(block.content)) {
+              // Images a tool returned (screenshots) ride along as user images;
+              // Kiro tool results are text-only.
+              let hasImage = false;
+              for (const c of block.content) {
+                if (c?.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64") {
+                  hasImage = true;
+                  const imageType = c.source.media_type || DEFAULT_IMAGE_MIME;
+                  pendingImages.push({ format: imageType.split("/")[1] || imageType, source: { bytes: c.source.data } });
+                }
+              }
               resultContent =
                 block.content
                   .filter((c) => c.type === CLAUDE_BLOCK.TEXT)
                   .map((c) => c.text)
-                  .join("\n") || JSON.stringify(block.content);
+                  .join("\n") || (hasImage ? "(image attached)" : JSON.stringify(block.content));
             } else if (block.content) {
               resultContent = JSON.stringify(block.content);
             }
@@ -226,7 +219,7 @@ function convertClaudeMessagesToKiro(messages, tools, model) {
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             toolUses.push({
               toolUseId: block.id,
-              name: block.name,
+              name: nameMap.get(block.name) || block.name,
               input: block.input || {},
             });
           }
@@ -400,10 +393,12 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     messages = flattenClaudeToolInteractions(messages);
   }
 
+  const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
   const { history, currentMessage } = convertClaudeMessagesToKiro(
     messages,
-    tools,
-    upstreamModel
+    toolSpecs,
+    upstreamModel,
+    nameMap
   );
 
   // Guard 2: tools present → reconcile dangling tool_results.
@@ -491,6 +486,13 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     enumerable: false,
   });
 
+  // Kiro tool specs get sanitized names (`mcp__a__b` → `mcp_a_b`); keep the
+  // reverse map so tool calls stream back under the client's own names.
+  const restoredToolNames = new Map();
+  for (const [original, sanitized] of nameMap) {
+    if (original !== sanitized) restoredToolNames.set(sanitized, original);
+  }
+  if (restoredToolNames.size) payload._toolNameMap = restoredToolNames;
   return payload;
 }
 
