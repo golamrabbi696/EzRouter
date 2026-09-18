@@ -37,9 +37,9 @@ function emitFunctionCall(functionCall, signature, state) {
   if (upstreamId) state.seenToolCallIds.add(upstreamId);
 
   if (signature) {
-    storeGeminiThoughtSignature(id, signature, state.sessionId);
+    storeGeminiThoughtSignature(id, signature, state.sessionId, state.model);
     if (upstreamId && upstreamId !== id) {
-      storeGeminiThoughtSignature(upstreamId, signature, state.sessionId);
+      storeGeminiThoughtSignature(upstreamId, signature, state.sessionId, state.model);
     }
   }
 
@@ -85,7 +85,7 @@ export function geminiToOpenAIResponse(chunk, state) {
   // Initialize state
   if (!state.messageId) {
     state.messageId = response.responseId || `msg_${Date.now()}`;
-    state.model = response.modelVersion || "gemini";
+    state.model = response.modelVersion || state.model || "gemini";
     state.functionIndex = 0;
     state.geminiToolCallCount = 0;
     results.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
