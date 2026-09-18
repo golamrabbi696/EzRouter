@@ -16,7 +16,14 @@ const MULTI_REFERENCE_IMAGE_MODELS = new Set([
   "codex/gpt-5.3-image",
 ]);
 
+// HuggingFace router edit models need a source image; reuse the public dog sample so
+// the card is runnable as-is. The router derives it from inputs, not from the Hub host.
+const HUGGINGFACE_TEST_IMAGE_URL = CLOUDFLARE_TEST_IMAGE_URL;
+
 function getImageEditDefaults(providerId, modelId) {
+  if (providerId === "huggingface") {
+    return { image: HUGGINGFACE_TEST_IMAGE_URL };
+  }
   if (providerId !== "cloudflare-ai") return {};
   if (modelId === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
     return { image: CLOUDFLARE_TEST_IMAGE_URL };
