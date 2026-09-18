@@ -53,3 +53,16 @@ export class QoderExecutor extends BaseExecutor {
   }
 }
 
+export default QoderExecutor;
+
+// Internals exposed for unit tests.
+export const __test__ = {
+  buildQoderParameters(body, maxTokens) {
+    const parameters = { max_tokens: maxTokens };
+    const effort = typeof body?.reasoning_effort === "string"
+      ? body.reasoning_effort.trim().toLowerCase()
+      : "";
+    if (effort && effort !== "auto") parameters.reasoning_effort = effort;
+    return parameters;
+  },
+};

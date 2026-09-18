@@ -14,6 +14,7 @@ import { createHash, randomUUID } from "crypto";
 import { getQoderModelConfig, resolveQoderModels } from "./catalog.js";
 import { resolveProfile } from "./profile.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
+import { stripThinkingSuffix } from "../../translator/concerns/thinkingUnified.js";
 
 /** Official free-chat shell (awA). */
 const SHELL = {
@@ -318,7 +319,7 @@ async function buildQoderRequestBody({
   includeBusiness = false,
 }) {
   const p = resolveProfile(profile);
-  const qoderKey = String(model || "").replace(/^qoder\//, "");
+  const qoderKey = stripThinkingSuffix(String(model || "").replace(/^qoder\//, ""));
 
   let modelConfig = modelConfigInject;
   if (!modelConfig) {
