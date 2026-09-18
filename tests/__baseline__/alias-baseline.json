@@ -119,7 +119,10 @@
     "devin": "devin",
     "devin-cli": "devin-cli",
     "morph": "morph",
-    "morphllm": "morph"
+    "morphllm": "morph",
+    "br": "bedrock",
+    "bedrock": "bedrock",
+    "aws-bedrock": "bedrock"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -133,6 +136,7 @@
     "azure": "azure",
     "baidu": "qianfan",
     "bazaarlink": "bzl",
+    "bedrock": "br",
     "blackbox": "blackbox",
     "bluesminds": "bm",
     "byteplus": "byteplus",
@@ -226,6 +230,7 @@
     "black-forest-labs",
     "blackbox",
     "bm",
+    "br",
     "byteplus",
     "bzl",
     "cbai",

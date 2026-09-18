@@ -39,6 +39,7 @@ function buildProviderEntry(r) {
     ...(r.features ? { features: { ...r.features } } : {}),
     ...(r.authType ? { authType: r.authType } : {}),
     ...(r.authHint ? { authHint: r.authHint } : {}),
+    ...(r.apiKeyOptionalWith ? { apiKeyOptionalWith: r.apiKeyOptionalWith } : {}),
   };
 }
 

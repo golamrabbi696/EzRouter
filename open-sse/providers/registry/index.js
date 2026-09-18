@@ -19,6 +19,7 @@ import providerAwsPolly from "./aws-polly.js";
 import providerAzure from "./azure.js";
 import providerBaidu from "./baidu.js";
 import providerBazaarlink from "./bazaarlink.js";
+import providerBedrock from "./bedrock.js";
 import providerBlackForestLabs from "./black-forest-labs.js";
 import providerBlackbox from "./blackbox.js";
 import providerBluesminds from "./bluesminds.js";
@@ -152,6 +153,7 @@ export default [
   providerAzure,
   providerBaidu,
   providerBazaarlink,
+  providerBedrock,
   providerBlackForestLabs,
   providerBlackbox,
   providerBluesminds,
