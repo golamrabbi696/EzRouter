@@ -329,9 +329,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * to it cannot leak into the stored reason.
  */
 export function describeProviderError(errorText) {
-  const clamp = (value) => String(value).replace(/\s+/g, " ").trim().slice(0, 100);
+  const clamp = (value) => String(value).replace(/\s+/g, " ").trim().slice(0, 200);
 
-  if (typeof errorText === "string") return errorText.slice(0, 100);
+  if (typeof errorText === "string") return errorText.slice(0, 200);
   if (!errorText || typeof errorText !== "object") return "Provider error";
 
   const code = typeof errorText.code === "string" ? errorText.code
