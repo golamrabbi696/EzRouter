@@ -187,6 +187,8 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 // aliases, static registry declarations, and the live opencode catalog all win
 // first. Names that genuinely belong to openrouter hit the deepseek rule here.
 const MODEL_PREFIX_PROVIDERS = [
+  // Codex CLI sends this bare virtual model for auto-review — keep it on OAuth Codex (#1398).
+  [/^codex-auto-review$/, "codex"],
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],
   [/^grok-/, "xai"],
