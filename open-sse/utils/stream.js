@@ -60,7 +60,7 @@ export function createSSEStream(options = {}) {
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
   const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model, sessionId: credentials?._clientSessionId || null,
+    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model, body, sessionId: credentials?._clientSessionId || null,
         // Which upstream format this stream came from. A response translator can be
         // reached either directly (target === its registered source) or as the second
         // hop of a pivot, and on the terminal null chunk the pivot drops it — so a
