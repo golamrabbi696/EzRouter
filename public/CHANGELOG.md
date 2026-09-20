@@ -1,3 +1,44 @@
+# v0.6.9 (2026-09-20)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4063 - #4176)
+- **AWS Bedrock Provider**:
+  - Added full AWS Bedrock provider support with AWS SSO and SigV4 request signing (`#4157`).
+  - Added `@aws-sdk/credential-providers` support and extracted shared AWS event stream utilities.
+- **Provider Capabilities & Models**:
+  - Added DeepSeek-V4.1-Flash for Codebuddy-Intl and Ollama (`#4063`).
+  - Added `ainetcafe` provider integration.
+  - Derived Ollama monthly free-plan quota reset date accurately from user signup date (`#4150`).
+  - Forwarded `reasoning_effort` and thinking level overrides to upstream Qoder models via modular protocol pipeline (`#4154`).
+  - Completed HuggingFace Inference Providers router migration (`#4158`).
+  - Configured priority service tier and generalized fast mode pricing for Codex models (`#4166`).
+  - Supported GitHub Copilot automatic model selection (`#4169`).
+  - Exposed context window and max token limits directly on combo `/v1/models` responses (`#4174`).
+  - Routed Union Alpha provider calls through Anthropic Messages API (`#4068`).
+  - Added missing long-context pricing tiers for 128k+ models (`#4149`).
+  - Restricted o-series capabilities pattern matching to avoid false positives on Cline's Solar Pro 4 (`#4141`).
+- **Translators & Schema Enhancements**:
+  - Preserved tool-result images, restored Kiro tool names with underscores, and used neutral placeholder turns for tool-result-only user turns (`#4074`).
+  - Preserved optional tool parameters across Responses and Codex translation layers (`#4142`).
+  - Repaired missing or corrupted `tool_call_id` dropped by Responses clients (`#4145`).
+  - Allowed unkeyed tool outputs in `stripOrphanedToolOutputs` to be properly paired (`#4146`).
+  - Sanitized unsupported JSON schema constraints (`pattern`, `format`, `minItems`) and normalized property definitions for Gemini (`#4147`).
+  - Preserved and normalized `usage.cost.total` for OpenClaw clients (`#4143`).
+- **OAuth, Sessions & Stream Stability**:
+  - Hardened Zed OAuth token refresh lifecycle, added live model support, and supported hosted OAuth callback flow (`#4075`, `#4092`, `#4175`).
+  - Resolved OpenCode 403 `FreeTierError` with canonical session headers and reused stable upstream sessions to stop 429 rate limiting (`#4069`, `#4071`, `#4084`).
+  - Reported client aborts occurring after HTTP 200 in-band to clients instead of silently dropping connections (`#4065`).
+  - Retried CommandCode on transient stream errors and eliminated duplicate stop chunks (`#4138`).
+  - Added `"cache-affinity"` routing strategy to pin conversations to single provider accounts and maximize prompt caching (`#4168`).
+  - Isolated video generation poll cooldowns and enforced pinned account execution (`#4171`).
+  - Guaranteed synced model catalog updates reach live request handlers, keyed by gateway (`#4167`).
+  - Sanitized Hermes system prompts and identity leaks for Antigravity Claude envelope (`#4076`).
+  - Scoped cached Gemini thought signatures to model families in Antigravity (`#4139`).
+  - Stripped Claude Code billing headers from system prompts in Antigravity (`#4137`).
+- **Dashboard & Connection Testing**:
+  - Resolved connection test targets dynamically from provider registry `validateUrl` (`#4159`).
+  - Added opt-in dashboard setting to inspect and log sanitized request payloads (`#4162`).
+  - Fixed `fastModeUpdatingId` state declaration in `ProviderLimits` component.
+
 # v0.6.8 (2026-09-14)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #3955 - #4062)
