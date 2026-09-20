@@ -1,4 +1,4 @@
-# v0.6.11 (2026-09-21)
+# v0.6.12 (2026-09-21)
 
 ## Bug Fixes & Stability
 - **macOS Apple Silicon System Tray**: Fixed tray icon failing to appear on Apple Silicon Macs (M1/M2/M3/M4) by automatically detecting missing Rosetta 2 runtime, providing auto-warmup (`softwareupdate --install-rosetta`), adding cached binary permissions fallback, and surfacing actionable error guidance.
