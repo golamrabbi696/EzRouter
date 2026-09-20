@@ -48,9 +48,11 @@ describe("Copilot live model capabilities", () => {
       providerSpecificData: { copilotToken: "test-token" },
     }, { forceRefresh: true });
 
-    expect(result.models).toEqual([{
-      id: "claude-fable-5",
-      name: "Claude Fable 5",
+    expect(result.models).toEqual([
+      { id: "auto", name: "Auto" },
+      {
+        id: "claude-fable-5",
+        name: "Claude Fable 5",
       capabilities: expect.objectContaining({
         contextWindow: 264000,
         maxPrompt: 200000,
