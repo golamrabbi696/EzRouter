@@ -10,6 +10,8 @@ import {
 import { createProviderConnection } from "@/models";
 import { CursorService } from "@/lib/oauth/services/cursor";
 import { readDesktopPassToken } from "open-sse/shared/mimoAccount.js";
+import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
+import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect.js";
 import {
   startCodexProxy,
   stopCodexProxy,

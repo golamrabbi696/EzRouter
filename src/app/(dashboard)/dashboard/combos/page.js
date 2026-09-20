@@ -699,6 +699,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
   const modelItems = members.map((m, i) => ({ uid: `item-${i}`, id: m.id, weight: m.weight }));
+  const models = members.map((m) => m.id);
 
   const handleDragEnd = (event) => {
     const { active, over } = event;

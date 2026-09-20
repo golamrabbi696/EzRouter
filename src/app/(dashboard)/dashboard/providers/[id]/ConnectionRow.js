@@ -36,10 +36,23 @@ function isAuthError(errorCode, errorText) {
   );
 }
 
-export default function ConnectionRow({ connection, plan = null, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onReconnect = null, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, plan = null, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onReconnect = null, oneByOneStatus = null, autoPing = null, fastMode = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [updatingFastMode, setUpdatingFastMode] = useState(false);
   const proxyDropdownRef = useRef(null);
+
+  const handleToggleFastMode = async () => {
+    if (!fastMode?.onToggle || updatingFastMode) return;
+    setUpdatingFastMode(true);
+    try {
+      await fastMode.onToggle(!fastMode.on);
+    } catch (err) {
+      console.error("Failed to toggle fast mode:", err);
+    } finally {
+      setUpdatingFastMode(false);
+    }
+  };
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -386,5 +399,9 @@ ConnectionRow.propTypes = {
     on: PropTypes.bool,
     onToggle: PropTypes.func,
     provider: PropTypes.string,
+  }),
+  fastMode: PropTypes.shape({
+    on: PropTypes.bool,
+    onToggle: PropTypes.func,
   }),
 };
