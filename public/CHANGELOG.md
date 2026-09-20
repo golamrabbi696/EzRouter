@@ -1,17 +1,20 @@
+# v0.6.10 (2026-09-20)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4176 - #4210)
+- **Strict Proxy Enforcement**: Enforced strict proxy credentials in chatCore and auth flow (`#4185`).
+- **OpenCode Free Tier Stability**: Injected file-search quartet `{bash, glob, grep, read}` unconditionally to stop 403 `FreeTierError` in OpenCode free executor (`#4188`).
+- **API Key Usage Attribution**: Preserved API key identity and distinct masked prefix differentiation in usage statistics attribution (`#4193`).
+- **OpenAI Responses Usage Reporting**: Emitted token usage on `response.completed` event, including trailing usage-only SSE chunks (`#4192`).
+- **Tool Call Provider-Injected Prefix Translation**: Translated provider-injected tool-call prefixes (such as `functions.exec` or namespace prefixing) to declared tool names and split namespaces accurately (`#4200`).
+- **Tool Call Argument Coercion**: Coerced non-JSON tool call arguments before upstream dispatch to prevent HTTP 400 rejection (`#4208`).
+- **Claude Refusal Handling**: Mapped Claude `refusal` stop_reason to `content_filter` and surfaced explanation text before final chunk (`#4210`).
+- **Circuit Breaker False-Positive Prevention**: Avoided triggering circuit breaker on generic content-triggered 429 errors (`#4197`).
+- **Visible-Model Allowlist for Live Catalogs**: Added visible-model allowlist for live-catalog providers (GitHub, Kiro, Qoder, Kimchi) with UI picker and `/api/models/enabled` API (`#4206`).
+- **Antigravity Quota Separation**: Separated 5-hour session quotas from weekly quotas, ensured 5h exhaustion does not overwrite weekly availability, and deduplicated dashboard quota rows (`#4209`).
+
 # v0.6.9 (2026-09-20)
 
-## Upstream Synchronization & Core Enhancements (decolua/9router #4063 - #4210)
-- **Recent Upstream Sync (#4176 - #4210)**:
-  - **Strict Proxy Enforcement**: Enforced strict proxy credentials in chatCore and auth flow (`#4185`).
-  - **OpenCode Free Tier Stability**: Injected file-search quartet `{bash, glob, grep, read}` unconditionally to stop 403 `FreeTierError` in OpenCode free executor (`#4188`).
-  - **API Key Usage Attribution**: Preserved API key identity and distinct masked prefix differentiation in usage statistics attribution (`#4193`).
-  - **OpenAI Responses Usage Reporting**: Emitted token usage on `response.completed` event, including trailing usage-only SSE chunks (`#4192`).
-  - **Tool Call Provider-Injected Prefix Translation**: Translated provider-injected tool-call prefixes (such as `functions.exec` or namespace prefixing) to declared tool names and split namespaces accurately (`#4200`).
-  - **Tool Call Argument Coercion**: Coerced non-JSON tool call arguments before upstream dispatch to prevent HTTP 400 rejection (`#4208`).
-  - **Claude Refusal Handling**: Mapped Claude `refusal` stop_reason to `content_filter` and surfaced explanation text before final chunk (`#4210`).
-  - **Circuit Breaker False-Positive Prevention**: Avoided triggering circuit breaker on generic content-triggered 429 errors (`#4197`).
-  - **Visible-Model Allowlist for Live Catalogs**: Added visible-model allowlist for live-catalog providers (GitHub, Kiro, Qoder, Kimchi) with UI picker and `/api/models/enabled` API (`#4206`).
-  - **Antigravity Quota Separation**: Separated 5-hour session quotas from weekly quotas, ensured 5h exhaustion does not overwrite weekly availability, and deduplicated dashboard quota rows (`#4209`).
+## Upstream Synchronization & Core Enhancements (decolua/9router #4063 - #4176)
 - **AWS Bedrock Provider**:
   - Added full AWS Bedrock provider support with AWS SSO and SigV4 request signing (`#4157`).
   - Added `@aws-sdk/credential-providers` support and extracted shared AWS event stream utilities.
