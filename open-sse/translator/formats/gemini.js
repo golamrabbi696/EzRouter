@@ -433,11 +433,6 @@ function expandStringSchemas(obj) {
 function normalizePropertyDefinitions(obj) {
   if (!obj || typeof obj !== "object") return;
 
-  if (Array.isArray(obj)) {
-    for (const item of obj) normalizePropertyDefinitions(item);
-    return;
-  }
-
   if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
     for (const [key, prop] of Object.entries(obj.properties)) {
       if (typeof prop === "string") {
@@ -448,11 +443,7 @@ function normalizePropertyDefinitions(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      normalizePropertyDefinitions(value);
-    }
-  }
+  forEachChildSchema(obj, normalizePropertyDefinitions);
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
