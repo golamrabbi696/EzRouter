@@ -147,6 +147,7 @@ export default function ProviderLimits() {
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [fastModeUpdatingId, setFastModeUpdatingId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
