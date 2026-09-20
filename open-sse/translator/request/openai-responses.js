@@ -127,6 +127,7 @@ function stripOrphanedToolOutputs(input) {
   const stripped = [];
   const deduped = input.filter(item => {
     if (item?.type !== RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) return true;
+    if (!item.call_id) return true;
     const hasMatch = typeof item.call_id === "string" && knownCallIds.has(item.call_id);
     if (!hasMatch) {
       console.warn(`[Translator] Stripped orphaned function_call_output (call_id=${item.call_id}) — no matching function_call in input`);

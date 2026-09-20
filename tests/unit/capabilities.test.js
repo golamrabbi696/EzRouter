@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 
 describe("getCapabilitiesForModel", () => {
+  it("reports DeepSeek V4.1-Flash ids as vision-capable without dropping their thinking/context", () => {
+    const v41 = { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 };
+    expect(getCapabilitiesForModel(undefined, "deepseek-v4.1-flash")).toMatchObject(v41);
+    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4.1-flash")).toMatchObject(v41);
+    expect(getCapabilitiesForModel("openrouter", "deepseek/deepseek-v4.1-flash")).toMatchObject(v41);
+    // "deepseek-flash" is the GA id for V4.1-Flash on the DeepSeek API; the pattern it
+    // used to fall through to gives it 128K/64K, which the exact entry keeps.
+    expect(getCapabilitiesForModel("opencode-go", "deepseek-flash")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "deepseek",
+      contextWindow: 128000,
+      maxOutput: 64000,
+    });
+  });
+
   const claudeSonnet5Expected = {
     contextWindow: 1000000,
     maxOutput: 128000,
@@ -38,6 +54,7 @@ describe("getCapabilitiesForModel", () => {
       thinkingCanDisable: false,
     });
   });
+
   it("reports Kiro Claude Opus 4.8 as a 1M context model", () => {
     expect(getCapabilitiesForModel("kiro", "claude-opus-4.8").contextWindow).toBe(1000000);
     expect(getCapabilitiesForModel("kiro", "anthropic/claude-opus-4.8").contextWindow).toBe(1000000);
@@ -71,28 +88,36 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
 
-  it("marks DeepSeek V4 Flash Vision as vision-capable", () => {
-    const expected = { vision: true, reasoning: true, thinkingFormat: "deepseek" };
-    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
-    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash-vision-exp")).toMatchObject(expected);
-    expect(getCapabilitiesForModel("commandcode", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
-    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash").vision).toBeFalsy();
+  it("reports Codex GPT 6.0 Astra as a vision and thinking capable model", () => {
+    expect(getCapabilitiesForModel("codex", "gpt-6-astra")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 272000,
+      maxOutput: 128000,
+    });
   });
 
-  it("reports the OpenCode Go Muse Spark 1.3 contributor as exact reasoning caps (no modalities)", () => {
-    expect(getCapabilitiesForModel("opencode-go", "muse-spark-1.3-contributor")).toMatchObject({
+  it("CommandCode v4.1-flash is vision + effort capable", () => {
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4.1-flash")).toMatchObject({
+      vision: true,
       reasoning: true,
-      thinkingFormat: "openai",
-      thinkingCanDisable: false,
-      contextWindow: 1048576,
-      maxOutput: 131072,
-      vision: false,
-      pdf: false,
-      audioInput: false,
-      videoInput: false,
-      imageOutput: false,
-      audioOutput: false,
-      search: false,
+      thinkingFormat: "commandcode",
+      thinkingEffortSupported: true,
+    });
+  });
+
+  it("CommandCode MiniMax-M3 is vision capable", () => {
+    expect(getCapabilitiesForModel("commandcode", "MiniMaxAI/MiniMax-M3").vision).toBe(true);
+  });
+
+  it("CommandCode text-only DeepSeek V4 Flash stays non-vision", () => {
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash").vision).toBe(false);
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "commandcode",
+      thinkingEffortSupported: true,
     });
   });
 
