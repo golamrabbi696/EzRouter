@@ -5,6 +5,7 @@
 - **Provider Details Page Crash**: Fixed `ReferenceError: fastMode is not defined` in `ConnectionRow` by properly destructuring the `fastMode` prop, adding `updatingFastMode` state, and implementing `handleToggleFastMode`.
 - **Quota Tracker & Provider Limits Crash**: Fixed `ReferenceError: isUpdatingFastMode is not defined` in `ProviderLimits` by declaring `isUpdatingFastMode = fastModeUpdatingId === conn.id` and incorporating it into `rowBusy`.
 - **Combo Modal Test Run Crash**: Fixed `ReferenceError: models is not defined` in `ComboFormModal` on the Combos page by elevating `models = members.map((m) => m.id)` to component scope.
+- **OAuth Modal Missing Constants & States**: Restored missing `PROXY_OAUTH_PROVIDERS`, `PASTE_TOKEN_PROVIDERS`, `authMode`, `pasteToken`, and `ideStatus` in `src/shared/components/OAuthModal.js` that caused `ReferenceError: PASTE_TOKEN_PROVIDERS is not defined` when opening provider details pages.
 - **OAuth Action Route Missing Imports**: Added missing `ZED_HOSTED_CONFIG` and `detectIdeInstalled` imports in `api/oauth/[provider]/[action]/route.js`.
 
 # v0.6.10 (2026-09-20)

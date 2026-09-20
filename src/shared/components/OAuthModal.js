@@ -5,6 +5,31 @@ import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+// Providers using the dynamic-port local callback proxy.
+// Browser OAuth: popup → auto callback → auto exchange → poll-status.
+const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed"]);
+
+// Providers offering a paste-token fallback (import-token flow).
+// UX warns if the IDE (which issues the token) is not installed.
+const PASTE_TOKEN_PROVIDERS = {
+  trae: {
+    label: "Cloud-IDE-JWT",
+    instructions:
+      "Sign in at trae.ai (or solo.trae.ai), open DevTools → Network, copy the Cloud-IDE-JWT token from any request's Authorization header (~14-day lifetime).",
+    placeholder: "Paste Cloud-IDE-JWT here...",
+    ideName: "Trae",
+    ideOptional: true, // token can be grabbed from DevTools without the IDE
+  },
+  windsurf: {
+    label: "Windsurf API key",
+    instructions:
+      "In the Windsurf/VS Code IDE, run the \"Windsurf: Provide Auth Token\" command, then copy the displayed sk-ws-... key.",
+    placeholder: "Paste sk-ws-... key here...",
+    ideName: "Windsurf",
+    ideOptional: false,
+  },
+};
+
 /**
  * OAuth Modal Component
  * - Localhost: Auto callback via popup message
@@ -18,6 +43,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isDeviceCode, setIsDeviceCode] = useState(false);
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
+  // trae/windsurf: choose between browser OAuth (proxy) and paste-token (import)
+  const [authMode, setAuthMode] = useState("browser"); // "browser" | "paste-token"
+  const [pasteToken, setPasteToken] = useState("");
+  const [ideStatus, setIdeStatus] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
