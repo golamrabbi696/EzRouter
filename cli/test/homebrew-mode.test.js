@@ -62,8 +62,9 @@ test("Homebrew mode does not create a runtime dependency directory", () => {
     });
 
     assert.strictEqual(output.trim(), packageJson.version);
-    assert.match(help, /Usage: 9router/);
+    assert.match(help, new RegExp(`Usage: ${packageJson.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     assert.strictEqual(fs.existsSync(path.join(home, ".9router", "runtime")), false);
+    assert.strictEqual(fs.existsSync(path.join(home, ".ezrouter", "runtime")), false);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

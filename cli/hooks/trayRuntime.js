@@ -85,6 +85,30 @@ function npmInstall(pkgs, { silent = false } = {}) {
   return res.ok;
 }
 
+function isRosettaAvailable() {
+  if (process.platform !== "darwin" || process.arch !== "arm64") return true;
+  try {
+    const res = spawnSync("arch", ["-x86_64", "true"], { stdio: "ignore" });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function ensureRosetta({ silent = false } = {}) {
+  if (isRosettaAvailable()) return true;
+  if (!silent) console.log("⏳ Installing Rosetta 2 for macOS system tray...");
+  try {
+    const res = spawnSync("softwareupdate", ["--install-rosetta", "--agree-to-license"], {
+      stdio: silent ? "ignore" : "inherit"
+    });
+    return res.status === 0 && isRosettaAvailable();
+  } catch (e) {
+    if (!silent) console.warn(`[ezrouter] Failed to install Rosetta 2: ${e.message}`);
+    return false;
+  }
+}
+
 // Public: ensure systray2 is installed on macOS/Linux only.
 // Windows skips entirely (uses PowerShell tray).
 function ensureTrayRuntime({ silent = false } = {}) {
@@ -99,6 +123,12 @@ function ensureTrayRuntime({ silent = false } = {}) {
   if (process.platform === "win32") {
     return { systray: false, skipped: true };
   }
+
+  // On Apple Silicon Macs, Rosetta 2 is required by systray2's x86_64 binary.
+  if (process.platform === "darwin" && process.arch === "arm64" && !isRosettaAvailable()) {
+    ensureRosetta({ silent });
+  }
+
   if (hasSystray()) {
     chmodSystrayBin({ silent });
     if (!silent) console.log("✅ System tray ready");
@@ -109,4 +139,4 @@ function ensureTrayRuntime({ silent = false } = {}) {
   return { systray: ok && hasSystray() };
 }
 
-module.exports = { ensureTrayRuntime };
+module.exports = { ensureTrayRuntime, isRosettaAvailable, ensureRosetta };

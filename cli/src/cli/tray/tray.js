@@ -187,10 +187,12 @@ function chmodTrayBin(pkgName) {
   // chmod on every init avoids a hard-to-diagnose silent tray failure.
   try {
     const { getRuntimeNodeModules } = require("../../../hooks/sqliteRuntime");
+    const os = require("os");
     const binName = process.platform === "darwin" ? "tray_darwin_release" : "tray_linux_release";
     const candidates = [
       path.join(getRuntimeNodeModules(), pkgName, "traybin", binName),
-      path.join(__dirname, "..", "..", "..", "node_modules", pkgName, "traybin", binName)
+      path.join(__dirname, "..", "..", "..", "node_modules", pkgName, "traybin", binName),
+      path.join(os.homedir(), ".cache", "node-systray", "2.1.4", binName)
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) fs.chmodSync(p, 0o755);
@@ -243,7 +245,12 @@ function initUnixTray(options) {
       // failures (binary crash, EACCES, etc.) so users can see why the icon
       // didn't appear instead of getting a misleading "running in tray" log.
       trayInstance.ready().catch((err) => {
-        process.stderr.write(`[ezrouter] tray failed to start: ${err && err.message ? err.message : err}\n`);
+        const msg = err && err.message ? err.message : String(err);
+        if (msg.includes("-86") || msg.includes("EBADARCH") || msg.includes("bad CPU type")) {
+          process.stderr.write(`[ezrouter] System tray requires Rosetta 2 on Apple Silicon. Please run:\n   softwareupdate --install-rosetta --agree-to-license\n`);
+        } else {
+          process.stderr.write(`[ezrouter] tray failed to start: ${msg}\n`);
+        }
       });
     } else {
       trayInstance.onReady(() => {});

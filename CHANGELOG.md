@@ -1,6 +1,7 @@
 # v0.6.11 (2026-09-21)
 
 ## Bug Fixes & Stability
+- **macOS Apple Silicon System Tray**: Fixed tray icon failing to appear on Apple Silicon Macs (M1/M2/M3/M4) by automatically detecting missing Rosetta 2 runtime, providing auto-warmup (`softwareupdate --install-rosetta`), adding cached binary permissions fallback, and surfacing actionable error guidance.
 - **Provider Details Page Crash**: Fixed `ReferenceError: fastMode is not defined` in `ConnectionRow` by properly destructuring the `fastMode` prop, adding `updatingFastMode` state, and implementing `handleToggleFastMode`.
 - **Quota Tracker & Provider Limits Crash**: Fixed `ReferenceError: isUpdatingFastMode is not defined` in `ProviderLimits` by declaring `isUpdatingFastMode = fastModeUpdatingId === conn.id` and incorporating it into `rowBusy`.
 - **Combo Modal Test Run Crash**: Fixed `ReferenceError: models is not defined` in `ComboFormModal` on the Combos page by elevating `models = members.map((m) => m.id)` to component scope.

@@ -1,7 +1,10 @@
 const HOMEBREW_PACKAGE_MANAGER = "homebrew";
 
 function isHomebrewManaged(env = process.env) {
-  return env.NINEROUTER_PACKAGE_MANAGER === HOMEBREW_PACKAGE_MANAGER;
+  return (
+    env.EZROUTER_PACKAGE_MANAGER === HOMEBREW_PACKAGE_MANAGER ||
+    env.NINEROUTER_PACKAGE_MANAGER === HOMEBREW_PACKAGE_MANAGER
+  );
 }
 
 function getUpdateCommand(packageName, env = process.env) {
