@@ -12,6 +12,7 @@ import { parseModel } from "@/sse/services/model.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getApiKeyScopeByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
+import { getEnabledModels } from "@/lib/enabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -386,6 +387,46 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
+  let enabledByAlias = {};
+  try {
+    enabledByAlias = await getEnabledModels();
+  } catch (e) {
+    console.log("Could not fetch enabled models");
+  }
+
+  // Visible-model allowlist for one provider. The provider page writes it per
+  // alias (`/api/models/enabled`); a hand-set
+  // `providerSpecificData.enabledModels` still wins only when the provider-level
+  // allowlist is absent. Returns [] when the provider is unrestricted.
+  //
+  // This is what makes "only these models are visible" work for providers with a
+  // live catalog (github/kiro/qoder/...): their registry list lags upstream, so a
+  // blacklist can never name the catalog-only ids — only an allowlist can.
+  const resolveEnabledModels = (providerId, conn) => {
+    const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    const outputAlias = (
+      conn?.providerSpecificData?.prefix
+      || getProviderAlias(providerId)
+      || staticAlias
+    ).trim();
+
+    const candidates = [
+      enabledByAlias[outputAlias],
+      enabledByAlias[staticAlias],
+      enabledByAlias[providerId],
+      conn?.providerSpecificData?.enabledModels,
+    ];
+
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) continue;
+      const ids = Array.from(
+        new Set(candidate.filter((id) => typeof id === "string" && id.trim() !== ""))
+      );
+      if (ids.length > 0) return ids;
+    }
+    return [];
+  };
+
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
@@ -423,8 +464,10 @@ export async function buildModelsList(kindFilter, options = {}) {
       const providerId = aliasToProviderId[alias] || alias;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       if (!connectionsFailed && !noAuthProviderIds.has(providerId)) continue;
+      const enabledModels = resolveEnabledModels(providerId, null);
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
+        if (enabledModels.length > 0 && !enabledModels.includes(model.id)) continue;
         if (isDisabled(alias, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
@@ -461,9 +504,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         || staticAlias
       ).trim();
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
-      const enabledModels = conn?.providerSpecificData?.enabledModels;
-      const hasExplicitEnabledModels =
-        Array.isArray(enabledModels) && enabledModels.length > 0;
+      const enabledModels = resolveEnabledModels(providerId, conn);
+      const hasExplicitEnabledModels = enabledModels.length > 0;
       const isCompatibleProvider =
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
@@ -475,13 +517,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       let liveCapabilitiesById = new Map();
 
       let rawModelIds = hasExplicitEnabledModels
-        ? Array.from(
-            new Set(
-              enabledModels.filter(
-                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
-              ),
-            ),
-          )
+        ? enabledModels
         : providerModels.map((model) => model.id);
 
       // Check if user has manually added custom models for this compatible provider.
