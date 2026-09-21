@@ -21,12 +21,14 @@ import { isQoderPat, resolvePatCredential } from "./pat.js";
 import {
   INTL_PROFILE,
   CN_WORK_PROFILE,
+  CN_PROFILE,
   resolveProfile,
 } from "./profile.js";
 
 export {
   INTL_PROFILE,
   CN_WORK_PROFILE,
+  CN_PROFILE,
   resolveProfile,
   chat,
   getQoderModelConfig,

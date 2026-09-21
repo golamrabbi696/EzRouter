@@ -17,6 +17,7 @@ import { createHash } from "crypto";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { buildCosyHeaders } from "./cosy.js";
 import { resolveProfile } from "./profile.js";
+import { qoderInferenceBase } from "./constants.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -67,7 +68,10 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, pr
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
   const p = resolveProfile(profile);
-  const modelListUrl = p.modelListUrl;
+  const modelListUrl =
+    p.id === "cn" || p.id === "cn-work"
+      ? p.modelListUrl
+      : `${qoderInferenceBase(credentials, p.id)}/algo/api/v2/model/list?Encode=1`;
 
   const headers = {
     Accept: "application/json",

@@ -1,7 +1,7 @@
 /**
  * QoderExecutor — thin adapter over open-sse/protocol/qoder.
  *
- * Shared for providers: qoder (intl) and qoderwork-cn (CN Profile).
+ * Shared for providers: qoder (intl), qoder-cn (CN), and qoderwork-cn (CN Profile).
  * Identity refresh: openapi deviceToken/refresh via tokenRefresh handlers.
  */
 
@@ -18,7 +18,7 @@ export class QoderExecutor extends BaseExecutor {
 
   /** @returns {string} profile id for protocol.resolveProfile */
   getProtocolProfile() {
-    return this.config.protocolProfile;
+    return this.config?.protocolProfile || (this.provider === "qoder-cn" ? "cn" : "intl");
   }
 
   buildUrl() {
@@ -54,15 +54,3 @@ export class QoderExecutor extends BaseExecutor {
 }
 
 export default QoderExecutor;
-
-// Internals exposed for unit tests.
-export const __test__ = {
-  buildQoderParameters(body, maxTokens) {
-    const parameters = { max_tokens: maxTokens };
-    const effort = typeof body?.reasoning_effort === "string"
-      ? body.reasoning_effort.trim().toLowerCase()
-      : "";
-    if (effort && effort !== "auto") parameters.reasoning_effort = effort;
-    return parameters;
-  },
-};

@@ -12,7 +12,7 @@ async function resolveMachineToken(machineId) {
 
 /**
  * Qoder OAuth Service — device-token flow + openapi deviceToken refresh.
- * URLs from protocol Profile (intl | cn-work). Protocol chat stays separate.
+ * URLs from protocol Profile (intl | cn | cn-work). Protocol chat stays separate.
  */
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -37,12 +37,29 @@ async function fetchWithTimeout(fetchImpl, url, init = {}) {
 
 export class QoderService {
   /**
-   * @param {{ profile?: string | object | null, machineTokenResolver?: (machineId: string) => Promise<string>, fetchImpl?: typeof proxyAwareFetch }} [options]
+   * @param {{ profile?: string | object | null, machineTokenResolver?: (machineId: string) => Promise<string>, fetchImpl?: typeof proxyAwareFetch } | object} [optionsOrConfig]
    */
-  constructor(options = {}) {
-    this.profile = resolveProfile(options.profile ?? null);
-    this.machineTokenResolver = options.machineTokenResolver || resolveMachineToken;
-    this.fetchImpl = options.fetchImpl || proxyAwareFetch;
+  constructor(optionsOrConfig = {}) {
+    this.config = optionsOrConfig || {};
+    const profileParam =
+      optionsOrConfig.profile ??
+      optionsOrConfig.protocolProfile ??
+      (optionsOrConfig.openApiBaseUrl?.includes("qoder.com.cn") ? "cn" : "intl");
+    this.profile = resolveProfile(profileParam);
+    this.machineTokenResolver = optionsOrConfig.machineTokenResolver || resolveMachineToken;
+    this.fetchImpl = optionsOrConfig.fetchImpl || proxyAwareFetch;
+  }
+
+  loginUrl() {
+    return this.config.loginUrl || this.profile.loginUrl;
+  }
+
+  deviceTokenUrl() {
+    return this.config.deviceTokenUrl || this.profile.deviceTokenUrl;
+  }
+
+  userInfoUrl() {
+    return this.config.userInfoUrl || this.profile.userInfoUrl;
   }
 
   generatePkcePair() {
@@ -89,7 +106,7 @@ export class QoderService {
     }
 
     return {
-      verificationUriComplete: `${this.profile.loginUrl}?${params.toString()}`,
+      verificationUriComplete: `${this.loginUrl()}?${params.toString()}`,
       codeVerifier: verifier,
       nonce,
       machineId,
@@ -104,7 +121,7 @@ export class QoderService {
     if (!nonce || !codeVerifier) {
       throw new Error("pollDeviceToken: missing nonce or code verifier");
     }
-    const url = `${this.profile.deviceTokenUrl}?nonce=${encodeURIComponent(nonce)}&verifier=${encodeURIComponent(codeVerifier)}&challenge_method=S256`;
+    const url = `${this.deviceTokenUrl()}?nonce=${encodeURIComponent(nonce)}&verifier=${encodeURIComponent(codeVerifier)}&challenge_method=S256`;
 
     const response = await fetchWithTimeout(this.fetchImpl, url, {
       method: "GET",
@@ -156,7 +173,7 @@ export class QoderService {
 
   async fetchUserInfo(accessToken) {
     try {
-      const response = await fetchWithTimeout(this.fetchImpl, this.profile.userInfoUrl, {
+      const response = await fetchWithTimeout(this.fetchImpl, this.userInfoUrl(), {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,

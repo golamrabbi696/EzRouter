@@ -124,6 +124,35 @@ export const CN_WORK_PROFILE = {
   machineType: QODER_MACHINE_TYPE,
 };
 
+/**
+ * Qoder CN profile (CLI / standard web product for qoder.com.cn).
+ * @type {QoderProfile}
+ */
+export const CN_PROFILE = {
+  id: "cn",
+  openApiBase: CN_OPENAPI,
+  chatBase: CN_GATEWAY,
+  centerBase: CN_GATEWAY,
+  chatUrl: CN_CHAT_URL,
+  modelListUrl: `${CN_GATEWAY}/algo/api/v2/model/list?Encode=1`,
+  quotaUrl: `${CN_OPENAPI}/api/v2/quota/usage`,
+  deviceTokenUrl: `${CN_OPENAPI}/api/v1/deviceToken/poll`,
+  userInfoUrl: `${CN_OPENAPI}/api/v1/userinfo`,
+  jobTokenExchangeUrl: `${CN_OPENAPI}/api/v1/jobToken/exchange`,
+  loginUrl: "https://qoder.com.cn/device/selectAccounts",
+  refreshTokenUrl: `${CN_GATEWAY}/algo/api/v3/user/refresh_token`,
+  deviceClientId: "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb",
+  sessionType: "qodercli",
+  businessProduct: "cli",
+  businessVersion: "1.0.0",
+  clientType: QODER_CLIENT_TYPE,
+  ideVersion: QODER_IDE_VERSION,
+  loginVersion: QODER_LOGIN_VERSION,
+  dataPolicy: QODER_DATA_POLICY,
+  machineOs: QODER_MACHINE_OS,
+  machineType: QODER_MACHINE_TYPE,
+};
+
 /** @type {QoderProfile} */
 const DEFAULT_PROFILE = INTL_PROFILE;
 
@@ -131,6 +160,7 @@ const DEFAULT_PROFILE = INTL_PROFILE;
 const PROFILES = {
   intl: INTL_PROFILE,
   "cn-work": CN_WORK_PROFILE,
+  cn: CN_PROFILE,
 };
 
 /**

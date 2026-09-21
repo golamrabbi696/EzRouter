@@ -105,6 +105,7 @@ import providerPerplexityWeb from "./perplexity-web.js";
 import providerPerplexity from "./perplexity.js";
 import providerPlayht from "./playht.js";
 import providerPoolside from "./poolside.js";
+import providerQoderCn from "./qoder-cn.js";
 import providerQoder from "./qoder.js";
 import providerQoderworkCn from "./qoderwork-cn.js";
 import providerReasonix from "./reasonix.js";
@@ -239,6 +240,7 @@ export default [
   providerPerplexity,
   providerPlayht,
   providerPoolside,
+  providerQoderCn,
   providerQoder,
   providerQoderworkCn,
   providerReasonix,

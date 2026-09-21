@@ -29,7 +29,7 @@ import {
   QODER_CHAT_URL_ENCODED,
   QODER_MODEL_LIST_URL,
 } from "../../open-sse/protocol/qoder/test-utils.js";
-import { normalizeQoderMachineOs, QODER_MACHINE_OS } from "../../open-sse/protocol/qoder/constants.js";
+import { normalizeQoderMachineOs, QODER_MACHINE_OS, qoderInferenceBase } from "../../open-sse/protocol/qoder/constants.js";
 import { QoderService } from "../../src/lib/oauth/services/qoder.js";
 import {
   INTL_PROFILE,
@@ -745,6 +745,18 @@ describe("profile-driven payload + cosy (simulation)", () => {
     expect(flow.verificationUriComplete.startsWith(INTL_PROFILE.loginUrl)).toBe(true);
   });
 
+});
+
+describe("qoderInferenceBase", () => {
+  it("sends job tokens to api2 and device tokens to api3", () => {
+    expect(qoderInferenceBase({ accessToken: "jt-abc" })).toContain("api2.qoder.sh");
+    expect(qoderInferenceBase({ accessToken: "dt-abc" })).toContain("api3.qoder.sh");
+  });
+
+  it("serves every token kind from the CN gateway for the qoder-cn region", () => {
+    expect(qoderInferenceBase({ accessToken: "jt-abc" }, "cn")).toContain("gateway.qoder.com.cn");
+    expect(qoderInferenceBase({ accessToken: "dt-abc" }, "cn")).toContain("gateway.qoder.com.cn");
+  });
 });
 
 describe("contract body (awA)", () => {

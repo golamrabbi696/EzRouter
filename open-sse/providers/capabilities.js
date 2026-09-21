@@ -114,13 +114,15 @@ export const MODEL_CAPABILITIES = {
   "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
   "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
 
-  // DeepSeek V4.1 Flash. `deepseek-flash` is the canonical id since DeepSeek's
-  // 2026-09-10 rename ("Change the model name to `deepseek-flash` to call the
-  // latest V4.1 Flash model") and it is natively multimodal (image input) with
-  // the full 1M window / 384K output. Without this entry the canonical id falls
-  // through to the generic *deepseek* pattern and is reported as text-only with
-  // a 128K window, so image requests are handed off to the capacity-adapter pool.
-  "deepseek-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  // DeepSeek V4.1-Flash is natively multimodal — models.dev lists
+  // opencode-go/deepseek-v4.1-flash with modalities.input ["text","image"] — and upstream
+  // the retired v4-flash / vision-exp ids route to it, so the live V4.1 ids carry the
+  // same image capability as the exp id above. "deepseek-flash" is the GA id on the
+  // DeepSeek API; it previously fell through to the generic *deepseek* pattern, whose
+  // 128K/64K limits are kept here. The repeated fields are deliberate: an exact entry
+  // short-circuits the pattern table, so a vision-only delta would drop them.
+  "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  "deepseek-flash":      { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 128000, maxOutput: 64000 },
 
   // Retired V4-Flash ids. DeepSeek no longer lists them but still routes both
   // to V4.1 Flash, so they keep identical (vision-capable) caps until those
@@ -131,8 +133,6 @@ export const MODEL_CAPABILITIES = {
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
   "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
-
-  "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
 
   // OpenCode zen stealth/free originals — exact ids no pattern covers. Reasoning via
   // the gateway's own reasoning_effort enum (none|low|medium|high|max), not the
@@ -202,6 +202,11 @@ const QODER_PROVIDER_MODEL_CAPS = {
     thinkingCanDisable: true,
     maxOutput: 64000,
   },
+  gmodel: QODER_VL_REASONING_CAPS,
+  gfmodel: QODER_VL_REASONING_CAPS,
+  kmodel_latest: QODER_VL_REASONING_CAPS,
+  qfmodel: QODER_VL_REASONING_CAPS,
+  qmodel_38max: QODER_VL_REASONING_CAPS,
   ultimate: QODER_REASONING_CAPS,
   performance: QODER_REASONING_CAPS,
   efficient: QODER_REASONING_CAPS,
@@ -307,23 +312,6 @@ export const PROVIDER_CAPABILITIES = {
   // thinkingFormat keeps the true-model family for documentation/UI, but
   // thinkingCanDisable:false everywhere: the executor only forwards
   // messages/tools/max_tokens, and thinking is fixed upstream via
-  // modelConfig.is_reasoning — client thinking intent is dropped, so "none"
-  // must never be offered as an option.
-  "qoder": {
-    "ultimate":       { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Opus 5
-    "performance":    { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Sonnet 5
-    "dmodel":         { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Pro
-    "dfmodel":        { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Flash
-    "gmodel":         { reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },      // GLM-5.3
-    "gfmodel":        { vision: true, reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // GLM-5.3-Flash
-    "kmodel_latest":  { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Kimi-K3
-    "kmodel":         { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 65536 },  // Kimi-K2.7-Code
-    "mmodel":         { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 512000 }, // MiniMax-M3
-    "qmodel_latest":  { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Max
-    "qmodel":         { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Plus
-    "qfmodel":        { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.8-Flash
-    "qmodel_38max":   { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Qwen3.8-Max
-  },
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
@@ -355,6 +343,10 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   },
 };
+
+// Qoder CN serves the identical model catalog from the CN gateway, so it shares
+// the intl Qoder capability table verbatim (vision/reasoning/contextWindow).
+PROVIDER_CAPABILITIES["qoder-cn"] = PROVIDER_CAPABILITIES["qoder"];
 
 /**
  * Pattern fallback — glob (* = wildcard), matched case-insensitively and
@@ -595,11 +587,66 @@ function refine(base, provider, model) {
   return result;
 }
 
+// Mirrors Command Code CLI `isKnownTextOnlyModel` (no image input). New models
+// default to vision; only this denylist stays text-only.
+const COMMANDCODE_TEXT_ONLY = new Set([
+  "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-v4-flash-fast",
+  "zai-org/glm-5.3",
+  "zai-org/glm-5.2",
+  "zai-org/glm-5.2-fast",
+  "zai-org/glm-5.1",
+  "zai-org/glm-5",
+  "minimaxai/minimax-m2.7",
+  "minimax/minimax-m2.7-free",
+  "minimaxai/minimax-m2.5",
+  "xiaomi/mimo-v2.5-pro",
+  "qwen/qwen3.6-max-preview",
+  "qwen/qwen3.7-max",
+  "meituan/longcat-2.0:free",
+  "stepfun/step-3.5-flash",
+  "tencent/hy4-preview",
+  "tencent/hy3",
+  "tencent/hy3-paid",
+  "nvidia/nemotron-3-ultra-550b-a55b",
+  "poolside/laguna-s-2.1-free",
+  "inclusionai/ling-3.0-flash-free",
+  "inclusionai/ling-3.0-flash-sante:free",
+]);
+
+function isCommandCodeTextOnly(model) {
+  const key = String(model || "").toLowerCase();
+  if (COMMANDCODE_TEXT_ONLY.has(key)) return true;
+  for (const id of COMMANDCODE_TEXT_ONLY) {
+    const base = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : id;
+    if (key === base || key.endsWith("/" + base)) return true;
+  }
+  return false;
+}
+
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
+
+  // CommandCode wire is /alpha/generate for every model. Family patterns
+  // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
+  if (provider === "commandcode" || provider === "cmc") {
+    const providerCaps = PROVIDER_CAPABILITIES.commandcode;
+    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
+    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    return {
+      ...DEFAULT_CAPABILITIES,
+      reasoning: true,
+      thinkingFormat: "commandcode",
+      thinkingEffortSupported: true,
+      vision: !isCommandCodeTextOnly(model),
+      contextWindow: 1000000,
+      maxOutput: 384000,
+    };
+  }
 
   // 1. Provider-specific override
   if (provider) {

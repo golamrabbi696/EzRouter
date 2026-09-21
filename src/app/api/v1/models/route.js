@@ -15,7 +15,7 @@ import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
 import { getEnabledModels } from "@/lib/enabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
-import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels, resolveClineModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
@@ -25,6 +25,27 @@ import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, withDeclaredCapabilities, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
+
+// Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
+// credentials carry the provider id so qoderModels picks the right region's
+// catalog endpoint.
+async function resolveQoderLiveModels(conn, provider) {
+  const result = await resolveQoderModels({
+    provider,
+    accessToken: conn.accessToken,
+    // PAT (pt-...) connections keep the token in apiKey; without it the live
+    // catalog silently fails and /v1/models falls back to the static list.
+    apiKey: conn.apiKey,
+    refreshToken: conn.refreshToken,
+    email: conn.email,
+    displayName: conn.displayName,
+    providerSpecificData: conn.providerSpecificData || {}
+  });
+  // Visible + hidden (enable:false) catalog keys — chat routes all of them.
+  const models = routableQoderModels(result);
+  if (!models.length) return null;
+  return { models: models.map((m) => ({ id: m.id, name: m.name })) };
+}
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -38,19 +59,8 @@ const LIVE_MODEL_RESOLVERS = {
     }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
   },
-  qoder: async (conn) => {
-    const result = await resolveQoderModels({
-      accessToken: conn.accessToken,
-      refreshToken: conn.refreshToken,
-      email: conn.email,
-      displayName: conn.displayName,
-      providerSpecificData: conn.providerSpecificData || {}
-    });
-    if (!result?.models?.length) return null;
-    return {
-      models: result.models.map((m) => ({ id: m.id, name: m.name })),
-    };
-  },
+  qoder: async (conn) => resolveQoderLiveModels(conn, "qoder"),
+  "qoder-cn": async (conn) => resolveQoderLiveModels(conn, "qoder-cn"),
   kimchi: async (conn) => {
     const result = await resolveKimchiModels({
       accessToken: conn.accessToken,

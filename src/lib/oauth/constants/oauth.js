@@ -39,6 +39,9 @@ export const QWEN_CONFIG = { ...PROVIDER_OAUTH["qwen"] };
 export const QODER_CONFIG = { ...PROVIDER_OAUTH["qoder"] };
 export const QODERWORK_CN_CONFIG = { ...PROVIDER_OAUTH["qoderwork-cn"] };
 
+// Qoder CN (qoder.com.cn) — same device flow as intl Qoder, CN endpoints.
+export const QODER_CN_CONFIG = { ...PROVIDER_OAUTH["qoder-cn"] };
+
 // iFlow OAuth Configuration (Authorization Code)
 export const IFLOW_CONFIG = { ...PROVIDER_OAUTH["iflow"] };
 
@@ -213,6 +216,7 @@ export const PROVIDERS = {
   GEMINI: "gemini-cli",
   QWEN: "qwen",
   QODER: "qoder",
+  QODER_CN: "qoder-cn",
   IFLOW: "iflow",
   ANTIGRAVITY: "antigravity",
   OPENAI: "openai",
