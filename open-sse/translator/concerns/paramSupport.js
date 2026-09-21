@@ -37,6 +37,15 @@ const STRIP_RULES = [
   // OpenAI gpt-5.x rejects `max_tokens`; it must be `max_completion_tokens`.
   // Rename to avoid HTTP 400 "Unsupported parameter: 'max_tokens'". #2830
   { provider: "openai", match: /gpt-5/i, rename: [["max_tokens", "max_completion_tokens"]] },
+  // Strict OpenAI-compatible validators reject unknown assistant-message fields.
+  // Clients that talk to reasoning models (e.g. Hermes) echo the prior turn's
+  // reasoning back on every assistant message; Groq answers 400 and Mistral 422
+  // ("extra_forbidden") on it, which knocks these providers out of every
+  // multi-turn combo. Providers that *require* the field (DeepSeek, Kimi) are
+  // handled by reasoningContentInjector and are not listed here.
+  { provider: "groq", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
+  { provider: "mistral", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
+  { provider: "cerebras", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -73,6 +82,15 @@ export function stripUnsupportedParams(provider, model, body) {
       if (body[key] !== undefined) delete body[key];
     }
     if (rule.rename) renameParams(body, rule.rename);
+    // Per-message field drop (assistant turns only — that is where clients replay reasoning).
+    if (Array.isArray(rule.dropMessageFields) && Array.isArray(body.messages)) {
+      for (const msg of body.messages) {
+        if (!msg || msg.role !== "assistant") continue;
+        for (const key of rule.dropMessageFields) {
+          if (msg[key] !== undefined) delete msg[key];
+        }
+      }
+    }
     // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
     if (rule.flattenContent && Array.isArray(body.messages)) {
       for (const msg of body.messages) {
