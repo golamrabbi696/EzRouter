@@ -1,6 +1,6 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
+import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix, clampNativeThinking } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -249,6 +249,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
       if (clientTool === "claude") {
         normalizeClaudePassthrough(translatedBody, translatedBody.model, clientRawRequest?.headers || null);
+        clampNativeThinking(translatedBody, provider, model);
       }
       // Strip structured-output format for Claude-compatible passthrough targets.
       // output_config.format is an Anthropic-only feature; Claude Code sends it on

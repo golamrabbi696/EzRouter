@@ -3,7 +3,7 @@
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
-import { supportsThinkingLevel } from "../../providers/thinkingLevels.js";
+import { getThinkingLevels, supportsThinkingLevel } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
@@ -199,6 +199,46 @@ function normalizeOpenAILevel(level, provider, model) {
   if (supportsThinkingLevel(provider, model, level)) return level;
   if (level === "ultra" && supportsThinkingLevel(provider, model, "max")) return "max";
   return "xhigh";
+}
+
+// Level not accepted by this model → nearest supported level over the shared
+// effort scale (ties round up), so "xhigh" → "max" for a [low, high, max] set.
+function clampToSupportedLevel(level, supportedLevels) {
+  if (supportedLevels?.includes(level)) return level;
+  if (level === "ultra") level = supportedLevels?.includes("max") ? "max" : "xhigh";
+  if (!Array.isArray(supportedLevels) || supportedLevels.length === 0) return level;
+  if (supportedLevels.includes(level)) return level;
+  const order = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const idx = order.indexOf(level);
+  if (idx === -1) return level;
+  let best = null;
+  for (const candidate of supportedLevels) {
+    const i = order.indexOf(candidate);
+    if (i <= 0) continue;
+    const d = Math.abs(i - idx);
+    if (!best || d < best.d || (d === best.d && i > best.i)) best = { level: candidate, d, i };
+  }
+  return best ? best.level : level;
+}
+
+// Passthrough guard: native clients (Claude Code) can send thinking fields the
+// model's backend rejects — e.g. output_config.effort "xhigh" for a GLM-5.3 id,
+// whose backend accepts exactly low|high|max (verified live 2026-09-21: the raw
+// field is forwarded on the passthrough path, skipping applyFormat, and Alibaba
+// returns 400 "reasoning_effort must be one of low, high, max"). Clamp the level
+// to the model's supported set (thinkingLevels.js). Scoped to zai-format models:
+// their level enum is narrower than the generic effort scale. The clamp lives
+// here (not in normalizeOpenAILevel) because that helper only resolves
+// max/ultra aliases — a zai backend rejects ANY level outside its enum.
+export function clampNativeThinking(body, provider, model) {
+  const eff = body?.output_config?.effort;
+  if (typeof eff !== "string" || !eff) return body;
+  const caps = getCapabilitiesForModel(provider, model);
+  if (caps.thinkingFormat !== "zai") return body;
+  const levels = getThinkingLevels(provider, model);
+  const mapped = clampToSupportedLevel(eff.toLowerCase(), levels);
+  if (mapped && mapped !== eff) body.output_config.effort = mapped;
+  return body;
 }
 
 function toGeminiThinkingLevel(cfg) {
