@@ -52,7 +52,7 @@ describe("capacity adapter pooling", () => {
   it("only pools models for the capabilities the request needs", () => {
     const onlyAudioEnabled = { capacityAdapter: { audioInput: { enabled: true, models: [] } } };
     // Every pool (unchanged behaviour for callers that pass no capabilities).
-    expect(getCapacityAdapterModels(onlyAudioEnabled)).toEqual(["oc/mimo-v2.5-free"]);
+    expect(getCapacityAdapterModels(onlyAudioEnabled)).toEqual(["oc/mimo-v2.6-flash-free"]);
     // A vision request must not pick up an audio pool's models.
     expect(getCapacityAdapterModels(onlyAudioEnabled, ["vision"])).toEqual([]);
     expect(augmentModelsWithCapacityAdapter([TEXT_ONLY_MODEL], ["vision"], onlyAudioEnabled)).toEqual([TEXT_ONLY_MODEL]);

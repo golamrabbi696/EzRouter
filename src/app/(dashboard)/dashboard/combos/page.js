@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -9,6 +9,7 @@ import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModa
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -55,8 +56,8 @@ export default function CombosPage() {
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
-  const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
+  const { getCaps } = useModelCaps();
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -73,7 +74,7 @@ export default function CombosPage() {
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
+
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !MEDIA_PROVIDER_KINDS.some(({ id }) => id === c.kind)));
       if (providersRes.ok) {
@@ -231,21 +232,25 @@ export default function CombosPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
-          {combos.map((combo) => (
-            <ComboCard
-              key={combo.id}
-              combo={combo}
-              getCaps={getCaps}
-              activeProviders={activeProviders}
-              copied={copied}
-              onCopy={copy}
-              onEdit={() => setEditingCombo(combo)}
-              onDelete={() => handleDelete(combo.id)}
-              onTest={() => setTestingCombo(combo)}
-              strategy={comboStrategies[combo.name] || {}}
-              onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
-            />
-          ))}
+          {(() => {
+            const comboByName = Object.fromEntries(combos.map((c) => [c.name, c.models]));
+            return combos.map((combo) => (
+              <ComboCard
+                key={combo.id}
+                combo={combo}
+                getCaps={getCaps}
+                comboByName={comboByName}
+                activeProviders={activeProviders}
+                copied={copied}
+                onCopy={copy}
+                onEdit={() => setEditingCombo(combo)}
+                onDelete={() => handleDelete(combo.id)}
+                onTest={() => setTestingCombo(combo)}
+                strategy={comboStrategies[combo.name] || {}}
+                onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
+              />
+            ));
+          })()}
         </div>
       )}
 
@@ -304,6 +309,15 @@ export default function CombosPage() {
   );
 }
 
+const fmtK = (n) => {
+  if (!n) return "?";
+  if (n >= 1000000) {
+    const m = n / 1000000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
+  return `${Math.round(n / 1000)}k`;
+};
+
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
@@ -311,11 +325,12 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const comboCaps = aggregateComboCapabilities(combo.models, comboByName);
 
   return (
     <Card padding="sm" className="group">
@@ -333,7 +348,11 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 combo.models.slice(0, 3).map((model, index) => (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
                     <span>{model}</span>
-                    <CapacityBadges caps={getCaps?.(model)} />
+                    <CapacityBadges caps={
+                      comboByName[model]
+                        ? aggregateComboCapabilities(comboByName[model], comboByName)
+                        : getCaps?.(model)
+                    } />
                   </code>
                 ))
               )}
@@ -341,6 +360,13 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
               )}
             </div>
+            {comboCaps && (
+              <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
+                <span>ctx {fmtK(comboCaps.contextWindow)}</span>
+                <span className="opacity-40">·</span>
+                <span>max {fmtK(comboCaps.maxOutput)}</span>
+              </div>
+            )}
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
