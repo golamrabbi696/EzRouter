@@ -9,64 +9,42 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
-const getPiModelsJsonPath = () => {
-  const agentPath = path.join(os.homedir(), ".pi", "agent", "models.json");
-  return agentPath;
+const getCrushConfigPath = () => {
+  const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return path.join(configDir, "crush", "crush.json");
 };
 
-const getPiDir = () => path.dirname(getPiModelsJsonPath());
+const getCrushDir = () => path.dirname(getCrushConfigPath());
 
-const checkPiInstalled = async () => {
+const checkCrushInstalled = async () => {
   const isWindows = os.platform() === "win32";
   try {
-    const command = isWindows ? "where pi" : "which pi";
+    const command = isWindows ? "where crush" : "which crush";
     await execAsync(command, { windowsHide: true });
     return true;
   } catch {
     try {
-      await fs.access(getPiModelsJsonPath());
+      await fs.access(getCrushConfigPath());
       return true;
     } catch {
-      try {
-        await fs.access(path.join(os.homedir(), ".pi", "models.json"));
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
   }
 };
 
-const hasEzRouterConfig = (settings) => {
+const has9RouterConfig = (settings) => {
   if (!settings || !settings.providers) return false;
   const p = settings.providers["ezrouter"] || settings.providers["9router"];
-  if (p && p.baseUrl) return true;
+  if (p && p.base_url) return true;
   for (const prov of Object.values(settings.providers)) {
-    if (prov.baseUrl && (prov.baseUrl.includes("20126") || prov.baseUrl.includes("20128"))) return true;
+    if (prov.base_url && (prov.base_url.includes("20126") || prov.base_url.includes("20128"))) return true;
   }
   return false;
 };
 
-const resolveModelsJsonPath = async () => {
-  const agentPath = path.join(os.homedir(), ".pi", "agent", "models.json");
-  const rootPath = path.join(os.homedir(), ".pi", "models.json");
-  try {
-    await fs.access(agentPath);
-    return agentPath;
-  } catch {
-    try {
-      await fs.access(rootPath);
-      return rootPath;
-    } catch {
-      return agentPath;
-    }
-  }
-};
-
 const readConfig = async () => {
   try {
-    const targetPath = await resolveModelsJsonPath();
-    const content = await fs.readFile(targetPath, "utf-8");
+    const content = await fs.readFile(getCrushConfigPath(), "utf-8");
     return JSON.parse(content);
   } catch {
     return null;
@@ -75,23 +53,22 @@ const readConfig = async () => {
 
 export async function GET() {
   try {
-    const installed = await checkPiInstalled();
+    const installed = await checkCrushInstalled();
     if (!installed) {
       return NextResponse.json({
         installed: false,
         config: null,
-        message: "Pi CLI is not installed",
+        message: "Crush CLI is not installed",
       });
     }
 
     const config = await readConfig();
-    const configPath = await resolveModelsJsonPath();
 
     return NextResponse.json({
       installed: true,
       config,
-      has9Router: hasEzRouterConfig(config),
-      configPath,
+      has9Router: has9RouterConfig(config),
+      configPath: getCrushConfigPath(),
     });
   } catch (err) {
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
@@ -112,8 +89,8 @@ export async function POST(request) {
       return NextResponse.json({ error: { message: "baseUrl is required" } }, { status: 400 });
     }
 
-    const configPath = await resolveModelsJsonPath();
-    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    const configPath = getCrushConfigPath();
+    await fs.mkdir(getCrushDir(), { recursive: true });
 
     let existing = {};
     try {
@@ -126,36 +103,26 @@ export async function POST(request) {
     if (!existing.providers) existing.providers = {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    let modelList = [];
-    if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
-      modelList = rawBody.models.map((m) => {
-        if (typeof m === "string") {
-          return { id: m, name: m, contextWindow: 128000, maxTokens: 16384 };
-        }
-        return {
-          id: m.id || "provider/model-id",
-          name: m.name || m.id || "provider/model-id",
-          contextWindow: m.contextWindow || 128000,
-          maxTokens: m.maxTokens || 16384,
-        };
-      });
-    } else {
-      const modelId = model || "provider/model-id";
-      modelList = [{ id: modelId, name: modelId, contextWindow: 128000, maxTokens: 16384 }];
-    }
+    const modelId = model || "provider/model-id";
 
     existing.providers["9router"] = {
-      baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_ezrouter",
-      api: "openai-completions",
-      models: modelList,
+      type: "openai-compat",
+      base_url: normalizedBaseUrl,
+      api_key: apiKey || "sk_ezrouter",
+      models: [
+        {
+          id: modelId,
+          name: modelId,
+          context_window: 128000,
+        },
+      ],
     };
 
     await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
 
     return NextResponse.json({
       success: true,
-      message: "Pi settings applied! Use /model in Pi to select the EzRouter model.",
+      message: "Crush settings applied successfully!",
       configPath,
     });
   } catch (err) {
@@ -165,7 +132,7 @@ export async function POST(request) {
 
 export async function DELETE() {
   try {
-    const configPath = await resolveModelsJsonPath();
+    const configPath = getCrushConfigPath();
     let existing = {};
     try {
       const raw = await fs.readFile(configPath, "utf-8");
@@ -181,7 +148,7 @@ export async function DELETE() {
       await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
     }
 
-    return NextResponse.json({ success: true, message: "EzRouter removed from Pi" });
+    return NextResponse.json({ success: true, message: "EzRouter removed from Crush" });
   } catch (err) {
     return NextResponse.json({ error: { message: err.message } }, { status: 500 });
   }

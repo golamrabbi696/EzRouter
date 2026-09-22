@@ -8,21 +8,12 @@ import {
 	getModelsByProviderId,
 	PROVIDER_ID_TO_ALIAS,
 } from "@/shared/constants/models";
-import ClaudeToolCard from "../components/ClaudeToolCard";
-import ClineToolCard from "../components/ClineToolCard";
-import CodexToolCard from "../components/CodexToolCard";
-import CopilotToolCard from "../components/CopilotToolCard";
-import CoworkToolCard from "../components/CoworkToolCard";
-import DeepSeekTuiToolCard from "../components/DeepSeekTuiToolCard";
-import DefaultToolCard from "../components/DefaultToolCard";
-import DroidToolCard from "../components/DroidToolCard";
-import GrokBuildToolCard from "../components/GrokBuildToolCard";
-import HermesToolCard from "../components/HermesToolCard";
-import JcodeToolCard from "../components/JcodeToolCard";
-import KiloToolCard from "../components/KiloToolCard";
-import OpenClawToolCard from "../components/OpenClawToolCard";
-import OpenCodeToolCard from "../components/OpenCodeToolCard";
-import PiToolCard from "../components/PiToolCard";
+import {
+	ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard,
+	HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard,
+	CopilotToolCard, ClineToolCard, KiloToolCard, DeepSeekTuiToolCard,
+	JcodeToolCard, GrokBuildToolCard, GenericCliToolCard,
+} from "../components";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -286,8 +277,13 @@ export default function ToolDetailClient({ toolId, machineId }) {
 					/>
 				);
 			case "pi":
+			case "omp":
+			case "crush":
+			case "forge":
+			case "smelt":
+			case "codewhale":
 				return (
-					<PiToolCard
+					<GenericCliToolCard
 						{...commonProps}
 						activeProviders={getActiveProviders()}
 						cloudEnabled={cloudEnabled}

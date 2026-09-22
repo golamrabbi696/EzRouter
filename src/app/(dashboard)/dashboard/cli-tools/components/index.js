@@ -10,6 +10,7 @@ export { default as DefaultToolCard } from "./DefaultToolCard";
 export { default as DroidToolCard } from "./DroidToolCard";
 export { default as EndpointPresetControl } from "./EndpointPresetControl";
 export { default as GrokBuildToolCard } from "./GrokBuildToolCard";
+export { default as GenericCliToolCard } from "./GenericCliToolCard";
 export { default as HermesToolCard } from "./HermesToolCard";
 export { default as JcodeToolCard } from "./JcodeToolCard";
 export { default as KiloToolCard } from "./KiloToolCard";
