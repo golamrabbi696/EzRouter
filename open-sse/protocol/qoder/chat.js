@@ -164,8 +164,11 @@ export async function chat({
     if (typeof fetchImpl === "function") {
       response = await fetchImpl(url, init);
     } else {
-      response = await proxyAwareFetch(url, init, proxyOptions);
+      response = await proxyAwareFetch(url, init, { ...proxyOptions, strictProxy: true });
     }
+  } catch (err) {
+    if (mergedSignal.aborted) throw mergedSignal.reason;
+    throw err;
   } finally {
     clearTimeout(connectTimer);
   }
@@ -174,6 +177,6 @@ export async function chat({
     return { response, url, headers, transformedBody: payload };
   }
 
-  const wrapped = wrapQoderSSE(response, `qoder/${qoderKey}`);
+  const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`, log);
   return { response: wrapped, url, headers, transformedBody: payload };
 }

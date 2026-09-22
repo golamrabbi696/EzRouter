@@ -549,6 +549,8 @@ describe("wrapQoderSSE", () => {
     return buf;
   }
 
+  const envelope = (body, statusCodeValue = 200) => `data: ${JSON.stringify({ statusCodeValue, body })}\n\n`;
+
   it("forwards an OpenAI envelope chunk and emits [DONE] in flush", async () => {
     const inner = JSON.stringify({ choices: [{ delta: { content: "hi" } }] });
     const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}\n\n`;
@@ -571,14 +573,14 @@ describe("wrapQoderSSE", () => {
 
   // Regression for review finding #3: chunks could leak past [DONE] when
   // the success branch had no doneEmitted guard. We synthesize an error
-  // envelope (which sets doneEmitted=true) followed by a valid envelope
+  // envelope after content (which sets doneEmitted=true), followed by a valid envelope
   // and assert the second envelope is NOT forwarded.
   it("does not forward chunks after [DONE] has been emitted", async () => {
     const errorEnv = JSON.stringify({ statusCodeValue: 500, body: "boom" });
     const validInner = JSON.stringify({ choices: [{ delta: { content: "leak" } }] });
     const validEnv = JSON.stringify({ statusCodeValue: 200, body: validInner });
     const wrapped = await wrapQoderSSE(
-      makeResponse([`data: ${errorEnv}\n\ndata: ${validEnv}\n\n`]),
+      makeResponse([envelope(JSON.stringify({ choices: [{ delta: { content: "hi" } }] })) + `data: ${errorEnv}\n\ndata: ${validEnv}\n\n`]),
       "qoder/auto",
     );
     const out = await drain(wrapped);
@@ -604,12 +606,13 @@ describe("wrapQoderSSE", () => {
     expect(() => JSON.parse(dataLine.slice("data: ".length))).not.toThrow();
   });
 
-  it("upstream error envelope produces an error chunk + [DONE]", async () => {
+  it("upstream first-frame error envelope produces an HTTP error", async () => {
     const env = JSON.stringify({ statusCodeValue: 503, body: "service unavailable" });
     const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
-    const out = await drain(wrapped);
-    expect(out).toContain("qoder_upstream_error");
-    expect(out).toContain("data: [DONE]\n\n");
+    expect(wrapped.status).toBe(503);
+    expect(await wrapped.json()).toEqual({
+      error: { message: "service unavailable", code: 503 },
+    });
   });
 
   it("non-ok responses are returned unchanged (no transform)", async () => {
@@ -1094,13 +1097,13 @@ describe("wrapQoderSSE special tokens", () => {
   }
 
   it("does not forward NOT_EXCEED_QUOTA as content", async () => {
-    const out = await drain(wrapQoderSSE(makeResponse(["data: [NOT_EXCEED_QUOTA]\n\n"]), "qoder/x"));
+    const out = await drain(await wrapQoderSSE(makeResponse(["data: [NOT_EXCEED_QUOTA]\n\n"]), "qoder/x"));
     expect(out).not.toContain("NOT_EXCEED_QUOTA");
     expect(out).toContain("data: [DONE]");
   });
 
   it("maps EXCEED_QUOTA to error event not content delta", async () => {
-    const out = await drain(wrapQoderSSE(makeResponse(["data: [EXCEED_QUOTA] limit\n\n"]), "qoder/x"));
+    const out = await drain(await wrapQoderSSE(makeResponse(["data: [EXCEED_QUOTA] limit\n\n"]), "qoder/x"));
     expect(out).toContain("qoder_upstream_error");
     expect(out).not.toMatch(/delta":\{"content":"\\n\[qoder error/);
   });

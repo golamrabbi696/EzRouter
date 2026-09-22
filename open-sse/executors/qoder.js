@@ -8,6 +8,7 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { chat as qoderChat } from "../protocol/qoder/index.js";
+import { isBillingBlock, wrapQoderSSE } from "../protocol/qoder/sse.js";
 import { refreshQoderDeviceToken } from "../services/tokenRefresh/providers.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 
@@ -52,5 +53,10 @@ export class QoderExecutor extends BaseExecutor {
     );
   }
 }
+
+export const __test__ = {
+  isBillingBlock,
+  wrapQoderSSE,
+};
 
 export default QoderExecutor;

@@ -127,22 +127,88 @@ function normalizeReasoningItem(chunk) {
   return chunk;
 }
 
+export function isBillingBlock(inner) {
+  if (!inner) return false;
+  const str = typeof inner === "string" ? inner : JSON.stringify(inner);
+  const lowerMsg = str.toLowerCase();
+  if (lowerMsg.includes("pricingurl")) return true;
+  try {
+    const parsed = typeof inner === "object" ? inner : JSON.parse(str);
+    const code = String(parsed?.code ?? "");
+    if (code === "110" || code === "112" || code === "10605") return true;
+  } catch { /* not JSON */ }
+  return /"code"\s*:\s*"(110|112|10605)"/.test(str);
+}
+
+async function peekFirstQoderFrame(reader, decoder) {
+  let consumed = "";
+  let offset = 0;
+  let upstreamDone = false;
+  while (true) {
+    let nl = consumed.indexOf("\n", offset);
+    if (nl === -1 && !upstreamDone) {
+      const { done, value } = await reader.read();
+      upstreamDone = done;
+      consumed += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      continue;
+    }
+    if (offset >= consumed.length) return { isError: false, isBilling: false, statusVal: 200, message: "", consumed, upstreamDone };
+    if (nl === -1) nl = consumed.length;
+
+    const line = consumed.slice(offset, nl).replace(/\r$/, "").trim();
+    offset = nl + 1;
+    if (!line.startsWith("data:")) continue;
+
+    const data = line.slice(5).trimStart();
+    if (data === "[DONE]") return { isError: false, isBilling: false, statusVal: 200, message: "", consumed, upstreamDone };
+
+    let envelope;
+    try { envelope = JSON.parse(data); } catch { return { isError: false, isBilling: false, statusVal: 200, message: "", consumed, upstreamDone }; }
+
+    const raw = Number(envelope?.statusCodeValue);
+    const statusVal = Number.isNaN(raw) ? 200 : raw;
+    const inner = typeof envelope?.body === "string"
+      ? envelope.body
+      : envelope?.body != null ? JSON.stringify(envelope.body) : "";
+
+    if (statusVal !== 200) {
+      return { isError: true, isBilling: isBillingBlock(inner), statusVal, message: inner || `upstream status ${statusVal}`, consumed, upstreamDone };
+    }
+    return { isError: false, isBilling: false, statusVal: 200, message: "", consumed, upstreamDone };
+  }
+}
+
 /**
  * @param {Response} response
  * @param {string} model - label for error chunks
+ * @param {any} [log]
  */
-function wrapQoderSSE(response, model) {
+async function wrapQoderSSE(response, model, log = null) {
   if (!response.ok || !response.body) return response;
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
+  const reader = response.body.getReader();
+
+  const peek = await peekFirstQoderFrame(reader, decoder);
+  if (peek.isError) {
+    await reader.cancel().catch(() => {});
+    const status = peek.isBilling
+      ? 403
+      : Number.isInteger(peek.statusVal) && peek.statusVal >= 400 && peek.statusVal <= 599
+        ? peek.statusVal : 502;
+    return new Response(
+      JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
+      { status, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   let buffer = "";
   const state = { doneEmitted: false, lastEvent: "", contentEmitted: false };
 
   const processLine = (line, controller) => {
     const trimmed = line.replace(/\r$/, "").trim();
     if (!trimmed) return;
-    // S8: track SSE event: lines (e.g. "event: finish" gates normal termination)
     if (trimmed.startsWith("event:")) {
       state.lastEvent = trimmed.slice(6).trim();
       return;
@@ -152,13 +218,11 @@ function wrapQoderSSE(response, model) {
 
     const data = trimmed.slice(5).trimStart();
 
-    // Top-level special tokens (no JSON envelope)
     if (data === "[DONE]") {
       emitDone(controller, state);
       return;
     }
     if (data === "[NOT_EXCEED_QUOTA]" || data.startsWith("[NOTIFICATIONS]")) {
-      // Control / advisory — do not forward as model content
       return;
     }
     if (data.startsWith("[EXCEED_QUOTA]")) {
@@ -177,23 +241,34 @@ function wrapQoderSSE(response, model) {
       return;
     }
 
-    // Non-envelope JSON: ignore (not official chat path)
     if (envelope == null || typeof envelope !== "object") return;
 
-    const statusVal =
-      typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
-    const inner = typeof envelope.body === "string" ? envelope.body : "";
+    const raw = Number(envelope?.statusCodeValue);
+    const statusVal = Number.isNaN(raw) ? 200 : raw;
+    const inner = typeof envelope?.body === "string"
+      ? envelope.body
+      : envelope?.body != null ? JSON.stringify(envelope.body) : "";
 
     if (statusVal !== 200) {
-      // S8: "event: finish" + non-200 = normal termination signal, not an error
       if (state.lastEvent === "finish") {
         emitDone(controller, state);
         return;
       }
-      // S4: classify auth errors so clients can trigger refresh/reconnect
+      if (isBillingBlock(inner)) {
+        const errObj = JSON.stringify({
+          error: {
+            message: inner || `qoder billing block (${statusVal})`,
+            code: "qoder_billing_block",
+            status: 403,
+            type: "quota_error",
+          },
+        });
+        controller.enqueue(encoder.encode(`data: ${errObj}\n\n`));
+        emitDone(controller, state);
+        return;
+      }
       const isAuth = statusVal === 103 || statusVal === 105 ||
         /login expired|login timeout|token.*expired|auth/i.test(inner);
-      // S12: classify queue/model-busy errors for retry signaling
       const isQueue = statusVal === 10605 || /queue|isQueued|retry_after/i.test(inner);
       emitOpenAIError(controller, state, {
         model,
@@ -216,16 +291,13 @@ function wrapQoderSSE(response, model) {
         emitOpenAIError(controller, state, { model, message: inner, statusVal: 429 });
         return;
       }
-      // NOT_EXCEED_QUOTA / NOTIFICATIONS — skip
       return;
     }
 
-    // OpenAI-shaped chunk — parse, inspect finish_reason, handle usage merge [S1/S2/S5]
     let chunk;
     try {
       chunk = JSON.parse(inner);
     } catch {
-      // Not JSON — forward raw
       const sanitized = inner.replace(/\r?\n/g, "");
       state.contentEmitted = true;
       controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
@@ -233,26 +305,22 @@ function wrapQoderSSE(response, model) {
     }
 
     const handled = handleFinishReasonObj(chunk, controller, state, model);
-    if (handled === null) return; // error was emitted (S2)
+    if (handled === null) return;
 
-    // S5: usage-only chunk (choices:[] + usage) — merge into buffered finish chunk
     if (isUsageOnlyChunk(handled)) {
       if (state.pendingFinish) {
         state.pendingFinish.usage = handled.usage;
         emitChunk(controller, encoder, state, state.pendingFinish);
         state.pendingFinish = null;
       }
-      // If no pending finish, drop the usage-only chunk (stream.js doesn't need it)
       return;
     }
 
-    // S5: finish chunk without usage — buffer it, wait for the real usage chunk
     if (hasRealFinish(handled) && !(handled.usage && typeof handled.usage === "object")) {
       state.pendingFinish = handled;
       return;
     }
 
-    // Flush any buffered finish (next chunk arrived that isn't usage-only)
     if (state.pendingFinish) {
       emitChunk(controller, encoder, state, state.pendingFinish);
       state.pendingFinish = null;
@@ -261,44 +329,71 @@ function wrapQoderSSE(response, model) {
     emitChunk(controller, encoder, state, handled);
   };
 
-  const transform = new TransformStream({
-    transform(chunk, controller) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let nl;
-      while ((nl = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, nl);
-        buffer = buffer.slice(nl + 1);
-        processLine(line, controller);
+  const flush = (controller) => {
+    buffer += decoder.decode();
+    if (buffer.length > 0) {
+      processLine(buffer, controller);
+      buffer = "";
+    }
+    if (state.pendingFinish) {
+      emitChunk(controller, encoder, state, state.pendingFinish);
+      state.pendingFinish = null;
+    }
+    if (!state.contentEmitted && !state.doneEmitted) {
+      emitOpenAIError(controller, state, {
+        model,
+        message: "Empty response: stream ended without any content",
+        statusVal: 502,
+        type: "empty_response",
+        code: "empty_response",
+      });
+      return;
+    }
+    emitDone(controller, state);
+  };
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      if (peek.consumed) {
+        buffer += peek.consumed;
+        let nl;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nl);
+          buffer = buffer.slice(nl + 1);
+          processLine(line, controller);
+        }
       }
-    },
-    flush(controller) {
-      buffer += decoder.decode();
-      if (buffer.length > 0) {
-        processLine(buffer, controller);
-        buffer = "";
-      }
-      // Flush any buffered finish chunk (usage-only chunk never arrived)
-      if (state.pendingFinish) {
-        emitChunk(controller, encoder, state, state.pendingFinish);
-        state.pendingFinish = null;
-      }
-      // S7: stream ended with no content → emit error instead of silent [DONE]
-      if (!state.contentEmitted && !state.doneEmitted) {
-        emitOpenAIError(controller, state, {
-          model,
-          message: "Empty response: stream ended without any content",
-          statusVal: 502,
-          type: "empty_response",
-          code: "empty_response",
-        });
+      if (peek.upstreamDone) {
+        flush(controller);
+        try { controller.close(); } catch {}
         return;
       }
-      emitDone(controller, state);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl);
+            buffer = buffer.slice(nl + 1);
+            processLine(line, controller);
+          }
+        }
+        flush(controller);
+      } catch (err) {
+        // Stream aborted or reader cancelled
+      } finally {
+        try { controller.close(); } catch {}
+        await reader.cancel().catch(() => {});
+      }
+    },
+    cancel() {
+      return reader.cancel().catch(() => {});
     },
   });
 
-  const transformed = response.body.pipeThrough(transform);
-  return new Response(transformed, {
+  return new Response(stream, {
     status: response.status,
     statusText: response.statusText,
     headers: {

@@ -11,7 +11,7 @@
  */
 
 import { createHash, randomUUID } from "crypto";
-import { getQoderModelConfig, resolveQoderModels } from "./catalog.js";
+import { getQoderModelConfig, resolveQoderModels } from "../../services/qoderModels.js";
 import { resolveProfile } from "./profile.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
 import { stripThinkingSuffix } from "../../translator/concerns/thinkingUnified.js";
