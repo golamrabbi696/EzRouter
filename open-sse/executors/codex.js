@@ -7,7 +7,8 @@ import {
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
-import { getModelUpstreamId } from "../config/providerModels.js";
+import { getModelUpstreamId, getProviderModels } from "../config/providerModels.js";
+import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -45,6 +46,11 @@ const CODEX_LITE_METADATA_HEADERS = [
   "x-openai-subagent",
   "x-responsesapi-include-timing-metrics",
 ];
+
+function isCodexResponsesLiteModel(model) {
+  const baseId = String(model || "").replace(/\([^()]+\)\s*$/, "");
+  return getProviderModels("cx").some((entry) => entry.id === baseId && entry.responsesLite === true);
+}
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -114,13 +120,14 @@ function hoistClientInstructions(body) {
 }
 
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
-function stripStoredItemReferences(body) {
+function stripStoredItemReferences(body, preserveLitePrefix = false) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
-      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
+      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)
+        && !(preserveLitePrefix && item.role === "developer" && item.id.startsWith("msg_"))) delete item.id;
     }
     return true;
   });
@@ -196,8 +203,13 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(value) {
-  return value === "max" ? "xhigh" : value;
+function normalizeReasoningEffort(model, value) {
+  const supportedLevels = getThinkingLevels("codex", model);
+  if (supportedLevels?.includes(value)) return value;
+  if (isCodexResponsesLiteModel(model) && (value === "none" || value === "minimal")) return "low";
+  if (value === "ultra" && supportedLevels?.includes("max")) return "max";
+  if (value === "max" || value === "ultra") return "xhigh";
+  return value;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -336,8 +348,11 @@ export class CodexExecutor extends BaseExecutor {
    * Override headers to add codex-specific identity headers.
    * transformRequest runs BEFORE buildHeaders, sets this._currentSessionId.
    */
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, _url = null, model = null) {
     const headers = super.buildHeaders(credentials, stream);
+    if (isCodexResponsesLiteModel(model && getModelUpstreamId("cx", model))) {
+      headers["x-openai-internal-codex-responses-lite"] = "true";
+    }
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
@@ -549,7 +564,6 @@ export class CodexExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     const isCompact = body._compact === true || body[CODEX_COMPACT_REQUEST] === true;
     if (isCompact) body[CODEX_COMPACT_REQUEST] = true;
-    const responsesLite = usesResponsesLite(credentials);
     this._isCompact = isCompact;
     delete body._compact;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
@@ -557,6 +571,8 @@ export class CodexExecutor extends BaseExecutor {
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
+    const upstreamModel = getModelUpstreamId("cx", body.model || model);
+    const responsesLite = usesResponsesLite(credentials) || isCodexResponsesLiteModel(upstreamModel);
 
     // Ensure input is present and non-empty (Codex API rejects empty input)
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
@@ -566,7 +582,7 @@ export class CodexExecutor extends BaseExecutor {
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
-    stripStoredItemReferences(body);
+    stripStoredItemReferences(body, responsesLite);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
@@ -636,7 +652,29 @@ export class CodexExecutor extends BaseExecutor {
     }
 
     // Map virtual Codex review models to the upstream Codex model before suffix parsing.
-    body.model = getModelUpstreamId("cx", body.model || model);
+    body.model = upstreamModel;
+
+    if (responsesLite) {
+      // Codex 0.155 carries tools and instructions as input prefix items.
+      const input = Array.isArray(body.input) ? body.input : [body.input];
+      const hasLitePrefix = input.some((item) => item?.type === "additional_tools");
+      if (!hasLitePrefix) {
+        const instructions = typeof body.instructions === "string" && body.instructions.trim()
+          ? body.instructions : CODEX_DEFAULT_INSTRUCTIONS;
+        const prefix = [{ type: "additional_tools", role: "developer", tools: Array.isArray(body.tools) ? body.tools : [] }];
+        if (instructions) {
+          prefix.push({ type: "message", role: "developer", content: [{ type: "input_text", text: instructions }] });
+        }
+        input.unshift(...prefix);
+      }
+      body.input = input;
+      body.instructions = "";
+      body.tools = null;
+      body.tool_choice ||= "auto";
+      body.parallel_tool_calls = false;
+    } else {
+      delete body.parallel_tool_calls;
+    }
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
@@ -653,11 +691,11 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
-      body.reasoning = { effort, summary: "auto" };
+      const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || (responsesLite ? 'medium' : 'low'));
+      body.reasoning = responsesLite ? { effort } : { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
-      if (!body.reasoning.summary) body.reasoning.summary = "auto";
+      body.reasoning.effort = normalizeReasoningEffort(body.model, body.reasoning.effort);
+      if (!responsesLite && !body.reasoning.summary) body.reasoning.summary = "auto";
     }
     if (responsesLite) {
       body.parallel_tool_calls = false;

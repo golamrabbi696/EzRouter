@@ -4,6 +4,7 @@ import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
 import { PROVIDERS } from "./index.js";
+import { getProviderModels } from "../config/providerModels.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
@@ -93,10 +94,14 @@ export function getThinkingLevels(provider, model) {
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
+  const baseId = String(model || "").replace(/\([^()]+\)\s*$/, "");
+  const modelLevels = provider === "codex"
+    ? getProviderModels("cx").find((entry) => entry.id === baseId)?.thinkingLevels
+    : null;
   const hit = PATTERN_THINKING.find((p) => (!p.providers || !provider || p.providers.includes(provider)) && (!p.provider || p.provider === provider) && matchPattern(p.pattern, model));
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   const fmt = providerFmt || caps.thinkingFormat;
-  let levels = caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[fmt] || L.base;
+  let levels = modelLevels || caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[fmt] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }
