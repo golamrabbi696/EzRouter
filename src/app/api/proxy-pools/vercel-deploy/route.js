@@ -24,10 +24,12 @@ export default async function handler(req) {
   const headers = new Headers(req.headers);
 ${buildRelaySanitizeSnippet()}
   sanitizeRelayHeaders(headers);
+  const rawHeaders = {};
+  for (const [k, v] of headers.entries()) rawHeaders[k] = v;
 
   const response = await fetch(targetUrl, {
     method: req.method,
-    headers,
+    headers: rawHeaders,
     body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
     duplex: "half",
   });
