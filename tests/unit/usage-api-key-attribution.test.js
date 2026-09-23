@@ -7,7 +7,7 @@ let tempDir;
 let db;
 
 beforeEach(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-api-key-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ezrouter-api-key-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   db = await import("@/lib/db/index.js");
