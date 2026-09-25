@@ -353,6 +353,7 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
+<<<<<<< HEAD
   // Returns exactly one entry — the model this user picked for 9Router on their
   // Frontier dashboard. Refresh-on-401 because Frontier access tokens last 1h.
   "frontier-for-all": {
@@ -433,6 +434,7 @@ const PROVIDER_MODELS_CONFIG = {
   // OpenAI-compatible aggregators. All standard Bearer + OpenAI shape, so they
   // reuse createOpenAIModelsConfig; Kira and Dahl serve their catalogue
   // publicly, the rest need the connection API key.
+  tokenharbor: createOpenAIModelsConfig("https://tokenharbor.ai/v1/models"),
   dahl: createOpenAIModelsConfig("https://inference.dahl.global/v1/models"),
   atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
   agnes: createOpenAIModelsConfig("https://apihub.agnes-ai.com/v1/models"),

@@ -128,6 +128,7 @@ import providerStabilityAi from "./stability-ai.js";
 import providerTavily from "./tavily.js";
 import providerTencent from "./tencent.js";
 import providerTogether from "./together.js";
+import providerTokenharbor from "./tokenharbor.js";
 import providerTokenrouter from "./tokenrouter.js";
 import providerTopaz from "./topaz.js";
 import providerTortoise from "./tortoise.js";
@@ -267,6 +268,7 @@ export default [
   providerTavily,
   providerTencent,
   providerTogether,
+  providerTokenharbor,
   providerTokenrouter,
   providerTopaz,
   providerTortoise,
