@@ -51,6 +51,16 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // that just failed silently, then automatically retries it once the lock expires.
 export const EMPTY_CONTENT_COOLDOWN_MS = 7 * 60 * 1000;
 
+/**
+ * Client errors that describe the request itself rather than the credential:
+ * a malformed body, a method/media type the endpoint refuses, an oversized
+ * payload or a validation failure. Only these suppress account fallback.
+ * Every other 4xx says something about the credential or the route and must keep
+ * rotating connections — 412 is Fireworks' "account is suspended", and 409/423/428
+ * are account- or route-scoped too.
+ */
+export const REQUEST_SCOPED_STATUSES = new Set([400, 405, 406, 413, 414, 415, 422]);
+
 // Sanity ceiling for a provider-reported reset time (resetsAtMs), NOT a policy cap.
 // Providers report genuinely long resets: codex `resets_at` runs 5-6h out and
 // cloudcode-pa returns `quotaResetTimeStamp` up to ~150h out. Truncating those to
