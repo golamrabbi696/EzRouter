@@ -32,6 +32,12 @@
   - Fixed Zed paste-token crash and added Zed IDE auto-import (`#4359`).
   - Streamed Claude thinking content blocks back to OpenAI-format clients and eliminated redundant `<think>` tags (`#4220`, `#4358`).
   - Made `POST /api/providers` O(1) and guarded against silent API key overwrites (`#4350`).
+- **Bug Fixes & Database Integrity**:
+  - **Usage Provider Map Test Node Leaks**: Fixed issue where automated test dummy connections (`seed-0`, `seed-1`, `seed-3`, etc.) leaked into the SQLite database and rendered as unwanted nodes in the `/dashboard/usage` topology map.
+  - **Topology Provider Guard**: Hardened `isLLMProvider` in `UsageStats.js` to strictly validate provider existence against `AI_PROVIDERS`, `FREE_PROVIDERS`, or user-registered custom provider nodes (`providerNodes`), preventing any unverified or orphaned connection names from appearing in the UI.
+  - **Database Migration 007**: Added automated migration `007-cleanup-test-connections` to automatically purge all residual test connection entries (`openai-compatible-*`, `seed-*`, `kimchi-nope`) from SQLite storage.
+  - **Test Isolation**: Isolated test databases in `provider-priority-insert-cost.test.js` and `api-key-policies.test.js` using temporary directories and set a global Vitest `DATA_DIR` fallback to completely safeguard the user's `~/.ezrouter` directory from being touched by test runs.
+  - **Build & Import Resolution**: Resolved conflict marker in models route and corrected session ID generator import for System One core.
 - **Branding & Local Invariants**:
   - Preserved default gateway port strictly at **20126**.
   - Maintained EzRouter package and CLI branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`).
