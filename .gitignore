@@ -48,6 +48,7 @@ next-env.d.ts
 
 .bin/*
 data/
+.test-data/
 backup/
 logs/*
 !logs/.gitkeep

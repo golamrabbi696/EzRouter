@@ -7,6 +7,7 @@ import m003 from "./002-api-key-policies.js";
 import m004 from "./004-combo-config.js";
 import m005 from "./005-mcp-gateway.js";
 import m006 from "./006-mcp-grant-tools.js";
+import m007 from "./007-cleanup-test-connections.js";
 
 export const MIGRATIONS = [
   m001,
@@ -15,6 +16,7 @@ export const MIGRATIONS = [
   m004,
   m005,
   m006,
+  m007,
 ].sort((a, b) => a.version - b.version);
 
 export function latestVersion() {

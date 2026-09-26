@@ -6,11 +6,16 @@ import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { USAGE_PERIOD_OPTIONS } from "@/lib/usagePeriods.js";
 import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 
-// Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
-function isLLMProvider(id) {
-  const p = AI_PROVIDERS[id];
-  if (!p?.serviceKinds) return true;
-  return p.serviceKinds.includes("llm");
+// Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds.
+// Validates that the provider exists in AI_PROVIDERS, FREE_PROVIDERS, or is a registered custom provider node.
+function isLLMProvider(id, nodeNameMap = {}) {
+  const p = AI_PROVIDERS[id] || FREE_PROVIDERS[id];
+  if (p) {
+    if (!p.serviceKinds) return true;
+    return p.serviceKinds.includes("llm");
+  }
+  if (nodeNameMap && nodeNameMap[id]) return true;
+  return false;
 }
 
 // Both display forms for a recent-request row. The resolved `model` is the bare
@@ -285,7 +290,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
           if (c.isActive === false) return false;
-          if (!isLLMProvider(c.provider)) return false;
+          if (!isLLMProvider(c.provider, nodeNameMap)) return false;
           if (seen.has(c.provider)) return false;
           seen.add(c.provider);
           return true;
@@ -294,7 +299,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           nodeName: nodeNameMap[c.provider] || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
+          .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id, nodeNameMap))
           .map((p) => ({ provider: p.id, name: p.name }));
         setProviders([...unique, ...noAuthProviders]);
       })

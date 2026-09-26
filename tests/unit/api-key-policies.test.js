@@ -1,18 +1,41 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getAdapter } from "../../src/lib/db/driver.js";
-import { createApiKey, getApiKeyByValue, reserveApiKeyTokens, settleApiKeyTokens, updateApiKey, validateApiKey } from "../../src/lib/db/repos/apiKeysRepo.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const originalDataDir = process.env.DATA_DIR;
+let tempDir;
+let getAdapter;
+let createApiKey;
+let getApiKeyByValue;
+let reserveApiKeyTokens;
+let settleApiKeyTokens;
+let updateApiKey;
+let validateApiKey;
 
 const prefix = `policy-test-${Date.now()}`;
 
 beforeAll(async () => {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ezrouter-test-api-keys-"));
+  process.env.DATA_DIR = tempDir;
+  vi.resetModules();
+  ({ getAdapter } = await import("../../src/lib/db/driver.js"));
+  ({
+    createApiKey,
+    getApiKeyByValue,
+    reserveApiKeyTokens,
+    settleApiKeyTokens,
+    updateApiKey,
+    validateApiKey,
+  } = await import("../../src/lib/db/repos/apiKeysRepo.js"));
   const db = await getAdapter();
   db.run("DELETE FROM apiKeys WHERE name LIKE ?", [`${prefix}%`]);
 });
 
 afterAll(async () => {
-  const db = await getAdapter();
-  db.run("DELETE FROM apiKeys WHERE name LIKE ?", [`${prefix}%`]);
-  expect(db.get("SELECT COUNT(*) AS count FROM apiKeys WHERE name LIKE ?", [`${prefix}%`]).count).toBe(0);
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
 });
 
 describe("API key policies", () => {

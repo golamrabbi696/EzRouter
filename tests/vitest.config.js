@@ -17,6 +17,10 @@ export default defineConfig({
     maxConcurrency: 60,
     // Suppress noisy console output from handlers under test
     silent: false,
+    // Global fallback test data isolation: prevents any test from polluting ~/.ezrouter
+    env: {
+      DATA_DIR: resolve(__dirname, "../.test-data"),
+    },
   },
   resolve: {
     // Use array form so subpath aliases (e.g. "@/lib/db/index.js") resolve correctly.
