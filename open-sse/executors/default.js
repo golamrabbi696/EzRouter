@@ -5,11 +5,13 @@ import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selec
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
+import { buildClientIdentityHeaders, shouldStripClaudeIdentityHeaders } from "../shared/clientIdentityHeaders.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -219,7 +221,15 @@ export class DefaultExecutor extends BaseExecutor {
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
-    applyAuth(headers, desc, credentials);
+
+    const identityConfig = credentials?.providerSpecificData || {};
+    const identityHeaders = buildClientIdentityHeaders(identityConfig);
+    Object.assign(headers, identityHeaders);
+
+    const authHeaders = {};
+    applyAuth(authHeaders, desc, credentials);
+    Object.assign(headers, authHeaders);
+
     if (this.provider === "claude" && credentials?._clientSessionId) {
       delete headers["x-claude-code-session-id"];
       headers["X-Claude-Code-Session-Id"] = credentials._clientSessionId;
@@ -237,34 +247,46 @@ export class DefaultExecutor extends BaseExecutor {
       headers["x-opencode-session"] = credentials?._ocgSession || openCodeGoSession(null, credentials);
     }
 
-    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    // Claude OAuth: align x-claude-code-session-id with metadata.user_id.session_id if missing
+    if (this.provider === "claude" && !headers["x-claude-code-session-id"]) {
+      const token = credentials?.accessToken || credentials?.apiKey || "";
+      if (token.includes("sk-ant-oat")) {
+        const sid = extractClaudeSessionIdFromUserId(body?.metadata?.user_id);
+        if (sid) headers["x-claude-code-session-id"] = sid;
+      }
+    }
+
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
-        // Some third-party Anthropic-compatible gateways require Bearer auth in
-        // addition to x-api-key. Send both (x-api-key already set above) so
-        // gateways that read either header succeed.
-        if (credentials.apiKey && !headers["Authorization"]) {
-          headers["Authorization"] = `Bearer ${credentials.apiKey}`;
-        }
-        delete headers["anthropic-dangerous-direct-browser-access"];
-        delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
-        delete headers["x-app"];
-        delete headers["X-App"];
-        // Strip claude-code-20250219 from Anthropic-Beta / anthropic-beta
-        for (const betaKey of ["anthropic-beta", "Anthropic-Beta"]) {
-          if (headers[betaKey]) {
-            const filtered = headers[betaKey]
-              .split(",")
-              .map(s => s.trim())
-              .filter(f => f && f !== "claude-code-20250219")
-              .join(",");
-            if (filtered) {
-              headers[betaKey] = filtered;
-            } else {
-              delete headers[betaKey];
-            }
+      if (!isOfficialAnthropic && credentials.apiKey && !headers["Authorization"]) {
+        headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+      }
+    }
+
+    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    if (shouldStripClaudeIdentityHeaders({
+      provider: this.provider,
+      baseUrl: credentials?.providerSpecificData?.baseUrl || "",
+      clientIdentityProfile: identityConfig.clientIdentityProfile,
+      identityHeaders,
+    })) {
+      delete headers["anthropic-dangerous-direct-browser-access"];
+      delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
+      delete headers["x-app"];
+      delete headers["X-App"];
+      // Strip claude-code-20250219 from Anthropic-Beta / anthropic-beta
+      for (const betaKey of ["anthropic-beta", "Anthropic-Beta"]) {
+        if (headers[betaKey]) {
+          const filtered = headers[betaKey]
+            .split(",")
+            .map(s => s.trim())
+            .filter(f => f && f !== "claude-code-20250219")
+            .join(",");
+          if (filtered) {
+            headers[betaKey] = filtered;
+          } else {
+            delete headers[betaKey];
           }
         }
       }
