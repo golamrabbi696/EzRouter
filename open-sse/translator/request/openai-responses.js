@@ -480,12 +480,24 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
-  // Structured Output: Responses `text.format` → Chat `response_format` (`text` is not a Chat field)
-  if (result.text !== undefined) {
-    const responseFormat = textFormatToResponseFormat(result.text);
-    if (responseFormat && result.response_format === undefined) result.response_format = responseFormat;
-    delete result.text;
+  // Structured output: Responses puts it in text.format, Chat Completions in
+  // response_format. Map it instead of leaking the Responses-only `text` field.
+  const textFormat = body.text?.format;
+  if (textFormat?.type === "json_schema" && textFormat.schema) {
+    result.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: textFormat.name || "response",
+        schema: textFormat.schema,
+        ...(textFormat.strict !== undefined ? { strict: textFormat.strict } : {}),
+        ...(textFormat.description ? { description: textFormat.description } : {}),
+      },
+    };
+  } else if (textFormat?.type === "json_object") {
+    result.response_format = { type: "json_object" };
   }
+  if (body.text?.verbosity !== undefined && result.verbosity === undefined) result.verbosity = body.text.verbosity;
+  delete result.text;
 
   delete result.input;
   delete result.instructions;
@@ -730,37 +742,25 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   result.input = stripOrphanedToolOutputs(result.input);
 
-  // Structured Output: Chat `response_format` → Responses `text.format` (#dropped otherwise)
-  const textFormat = responseFormatToTextFormat(body.response_format);
-  if (textFormat) result.text = { format: textFormat };
+  // Structured output: Chat Completions response_format -> Responses text.format.
+  const responseFormat = body.response_format;
+  if (responseFormat?.type === "json_schema" && responseFormat.json_schema?.schema) {
+    const js = responseFormat.json_schema;
+    result.text = {
+      format: {
+        type: "json_schema",
+        name: js.name || "response",
+        schema: js.schema,
+        ...(js.strict !== undefined ? { strict: js.strict } : {}),
+        ...(js.description ? { description: js.description } : {}),
+      },
+    };
+  } else if (responseFormat?.type === "json_object") {
+    result.text = { format: { type: "json_object" } };
+  }
+  if (body.verbosity !== undefined) result.text = { ...(result.text || {}), verbosity: body.verbosity };
 
   return result;
-}
-
-/**
- * Chat Completions `response_format` → Responses API `text.format`.
- * Responses nests the schema one level up and flattens json_schema.{name,schema,strict}.
- */
-function responseFormatToTextFormat(responseFormat) {
-  if (responseFormat?.type === "json_schema") {
-    const js = responseFormat.json_schema;
-    if (!js?.schema) return null;
-    return { type: "json_schema", name: js.name || "response", schema: js.schema, strict: js.strict ?? true };
-  }
-  if (responseFormat?.type === "json_object") return { type: "json_object" };
-  return null;
-}
-
-/**
- * Responses API `text.format` → Chat Completions `response_format` (inverse of the above).
- */
-function textFormatToResponseFormat(text) {
-  const fmt = text?.format;
-  if (fmt?.type === "json_schema" && fmt.schema) {
-    return { type: "json_schema", json_schema: { name: fmt.name || "response", schema: fmt.schema, strict: fmt.strict ?? true } };
-  }
-  if (fmt?.type === "json_object") return { type: "json_object" };
-  return null;
 }
 
 // Register both directions
