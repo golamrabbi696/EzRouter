@@ -6,6 +6,7 @@
 // - trae.js: disabled because Trae SOLO does not support tool calling
 // - windsurf.js: disabled because its gRPC stream does not handle ToolCallChunk
 
+import providerAgnes from "./agnes.js";
 import providerAinetcafe from "./ainetcafe.js";
 import providerAlicodeIntl from "./alicode-intl.js";
 import providerAlicode from "./alicode.js";
@@ -15,8 +16,10 @@ import providerAnthropic from "./anthropic.js";
 import providerAntigravity from "./antigravity.js";
 import providerApiAirforce from "./api-airforce.js";
 import providerAssemblyai from "./assemblyai.js";
+import providerAtria from "./atria.js";
 import providerAwsPolly from "./aws-polly.js";
 import providerAzure from "./azure.js";
+import providerBai from "./bai.js";
 import providerBaidu from "./baidu.js";
 import providerBazaarlink from "./bazaarlink.js";
 import providerBedrock from "./bedrock.js";
@@ -41,6 +44,7 @@ import providerComfyui from "./comfyui.js";
 import providerCommandcode from "./commandcode.js";
 import providerCoqui from "./coqui.js";
 import providerCursor from "./cursor.js";
+import providerDahl from "./dahl.js";
 import providerDeepgram from "./deepgram.js";
 import providerDeepseek from "./deepseek.js";
 import providerEdgeTts from "./edge-tts.js";
@@ -141,6 +145,7 @@ import providerYoucom from "./youcom.js";
 import providerZed from "./zed.js";
 
 export default [
+  providerAgnes,
   providerAinetcafe,
   providerAlicodeIntl,
   providerAlicode,
@@ -150,8 +155,10 @@ export default [
   providerAntigravity,
   providerApiAirforce,
   providerAssemblyai,
+  providerAtria,
   providerAwsPolly,
   providerAzure,
+  providerBai,
   providerBaidu,
   providerBazaarlink,
   providerBedrock,
@@ -176,6 +183,7 @@ export default [
   providerCommandcode,
   providerCoqui,
   providerCursor,
+  providerDahl,
   providerDeepgram,
   providerDeepseek,
   providerEdgeTts,
