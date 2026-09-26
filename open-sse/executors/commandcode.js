@@ -319,4 +319,4 @@ function wrapNdjsonAsOpenAISse(streamBody, model, originalResponse = null) {
 
 export default CommandCodeExecutor;
 
-export const __test__ = { parseCommandCodeError, inspectAndWrapCommandCodeResponse, createReplayedStream, wrapNdjsonAsOpenAISse };
+export const __test__ = { parseCommandCodeError, inspectAndWrapCommandCodeResponse, createRawReplayedStream, wrapNdjsonAsOpenAISse };
