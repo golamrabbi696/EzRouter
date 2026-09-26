@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { readExistingConfig } from "@/lib/cliTools/readExistingConfig";
 import fs from "node:fs/promises";
@@ -9,6 +7,8 @@ import { parseTOML, stringifyTOML } from "confbox";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getInstalledCodexClientVersion } from "@/lib/codexNative/clientVersion.js";
 import { CODEX_NATIVE_CONFIG } from "open-sse/config/codexNative.js";
+
+export const dynamic = "force-dynamic";
 
 const BRIDGE_SECRET_PATH = path.join(DATA_DIR, "secrets", "codex-bridge-token");
 const BRIDGE_STATE_PATH = path.join(DATA_DIR, "state", "codex-bridge.json");

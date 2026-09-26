@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { rememberEndpoint } from "./cliEndpointPresets";
+import { getCurrentCodexProviderSettings } from "./codexConfig";
 
 function readConfiguredModel(status) {
   return status?.config?.match(/^model\s*=\s*"([^"]+)"/m)?.[1] || "";
@@ -41,6 +42,16 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     && readConfiguredSubagent(initialStatus) !== readConfiguredModel(initialStatus)
   );
 
+  useEffect(() => {
+    if (apiKeys?.length > 0 && !selectedApiKey && !codexStatus?.config) {
+      setSelectedApiKey(apiKeys[0].key);
+    }
+  }, [apiKeys, selectedApiKey, codexStatus?.config]);
+
+  useEffect(() => {
+    if (initialStatus) setCodexStatus(initialStatus);
+  }, [initialStatus]);
+
   async function fetchModelAliases() {
     try {
       const res = await fetch("/api/models/alias");
@@ -73,7 +84,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   async function checkCodexStatus() {
     setCheckingCodex(true);
     try {
-      const res = await fetch("/api/cli-tools/codex-settings");
+      const res = await fetch("/api/cli-tools/codex-settings", { cache: "no-store" });
       const data = await res.json();
       setCodexStatus(data);
       setNativeReadiness(data.nativeReadiness || null);
@@ -89,6 +100,23 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     }
   }
 
+  // Sync only when config content changes so local form edits are retained.
+  useEffect(() => {
+    const config = codexStatus?.config;
+    if (config) {
+      const { baseUrl, apiKey } = getCurrentCodexProviderSettings(config);
+      setCustomBaseUrl(baseUrl);
+      setSelectedApiKey(apiKey);
+
+      const modelMatch = config.match(/^model\s*=\s*"([^"]+)"/m);
+      if (modelMatch) setSelectedModel(modelMatch[1]);
+
+      // Parse subagent settings
+      const subagentModelMatch = config.match(/^default_subagent_model\s*=\s*"([^"]+)"/m);
+      if (subagentModelMatch) setSubagentModel(subagentModelMatch[1]);
+    }
+  }, [codexStatus?.config]);
+
   useEffect(() => {
     if (!isExpanded) return;
     const timer = setTimeout(() => {
@@ -101,12 +129,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isExpanded]);
 
-  const getCurrentBaseUrl = () => {
-    const parsed = codexStatus?.config?.match(/base_url\s*=\s*"([^"]+)"/);
-    return parsed ? parsed[1] : "";
-  };
-
-  const currentBaseUrl = getCurrentBaseUrl();
+  const currentBaseUrl = getCurrentCodexProviderSettings(codexStatus?.config).baseUrl;
 
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
@@ -117,12 +140,13 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const configStatus = getConfigStatus();
 
   const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || `${baseUrl}/v1`;
+    const url = (customBaseUrl || `${baseUrl}/v1`).replace(/\/+$/, "");
     // Ensure URL ends with /v1
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
+
 
   const handleApplySettings = async () => {
     setApplying(true);
