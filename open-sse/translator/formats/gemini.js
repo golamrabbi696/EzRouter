@@ -536,7 +536,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
   return cleaned;
 }
 
-// Merge adjacent same-role messages, strip empty parts, ensure initial and final user turns
+// Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns
 export function normalizeGeminiContents(contents) {
   const out = [];
   for (const c of contents || []) {
@@ -564,32 +564,23 @@ export function normalizeGeminiContents(contents) {
   if (out.length > 0 && out[0].role !== "user") {
     out.unshift({ role: "user", parts: [{ text: "..." }] });
   }
-
-  // Gemini / Vertex strictly require that the last turn in contents is a "user" turn.
   if (out.length > 0 && out.at(-1).role === "model") {
-    const lastTurn = out.at(-1);
-    const functionCalls = lastTurn.parts.filter(p => p?.functionCall);
-
-    if (functionCalls.length > 0) {
-      const functionResponses = functionCalls.map(p => ({
-        functionResponse: {
-          ...(p.functionCall.id ? { id: p.functionCall.id } : {}),
-          name: p.functionCall.name,
-          response: { result: "No response provided" }
-        }
-      }));
-      out.push({
-        role: "user",
-        parts: functionResponses
+    const fnCalls = (out.at(-1).parts || []).filter(p => p && p.functionCall);
+    if (fnCalls.length > 0) {
+      const responses = fnCalls.map(p => {
+        const call = p.functionCall || {};
+        const fr = {
+          name: call.name || "tool",
+          response: { result: "Continue." }
+        };
+        if (call.id) fr.id = call.id;
+        return { functionResponse: fr };
       });
+      out.push({ role: "user", parts: responses });
     } else {
-      out.push({
-        role: "user",
-        parts: [{ text: "Continue" }]
-      });
+      out.push({ role: "user", parts: [{ text: "Continue." }] });
     }
   }
-
   return out;
 }
 
