@@ -1,7 +1,7 @@
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
-import { generateSessionId } from "../executors/opencode-zen.js";
+import { generateSessionId } from "../executors/opencode.js";
 
 /**
  * Core System One (Jev) handler — native decision payload pass-through.

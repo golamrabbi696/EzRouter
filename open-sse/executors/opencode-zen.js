@@ -42,3 +42,5 @@ export class OpenCodeZenExecutor extends BaseExecutor {
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 }
+
+export { generateSessionId } from "./opencode.js";

@@ -353,7 +353,6 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
-<<<<<<< HEAD
   // Returns exactly one entry — the model this user picked for 9Router on their
   // Frontier dashboard. Refresh-on-401 because Frontier access tokens last 1h.
   "frontier-for-all": {
