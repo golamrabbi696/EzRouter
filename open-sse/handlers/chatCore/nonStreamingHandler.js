@@ -5,6 +5,7 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat, enrichUsageCost } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { canonicalEchoModel } from "../../services/model.js";
+import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse, parseGeminiSSEToOpenAIResponse, pickAssistantMessageForChatCompletion } from "./sseToJsonHandler.js";
@@ -607,7 +608,7 @@ export async function handleNonStreamingResponse({
 
     const res = new Response(JSON.stringify(restoreToolNames(translatedResponse, toolNameMap)), {
       status: HTTP_STATUS.OK,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...upstreamResponseHeaders(providerResponse?.headers) },
     });
     res.success = true;
     res.response = res;

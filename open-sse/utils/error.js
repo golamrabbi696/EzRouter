@@ -57,12 +57,21 @@ export function buildErrorBody(statusCode, message, overrides = null) {
  * @param {string|object} [overrides] - Upstream error code or { type, code } overrides
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, overrides = null) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message, overrides)), {
+export function errorResponse(statusCode, message, overrides = null, extraHeaders = null) {
+  let effectiveOverrides = null;
+  let effectiveHeaders = null;
+  if (overrides && typeof overrides === "object" && !("type" in overrides) && !("code" in overrides)) {
+    effectiveHeaders = overrides;
+  } else {
+    effectiveOverrides = overrides;
+    effectiveHeaders = extraHeaders;
+  }
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, effectiveOverrides)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*"
+      "Access-Control-Allow-Origin": "*",
+      ...effectiveHeaders
     }
   });
 }
@@ -153,15 +162,26 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {string|object} [code] - Upstream error code
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, clientStatusOrCode = null, code = null) {
+export function createErrorResult(statusCode, message, resetsAtMs, clientStatusOrHeaders = null, codeOrHeaders = null, extraHeaders = null) {
   let effectiveClientStatus = null;
   let effectiveCode = null;
-  if (typeof clientStatusOrCode === "number") {
-    effectiveClientStatus = clientStatusOrCode;
-    effectiveCode = code;
-  } else if (typeof clientStatusOrCode === "string" || (typeof clientStatusOrCode === "object" && clientStatusOrCode !== null)) {
-    effectiveCode = clientStatusOrCode;
+  let headers = null;
+
+  if (typeof clientStatusOrHeaders === "number") {
+    effectiveClientStatus = clientStatusOrHeaders;
+    if (typeof codeOrHeaders === "string" || (typeof codeOrHeaders === "object" && codeOrHeaders && ("type" in codeOrHeaders || "code" in codeOrHeaders))) {
+      effectiveCode = codeOrHeaders;
+      headers = extraHeaders;
+    } else if (codeOrHeaders && typeof codeOrHeaders === "object") {
+      headers = codeOrHeaders;
+    }
+  } else if (typeof clientStatusOrHeaders === "string" || (clientStatusOrHeaders && typeof clientStatusOrHeaders === "object" && ("type" in clientStatusOrHeaders || "code" in clientStatusOrHeaders))) {
+    effectiveCode = clientStatusOrHeaders;
+    headers = typeof codeOrHeaders === "object" ? codeOrHeaders : extraHeaders;
+  } else if (clientStatusOrHeaders && typeof clientStatusOrHeaders === "object") {
+    headers = clientStatusOrHeaders;
   }
+
   return {
     success: false,
     // The true upstream status, kept for internal classification (fallback
@@ -171,7 +191,7 @@ export function createErrorResult(statusCode, message, resetsAtMs, clientStatusO
     resetsAtMs,
     // What the CLIENT sees, which may be normalised — e.g. an unknown model
     // reported as 401 becomes 404, so callers do not read it as an auth failure.
-    response: errorResponse(effectiveClientStatus ?? statusCode, message, effectiveCode)
+    response: errorResponse(effectiveClientStatus ?? statusCode, message, effectiveCode, headers)
   };
 }
 
@@ -257,7 +277,7 @@ export function clientStatusForBreakerOpen(upstreamStatus, errorText = null) {
  * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"
  * @returns {Response}
  */
-export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
+export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, extraHeaders = null) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
   return new Response(
@@ -265,8 +285,10 @@ export function unavailableResponse(statusCode, message, retryAfter, retryAfterH
     {
       status: statusCode,
       headers: {
+        ...extraHeaders,
         "Content-Type": "application/json",
-        "Retry-After": String(retryAfterSec)
+        // Intentionally mis-cased to prevent duplicate headers
+        "retry-after": String(retryAfterSec)
       }
     }
   );

@@ -10,6 +10,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError, clientStatusForUpstream } from "../utils/error.js";
+import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail, saveRequestUsage } from "@/lib/usageDb.js";
@@ -602,7 +603,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Client sees the normalised class (4xx stop / 5xx retry, unknown model as
     // 404 rather than the provider's 401); internal classification keeps the
     // real upstream status.
-    return createErrorResult(statusCode, errMsg, resetsAtMs, clientStatusForUpstream(statusCode, message));
+    return createErrorResult(statusCode, errMsg, resetsAtMs, clientStatusForUpstream(statusCode, message), null, upstreamResponseHeaders(providerResponse?.headers));
   }
 
   const pricingMultiplier = credentials?.providerSpecificData?.fastMode === true

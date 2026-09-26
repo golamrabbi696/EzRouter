@@ -18,6 +18,7 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse, createErrorResult, clientStatusForUpstream, clientStatusForBreakerOpen } from "open-sse/utils/error.js";
+import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
@@ -242,6 +243,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let lastHeaders = null;
   // Only used by the "cache-affinity" strategy; cheap enough to compute once here.
   const cacheKey = buildCacheAffinityKey(body);
 
@@ -260,7 +262,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         // can no longer decide this status.
         const status = clientStatusForBreakerOpen(lastStatus || Number(credentials.lastErrorCode), errorMsg);
         log.warn("CHAT", `[${provider}/${model}] ${status} | ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
         if (isRoutableProvider(provider)) {
@@ -278,7 +280,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         );
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(clientStatusForUpstream(lastStatus, lastError), lastError || "All accounts unavailable");
+      return errorResponse(clientStatusForUpstream(lastStatus, lastError), lastError || "All accounts unavailable", null, lastHeaders);
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -393,6 +395,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       excludeConnectionIds.add(credentials.connectionId);
       lastError = errorMessage;
       lastStatus = errorStatus;
+      lastHeaders = upstreamResponseHeaders(result?.response?.headers);
       continue;
     }
 
