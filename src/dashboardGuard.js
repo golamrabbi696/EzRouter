@@ -232,7 +232,6 @@ function formatPublicLlmAuthError(pathname) {
 }
 
 // Shared with src/proxy.js — the mimo login branch must respect dashboard auth.
-export { isAuthenticated };
 
 export const __test__ = {
   isLocalRequest,
