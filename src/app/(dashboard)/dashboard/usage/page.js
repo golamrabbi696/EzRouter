@@ -2,7 +2,8 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
+import { RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
+import UsageStats from "@/shared/components/UsageStats";
 import { USAGE_PERIOD_OPTIONS } from "@/lib/usagePeriods.js";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 
