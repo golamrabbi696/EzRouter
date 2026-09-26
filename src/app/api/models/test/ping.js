@@ -167,6 +167,46 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
     return { ok: true, latencyMs, error: null, status: res.status, preview: text };
   }
 
+  if (kind === "systemone") {
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/api/v1/systemone`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          state: "Customer: I was charged twice for my order this morning.",
+          questions: {
+            probe: { type: "noul", instructions: "Is the customer reporting a billing problem?" },
+          },
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (err) {
+      const latencyMs = Date.now() - start;
+      if (err.name === "TimeoutError" || err.name === "AbortError") {
+        return { ok: false, latencyMs, status: 504, error: "HTTP 504: Request timed out (15s)" };
+      }
+      return { ok: false, latencyMs, status: 500, error: err.message || "System One request failed" };
+    }
+    const latencyMs = Date.now() - start;
+    const rawText = await res.text().catch(() => "");
+    let parsed = null;
+    try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+    if (!res.ok) {
+      const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
+      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+    }
+
+    const hasAnswers = parsed?.answers && typeof parsed.answers === "object" && Object.keys(parsed.answers).length > 0;
+    if (!hasAnswers) {
+      return { ok: false, latencyMs, status: res.status, error: "Provider returned no answers for this model" };
+    }
+    const preview = JSON.stringify(parsed.answers);
+    return { ok: true, latencyMs, error: null, status: res.status, preview };
+  }
+
   const promptContent = (typeof customPrompt === "string" && customPrompt.trim()) ? customPrompt.trim() : "hi";
   let res;
   try {

@@ -43,8 +43,9 @@ export default {
     { id: "google/veo-3.1", name: "Veo 3.1 (via OpenRouter)", params: ["duration","aspect_ratio","resolution"], kind: "video" },
     { id: "openai/sora-2-pro", name: "Sora 2 Pro (via OpenRouter)", params: ["duration","aspect_ratio","resolution"], kind: "video" },
     { id: "bytedance/seedance-2.0", name: "Seedance 2.0 (via OpenRouter)", params: ["duration","aspect_ratio","resolution"], kind: "video" },
+    { id: "typesafe/jev-1.13", name: "Jev 1.13", kind: "systemone" },
   ],
-  serviceKinds: ["llm","embedding","tts","imageToText","video"],
+  serviceKinds: ["llm", "embedding", "tts", "imageToText", "video", "systemone"],
   ttsConfig: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",
     defaultModel: "openai/gpt-4o-mini-tts",
@@ -64,6 +65,11 @@ export default {
   // Docs: https://openrouter.ai/docs/api/api-reference/videos
   videoConfig: {
     baseUrl: "https://openrouter.ai/api/v1/videos",
+    headers: {"HTTP-Referer":"https://endpoint-proxy.local","X-Title":"Endpoint Proxy"},
+  },
+  // System One decision API (TypeSafe-compatible): https://openrouter.ai/docs/guides/community/typesafe-sdk
+  systemoneConfig: {
+    baseUrl: "https://openrouter.ai/api/v1/systemone",
     headers: {"HTTP-Referer":"https://endpoint-proxy.local","X-Title":"Endpoint Proxy"},
   },
   modelsFetcher: { url: "https://openrouter.ai/api/v1/models", type: "openrouter-free" },
