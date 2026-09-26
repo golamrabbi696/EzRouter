@@ -227,6 +227,9 @@ function formatPublicLlmAuthError(pathname) {
   return { error: "API key required for remote API access" };
 }
 
+// Shared with src/proxy.js — the mimo login branch must respect dashboard auth.
+export { isAuthenticated };
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
