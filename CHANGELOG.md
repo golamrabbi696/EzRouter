@@ -1,3 +1,42 @@
+# v0.6.13 (2026-09-27)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4176 - #4375)
+- **Models & Providers**:
+  - Added support for Claude Opus 5.5 and updated spoofed CLI version to 2.1.280 (`#4355`).
+  - Added GPT-6 Sol and Luna support for Codex (`#4345`).
+  - Added Token Harbor provider integration (`#4350`).
+  - Added 4 OpenAI-compatible aggregator providers: Dahl, Atria, Agnes, and Bai (`#4351`).
+  - Added Qoder CN (`qoder-cn`) provider support (`#4353`).
+  - Added System One (Jev) native decision endpoint and dashboard integration (`#4354`).
+  - Added Xiaomi MiMo v2.6 models, server-assisted desktop login, and 5 account clusters (`#4341`).
+  - Exposed Cline free tier (`cline-free/*`) with zero-cost rating (`#4334`).
+  - Expanded OpenCode Go and Zen catalogs with reasoning effort tuning (`#4357`).
+- **CLI Tools Dynamic Configuration**:
+  - Added dynamic configuration support and settings endpoints for Pi, OMP, Crush, ForgeCode, Smelt, and CodeWhale (`#4362`).
+  - Added multiple model profile management for Codex CLI (`#4346`).
+  - Preserved existing `ANTHROPIC_AUTH_TOKEN` when applying Claude settings (`#4348`).
+- **Analytics & Usage Dashboard**:
+  - Added Requests view mode, provider/model breakdown charts, and All Time period filtering (`#4365`, `#4367`).
+  - Added free limit reset claim and redeem cards for Claude / Codex accounts (`#4371`).
+  - Keyed live usage statistics by full API key hash to guarantee proper attribution and eliminate team collision (`#4193`, `#4373`).
+- **Combos & Capabilities**:
+  - Integrated model capability metadata on `/v1/models` and dynamic combo limit resolution (`#4360`, `#4361`).
+  - Added Cursor and Claude Default presets plus bulk selection, deletion, and routing strategy updates (`#4363`).
+  - Migrated legacy vision fallback adapter default to `mimo-v2.6-flash-free` (`#4340`).
+- **Protocols, Streaming & Reliability**:
+  - Dispatched live-API-only Gemini STT models over Live WebSocket transport (`#4006`).
+  - Carried streamed output items in OpenAI Responses `response.completed` events (`#4307`).
+  - Dropped Antigravity `requestType: "agent"` to eliminate false 429 `RESOURCE_EXHAUSTED` errors (`#4364`).
+  - Maintained lossless header forwarding for proxy pool relay deployments (`#4366`).
+  - Lazy-loaded recharts and marked in the dashboard with background preloading on idle (`#4368`).
+  - Fixed Zed paste-token crash and added Zed IDE auto-import (`#4359`).
+  - Streamed Claude thinking content blocks back to OpenAI-format clients and eliminated redundant `<think>` tags (`#4220`, `#4358`).
+  - Made `POST /api/providers` O(1) and guarded against silent API key overwrites (`#4350`).
+- **Branding & Local Invariants**:
+  - Preserved default gateway port strictly at **20126**.
+  - Maintained EzRouter package and CLI branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`).
+  - Preserved local Apple Silicon Rosetta 2 auto-detection for macOS tray and Provider Details React error boundaries.
+
 # v0.6.12 (2026-09-21)
 
 ## Bug Fixes & Stability
