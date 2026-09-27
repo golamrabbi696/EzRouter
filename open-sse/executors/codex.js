@@ -14,6 +14,7 @@ import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { resolveCodexAccountId } from "../services/codexAccount.js";
 import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
+import { readToolStrict, restoreToolStrict } from "../translator/concerns/toolStrict.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -174,15 +175,14 @@ function normalizeCodexTools(body) {
     const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
-    // Preserve strict before rebuilding the declaration. Nested Chat tools
-    // default to non-strict; native Responses tools keep their own default.
-    const strict = tool.strict !== undefined ? tool.strict : (fn ? (fn.strict ?? false) : undefined);
+    // Keep the client-declared strict: omitted means strict-normalized on Responses.
+    const strict = readToolStrict(tool);
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = stripCodexUnsupportedPatterns(parameters, patternStats);
-    if (strict !== undefined) tool.strict = strict;
+    restoreToolStrict(tool, strict);
     validNames.add(name);
     return true;
   });

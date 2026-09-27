@@ -1,3 +1,5 @@
+import { readToolStrict, restoreToolStrict } from "../translator/concerns/toolStrict.js";
+
 const KNOWN_TOP_LEVEL = new Set([
   "model",
   "input",
@@ -376,7 +378,7 @@ function normalizeFunctionTool(tool, custom = false) {
   const rawParameters = tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters)
     ? tool.parameters
     : nested?.parameters;
-  const rawStrict = typeof tool.strict === "boolean" ? tool.strict : nested?.strict;
+  const strict = readToolStrict(tool);
   const normalized = {
     type: "function",
     name,
@@ -389,7 +391,7 @@ function normalizeFunctionTool(tool, custom = false) {
     : rawParameters && typeof rawParameters === "object" && !Array.isArray(rawParameters)
       ? structuredClone(rawParameters)
       : { type: "object", properties: {} };
-  if (!custom && typeof rawStrict === "boolean") normalized.strict = rawStrict;
+  if (!custom) restoreToolStrict(normalized, strict);
   return normalized;
 }
 
