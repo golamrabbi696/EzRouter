@@ -1,9 +1,28 @@
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
-import { fetchWithTimeout } from "@/lib/network/fetchWithTimeout.js";
-
+// Fetch with timeout wrapper + SSRF-safe redirect handling: redirects are
+// followed manually so each hop's target is re-validated through
+// assertPublicUrlResolved before being requested (mirrors fetchPublic in
+// "@/shared/utils/ssrfGuard.js"). Non-redirect responses behave as before.
+const MAX_VALIDATE_REDIRECTS = 5;
+const fetchWithTimeout = async (url, options, timeout = 10000, redirectsLeft = MAX_VALIDATE_REDIRECTS) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Request timeout")), timeout);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal, redirect: "manual" });
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!location) return res;
+    if (redirectsLeft <= 0) throw new Error("Blocked URL: too many redirects");
+    const nextUrl = new URL(location, url).toString();
+    await assertPublicUrlResolved(nextUrl);
+    await res.arrayBuffer().catch(() => {});
+    return fetchWithTimeout(nextUrl, options, timeout, redirectsLeft - 1);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 // Validate URL format
 const isValidUrl = (url) => {
@@ -61,9 +80,11 @@ export async function POST(request) {
     }
 
     // SSRF guard for remote callers; local host keeps self-hosted nodes (e.g. ollama-local)
+    // Use DNS-resolving validation so hostnames that merely resolve to an
+    // internal/loopback/metadata address are rejected too, not just IP literals.
     if (!isLocalRequest(request)) {
       try {
-        assertPublicUrl(baseUrl);
+        await assertPublicUrlResolved(baseUrl);
       } catch {
         return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
       }
