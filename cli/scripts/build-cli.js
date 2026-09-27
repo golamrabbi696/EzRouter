@@ -169,6 +169,14 @@ function buildCliPackage() {
     console.log(`✅ Version already synced: ${cliPkg.version}\n`);
   }
 
+  // Sync CHANGELOG.md to public/CHANGELOG.md
+  const changelogSrc = path.join(appDir, "CHANGELOG.md");
+  const changelogPublic = path.join(appDir, "public", "CHANGELOG.md");
+  if (fs.existsSync(changelogSrc)) {
+    fs.copyFileSync(changelogSrc, changelogPublic);
+    console.log("✅ Synced CHANGELOG.md to public/CHANGELOG.md\n");
+  }
+
   // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
   console.log("1️⃣  Building Next.js app...");
   try {
@@ -287,6 +295,11 @@ function buildCliPackage() {
     console.log("✅ Copied public folder\n");
   } else {
     console.log("⏭️  No public folder found\n");
+  }
+
+  // Ensure root CHANGELOG.md is also in cliAppDir root
+  if (fs.existsSync(changelogSrc)) {
+    fs.copyFileSync(changelogSrc, path.join(cliAppDir, "CHANGELOG.md"));
   }
 
   // Step 6: Copy vendor-chunks (required for production)

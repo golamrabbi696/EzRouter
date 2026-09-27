@@ -1,9 +1,56 @@
-# v0.6.11 (2026-09-21)
+# v0.6.13 (2026-09-27)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4176 - #4375)
+- **Models & Providers**:
+  - Added support for Claude Opus 5.5 and updated spoofed CLI version to 2.1.280 (`#4355`).
+  - Added GPT-6 Sol and Luna support for Codex (`#4345`).
+  - Added Token Harbor provider integration (`#4350`).
+  - Added 4 OpenAI-compatible aggregator providers: Dahl, Atria, Agnes, and Bai (`#4351`).
+  - Added Qoder CN (`qoder-cn`) provider support (`#4353`).
+  - Added System One (Jev) native decision endpoint and dashboard integration (`#4354`).
+  - Added Xiaomi MiMo v2.6 models, server-assisted desktop login, and 5 account clusters (`#4341`).
+  - Exposed Cline free tier (`cline-free/*`) with zero-cost rating (`#4334`).
+  - Expanded OpenCode Go and Zen catalogs with reasoning effort tuning (`#4357`).
+- **CLI Tools Dynamic Configuration**:
+  - Added dynamic configuration support and settings endpoints for Pi, OMP, Crush, ForgeCode, Smelt, and CodeWhale (`#4362`).
+  - Added multiple model profile management for Codex CLI (`#4346`).
+  - Preserved existing `ANTHROPIC_AUTH_TOKEN` when applying Claude settings (`#4348`).
+- **Analytics & Usage Dashboard**:
+  - Added Requests view mode, provider/model breakdown charts, and All Time period filtering (`#4365`, `#4367`).
+  - Added free limit reset claim and redeem cards for Claude / Codex accounts (`#4371`).
+  - Keyed live usage statistics by full API key hash to guarantee proper attribution and eliminate team collision (`#4193`, `#4373`).
+- **Combos & Capabilities**:
+  - Integrated model capability metadata on `/v1/models` and dynamic combo limit resolution (`#4360`, `#4361`).
+  - Added Cursor and Claude Default presets plus bulk selection, deletion, and routing strategy updates (`#4363`).
+  - Migrated legacy vision fallback adapter default to `mimo-v2.6-flash-free` (`#4340`).
+- **Protocols, Streaming & Reliability**:
+  - Dispatched live-API-only Gemini STT models over Live WebSocket transport (`#4006`).
+  - Carried streamed output items in OpenAI Responses `response.completed` events (`#4307`).
+  - Dropped Antigravity `requestType: "agent"` to eliminate false 429 `RESOURCE_EXHAUSTED` errors (`#4364`).
+  - Maintained lossless header forwarding for proxy pool relay deployments (`#4366`).
+  - Lazy-loaded recharts and marked in the dashboard with background preloading on idle (`#4368`).
+  - Fixed Zed paste-token crash and added Zed IDE auto-import (`#4359`).
+  - Streamed Claude thinking content blocks back to OpenAI-format clients and eliminated redundant `<think>` tags (`#4220`, `#4358`).
+  - Made `POST /api/providers` O(1) and guarded against silent API key overwrites (`#4350`).
+- **Bug Fixes & Database Integrity**:
+  - **Usage Provider Map Test Node Leaks**: Fixed issue where automated test dummy connections (`seed-0`, `seed-1`, `seed-3`, etc.) leaked into the SQLite database and rendered as unwanted nodes in the `/dashboard/usage` topology map.
+  - **Topology Provider Guard**: Hardened `isLLMProvider` in `UsageStats.js` to strictly validate provider existence against `AI_PROVIDERS`, `FREE_PROVIDERS`, or user-registered custom provider nodes (`providerNodes`), preventing any unverified or orphaned connection names from appearing in the UI.
+  - **Database Migration 007**: Added automated migration `007-cleanup-test-connections` to automatically purge all residual test connection entries (`openai-compatible-*`, `seed-*`, `kimchi-nope`) from SQLite storage.
+  - **Test Isolation**: Isolated test databases in `provider-priority-insert-cost.test.js` and `api-key-policies.test.js` using temporary directories and set a global Vitest `DATA_DIR` fallback to completely safeguard the user's `~/.ezrouter` directory from being touched by test runs.
+  - **Build & Import Resolution**: Resolved conflict marker in models route and corrected session ID generator import for System One core.
+- **Branding & Local Invariants**:
+  - Preserved default gateway port strictly at **20126**.
+  - Maintained EzRouter package and CLI branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`).
+  - Preserved local Apple Silicon Rosetta 2 auto-detection for macOS tray and Provider Details React error boundaries.
+
+# v0.6.12 (2026-09-21)
 
 ## Bug Fixes & Stability
+- **macOS Apple Silicon System Tray**: Fixed tray icon failing to appear on Apple Silicon Macs (M1/M2/M3/M4) by automatically detecting missing Rosetta 2 runtime, providing auto-warmup (`softwareupdate --install-rosetta`), adding cached binary permissions fallback, and surfacing actionable error guidance.
 - **Provider Details Page Crash**: Fixed `ReferenceError: fastMode is not defined` in `ConnectionRow` by properly destructuring the `fastMode` prop, adding `updatingFastMode` state, and implementing `handleToggleFastMode`.
 - **Quota Tracker & Provider Limits Crash**: Fixed `ReferenceError: isUpdatingFastMode is not defined` in `ProviderLimits` by declaring `isUpdatingFastMode = fastModeUpdatingId === conn.id` and incorporating it into `rowBusy`.
 - **Combo Modal Test Run Crash**: Fixed `ReferenceError: models is not defined` in `ComboFormModal` on the Combos page by elevating `models = members.map((m) => m.id)` to component scope.
+- **OAuth Modal Missing Constants & States**: Restored missing `PROXY_OAUTH_PROVIDERS`, `PASTE_TOKEN_PROVIDERS`, `authMode`, `pasteToken`, and `ideStatus` in `src/shared/components/OAuthModal.js` that caused `ReferenceError: PASTE_TOKEN_PROVIDERS is not defined` when opening provider details pages.
 - **OAuth Action Route Missing Imports**: Added missing `ZED_HOSTED_CONFIG` and `detectIdeInstalled` imports in `api/oauth/[provider]/[action]/route.js`.
 
 # v0.6.10 (2026-09-20)
