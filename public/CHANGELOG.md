@@ -1,6 +1,35 @@
 # v0.6.13 (2026-09-27)
 
-## Upstream Synchronization & Core Enhancements (decolua/9router #4176 - #4375)
+## Upstream Synchronization & Core Enhancements (decolua/9router #4375 - #4396)
+- **Streaming & SSE Protocol Integrity**:
+  - Terminate OpenAI SSE stream with `[DONE]` sentinel on clean completions (`#4375`).
+  - Forward SSE comment heartbeats (`: keep-alive`) in translate mode to prevent reverse-proxy timeouts (`#4376`).
+  - Populate complete `output` array in OpenAI Responses `response.completed` event (`#4380`).
+- **Structured Outputs & Tool Calling**:
+  - Carry structured outputs (`response_format` / `json_schema`) bi-directionally between OpenAI Responses and Chat Completions (`#4377`).
+  - Scope `tool_call_id` name lookup strictly to its own assistant turn to prevent cross-turn tool name contamination (`#4379`).
+  - Emit `custom_tool_call` instead of `function_call` for `type: "custom"` tools in Responses (`#4386`).
+  - Preserve message turns when input contains unknown or future content block types like `container_upload` (`#4383`).
+  - Keep function-tool `strict` semantics on all Responses routes (Chat->Responses maps omitted/null to `strict: false`, Claude->OpenAI carries boolean, executors preserve declared `null`/`false`/`true`) (`#4396`).
+- **Provider & Schema Compatibility**:
+  - Automatically rename tool parameters named `properties` to `tool_properties` to avoid Gemini 400 rejection (`#4382`).
+  - Strip `errorMessage` and other non-standard draft JSON schema keywords from Gemini tool declarations (`#4391`).
+  - Clamp `max_output_tokens` for OpenCode `muse-spark` to `[8000, 1M]` to prevent empty completion responses (`#4387`).
+  - Add DeepSeek v4.1 Flash vision capability alias and add Zed to live catalog providers (`#4392`).
+  - Add `codebuddy-intl` to OAuth test configuration with `tokenExists` strategy (`#4394`).
+- **Routing, Fallback & Error Handling**:
+  - Keep rotating connections on account-scoped 4xx errors (`#4378`).
+  - Fall through combos on model-scoped 400/410 errors and Codex SSE `response.failed` payloads (`#4381`).
+  - Reject disabled models at request time, not just in `/v1/models` listing (`#4388`).
+  - Reduce 500/502/503/504 connection cooldown from 30s to 5s to survive fast client retries (`#4393`).
+  - Keep upstream web search timeout armed until the entire response body is read (`#4385`).
+- **Storage, CLI Settings & UI Improvements**:
+  - Preserve active `modelLock_*` entries in database when connection status is marked active (`#4389`).
+  - Merge provider block and preserve custom `contextWindow` / `maxTokens` on Pi settings save (`#4390`).
+  - Sync `?provider=` URL parameter with provider filter on Quota page for bookmarkable deep links (`#4395`).
+  - Narrow auto-updater process whitelist and use `ps -eo` to avoid unintended SIGKILL of unrelated processes (`#4384`).
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4176 - #4374)
 - **Models & Providers**:
   - Added support for Claude Opus 5.5 and updated spoofed CLI version to 2.1.280 (`#4355`).
   - Added GPT-6 Sol and Luna support for Codex (`#4345`).
