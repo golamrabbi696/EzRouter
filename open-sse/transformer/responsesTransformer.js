@@ -51,7 +51,13 @@ export function createResponsesLogger(model, logsDir = null) {
  * @param {Object} logger - Optional logger instance
  * @returns {TransformStream}
  */
-export function createResponsesApiTransformStream(logger = null) {
+/**
+ * @param {object|null} logger - Optional logger instance
+ * @param {Set<string>} customToolNames - Set of tool names declared as type:"custom" in the
+ *   original Responses API request. Calls to these names are emitted as custom_tool_call
+ *   items instead of function_call, matching the Codex client expectation (#4276).
+ */
+export function createResponsesApiTransformStream(logger = null, customToolNames = new Set()) {
   const state = {
     seq: 0,
     nextOutputIndex: 0,
@@ -210,27 +216,58 @@ export function createResponsesApiTransformStream(logger = null) {
     if (callId && !state.funcItemDone[idx]) {
       const args = state.funcArgsBuf[idx] || "{}";
       const outputIndex = state.funcOutputIndexes[idx];
-      
-      emit(controller, "response.function_call_arguments.done", {
-        type: "response.function_call_arguments.done",
-        item_id: `fc_${callId}`,
-        output_index: outputIndex,
-        arguments: args
-      });
+      const outIdx = outputIndex !== undefined ? outputIndex : parseInt(idx);
+      const toolName = state.funcNames[idx] || "";
+      const isCustom = customToolNames.has(toolName);
 
-      const fcItem = {
-        id: `fc_${callId}`,
-        type: "function_call",
-        arguments: args,
-        call_id: callId,
-        name: state.funcNames[idx] || ""
-      };
-      emit(controller, "response.output_item.done", {
-        type: "response.output_item.done",
-        output_index: outputIndex !== undefined ? outputIndex : parseInt(idx),
-        item: fcItem
-      });
-      state.outputItems.push({ output_index: outputIndex !== undefined ? outputIndex : parseInt(idx), item: fcItem });
+      if (isCustom) {
+        // Custom tool (#4276): emit custom_tool_call instead of function_call.
+        // Codex declares exec/shell tools as type:"custom" with freeform input.
+        // The inbound side already wrapped the raw input string as JSON.stringify({input});
+        // unwrap it here so codex receives the original string in .input.
+        let inputStr = args;
+        try {
+          const parsed = JSON.parse(args);
+          if (typeof parsed === "object" && parsed !== null && "input" in parsed) {
+            inputStr = parsed.input;
+          }
+        } catch { /* keep args as-is */ }
+
+        const customItem = {
+          id: `fc_${callId}`,
+          type: "custom_tool_call",
+          call_id: callId,
+          name: toolName,
+          input: inputStr
+        };
+        emit(controller, "response.output_item.done", {
+          type: "response.output_item.done",
+          output_index: outIdx,
+          item: customItem
+        });
+        state.outputItems.push({ output_index: outIdx, item: customItem });
+      } else {
+        emit(controller, "response.function_call_arguments.done", {
+          type: "response.function_call_arguments.done",
+          item_id: `fc_${callId}`,
+          output_index: outIdx,
+          arguments: args
+        });
+
+        const fcItem = {
+          id: `fc_${callId}`,
+          type: "function_call",
+          arguments: args,
+          call_id: callId,
+          name: toolName
+        };
+        emit(controller, "response.output_item.done", {
+          type: "response.output_item.done",
+          output_index: outIdx,
+          item: fcItem
+        });
+        state.outputItems.push({ output_index: outIdx, item: fcItem });
+      }
 
       state.funcItemDone[idx] = true;
       state.funcArgsDone[idx] = true;
