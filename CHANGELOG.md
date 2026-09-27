@@ -1,4 +1,4 @@
-# v0.6.13 (2026-09-27)
+# v0.6.14 (2026-09-27)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4375 - #4396)
 - **Streaming & SSE Protocol Integrity**:
@@ -28,6 +28,17 @@
   - Merge provider block and preserve custom `contextWindow` / `maxTokens` on Pi settings save (`#4390`).
   - Sync `?provider=` URL parameter with provider filter on Quota page for bookmarkable deep links (`#4395`).
   - Narrow auto-updater process whitelist and use `ps -eo` to avoid unintended SIGKILL of unrelated processes (`#4384`).
+- **Bug Fixes & Database Integrity**:
+  - **Usage Provider Map Test Node Leaks**: Fixed issue where automated test dummy connections (`seed-0`, `seed-1`, `seed-3`, etc.) leaked into the SQLite database and rendered as unwanted nodes in the `/dashboard/usage` topology map.
+  - **Topology Provider Guard**: Hardened `isLLMProvider` in `UsageStats.js` to strictly validate provider existence against `AI_PROVIDERS`, `FREE_PROVIDERS`, or user-registered custom provider nodes (`providerNodes`), preventing any unverified or orphaned connection names from appearing in the UI.
+  - **Database Migration 007**: Added automated migration `007-cleanup-test-connections` to automatically purge all residual test connection entries (`openai-compatible-*`, `seed-*`, `kimchi-nope`) from SQLite storage.
+  - **Test Isolation**: Isolated test databases in `provider-priority-insert-cost.test.js` and `api-key-policies.test.js` using temporary directories and set a global Vitest `DATA_DIR` fallback to completely safeguard the user's `~/.ezrouter` directory from being touched by test runs.
+  - **Grok CLI Tool Strict Preservation**: Enforced function tool strict preservation in `grok-cli-compat.js` via `readToolStrict` and `restoreToolStrict`.
+- **Branding & Invariants**:
+  - Preserved default gateway port strictly at **20126**.
+  - Maintained EzRouter package and CLI branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`).
+
+# v0.6.13 (2026-09-27)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4176 - #4374)
 - **Models & Providers**:
