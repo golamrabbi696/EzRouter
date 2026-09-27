@@ -473,11 +473,16 @@ export async function handleChatSearch({
   const body = cfg.buildBody(query, useModel, credentials);
   const headers = cfg.buildHeaders(token);
 
+  // The timer must stay armed until the body is fully read: grounded answers
+  // can send headers early and then stall the body, and fetch() resolving only
+  // means the headers arrived.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   let upstreamStart = Date.now();
   let resp;
+  let upstreamLatency;
+  let data;
   try {
     resp = await fetch(url, {
       method: "POST",
@@ -485,8 +490,18 @@ export async function handleChatSearch({
       body: JSON.stringify(body),
       signal: controller.signal
     });
+    upstreamLatency = Date.now() - upstreamStart;
+    try {
+      data = await resp.json();
+    } catch (err) {
+      if (err?.name === "AbortError") throw err;
+      return {
+        success: false,
+        status: 502,
+        error: `Invalid upstream response (status ${resp.status})`
+      };
+    }
   } catch (err) {
-    clearTimeout(timer);
     if (err?.name === "AbortError") {
       log?.warn?.(`[chatSearch] timeout provider=${provider}`);
       return { success: false, status: 504, error: "Upstream timeout" };
@@ -497,19 +512,8 @@ export async function handleChatSearch({
       status: 502,
       error: `Network error: ${err?.message || "unknown"}`
     };
-  }
-  clearTimeout(timer);
-  const upstreamLatency = Date.now() - upstreamStart;
-
-  let data;
-  try {
-    data = await resp.json();
-  } catch {
-    return {
-      success: false,
-      status: 502,
-      error: `Invalid upstream response (status ${resp.status})`
-    };
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!resp.ok) {

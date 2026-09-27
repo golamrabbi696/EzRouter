@@ -104,9 +104,9 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   try {
     // Request/account overrides remain SSRF-hardened. The provider config is
     // administrator-controlled and may intentionally target an internal service.
+    // Timer is cleared in finally, after the body is read: a stalled body must hit the timeout too.
     const fetchEndpoint = requiresPublicUrl ? fetchPublic : fetch;
     const resp = await fetchEndpoint(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
-    clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
       log?.error?.("SEARCH", `${provider.id} ${resp.status}: ${errText.slice(0, 200)}`);
@@ -138,11 +138,12 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
       }
     };
   } catch (err) {
-    clearTimeout(timer);
     const isTimeout = err.name === "AbortError";
     const status = isTimeout ? 504 : 502;
     log?.error?.("SEARCH", `${provider.id} ${isTimeout ? "timeout" : "error"}: ${err.message}`);
     return { success: false, status, error: `${provider.id} ${isTimeout ? "timeout" : "error"}: ${err.message}` };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
