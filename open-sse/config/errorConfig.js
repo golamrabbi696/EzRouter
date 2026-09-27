@@ -153,6 +153,15 @@ export function isPermanentModelError(errorText) {
  *     still try the next model (translators differ per model).
  */
 export const ERROR_RULES = [
+  // Account+model scoped permanent errors: the credential cannot serve this model.
+  // These arrive as HTTP 400 or 410 from Codex / OpenAI-compatible providers but are
+  // NOT request-scoped (renaming the model or switching accounts resolves them), so
+  // the combo must skip to the next member rather than returning the error to the client.
+  { text: "is not supported when using codex with a chatgpt account", cooldownMs: COOLDOWN.long },
+  { text: "has reached its end of life",                              cooldownMs: COOLDOWN.long },
+  { text: "model_entitlement",                                        cooldownMs: COOLDOWN.long },
+  { text: "end of life",                                              cooldownMs: COOLDOWN.long },
+
   // --- Permanent, request-scoped failures (highest priority) ---
   // The model name itself is wrong, so no other account can do better. Without
   // these the default "fall back and cool down" applied: one typo walked every
@@ -187,6 +196,8 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  // 410 Gone = model retired / end of life. Always account+model scoped; always fall through.
+  { status: 410, cooldownMs: COOLDOWN.long },
   { status: 413, fallback: false },
   { status: 429, backoff: true },
 ];
