@@ -13,7 +13,7 @@ import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { resolveCodexAccountId } from "../services/codexAccount.js";
-import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
+import { coerceCodexSchemaShapes, stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
 import { readToolStrict, restoreToolStrict } from "../translator/concerns/toolStrict.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
@@ -156,6 +156,7 @@ function normalizeCodexTools(body) {
           const n = typeof st?.name === "string" ? st.name.trim().slice(0, 128) : "";
           if (n) validNames.add(n);
           if (st?.parameters && typeof st.parameters === "object") {
+            st.parameters = coerceCodexSchemaShapes(st.parameters);
             st.parameters = stripCodexUnsupportedPatterns(st.parameters, patternStats);
           }
         }
@@ -181,7 +182,7 @@ function normalizeCodexTools(body) {
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
-    tool.parameters = stripCodexUnsupportedPatterns(parameters, patternStats);
+    tool.parameters = stripCodexUnsupportedPatterns(coerceCodexSchemaShapes(parameters), patternStats);
     restoreToolStrict(tool, strict);
     validNames.add(name);
     return true;
