@@ -798,8 +798,9 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Response completed
-  if (eventType === "response.completed" || eventType === "response.done") {
+  // Response completed (or truncated — response.incomplete carries
+  // incomplete_details.reason, e.g. "max_output_tokens" → finish "length")
+  if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {
@@ -812,9 +813,11 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 
       state.usage = buildUsage({ promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens, cachedTokens: cacheReadTokens, reasoningTokens });
     }
-    
+
     if (!state.finishReasonSent) {
-      const finishReason = computeFinishReason(state);
+      const finishReason = eventType === "response.incomplete"
+        ? (data.response?.incomplete_details?.reason === "max_output_tokens" ? OPENAI_FINISH.LENGTH : computeFinishReason(state))
+        : computeFinishReason(state);
 
       state.finishReasonSent = true;
       state.finishReason = finishReason; // Mark for usage injection in stream.js
