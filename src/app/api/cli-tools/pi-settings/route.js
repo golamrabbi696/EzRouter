@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { resolveCliApiKey } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -135,6 +136,7 @@ export async function POST(request) {
       if (em?.id) existingModelsMap[em.id] = em;
     }
 
+<<<<<<< HEAD
     // Normalize an incoming model entry to a Pi model object.
     // Handles both plain strings and objects from GenericCliToolCard.
     // Also normalises snake_case keys (context_window, max_tokens) sent by
@@ -188,7 +190,7 @@ export async function POST(request) {
     const providerConfig = {
       ...existingProvider,
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || existingProvider.apiKey || "sk_ezrouter",
+      apiKey: apiKey || existingProvider.apiKey || (await resolveCliApiKey(null)),
       api: existingProvider.api || "openai-completions",
       models: modelList,
     };

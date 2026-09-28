@@ -1,7 +1,11 @@
 "use server";
 
 import { NextResponse } from "next/server";
+<<<<<<< HEAD
 import { readExistingConfig } from "@/lib/cliTools/readExistingConfig";
+=======
+import { resolveCliApiKey } from "../resolveApiKey.js";
+>>>>>>> 06eda8b08 (fix(cli-tools): replace sk_9router placeholder with first active dashboard API key)
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -83,7 +87,7 @@ export async function POST(request) {
     const config = existingConfig ?? [];
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
-    const keyToUse = apiKey || "sk_ezrouter";
+    const keyToUse = await resolveCliApiKey(apiKey);
 
     const newEntry = {
       name: "9Router",
