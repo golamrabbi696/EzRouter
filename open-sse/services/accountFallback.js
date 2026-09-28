@@ -64,7 +64,7 @@ export function resolveCooldownMs(newLevel, errorText) {
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0) {
+export function checkFallbackError(status, errorText, backoffLevel = 0, provider = null) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
@@ -80,8 +80,9 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   if (terminalStatusRule) {
     return { shouldFallback: false, cooldownMs: 0, newBackoffLevel: backoffLevel };
   }
-
   for (const rule of ERROR_RULES) {
+    if (rule.provider && rule.provider !== provider) continue;
+
     // Regex rule: for phrases the model name sits inside, which a substring
     // cannot span ("Model does-not-exist-xyz is not supported").
     if (rule.pattern && lowerError && rule.pattern.test(lowerError)) {

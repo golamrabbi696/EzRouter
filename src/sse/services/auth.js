@@ -43,6 +43,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
   const cacheKey = options?.cacheKey || null;
+  const requestedModel = options?.requestedModel || model;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -110,6 +111,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       if (isOverLimit(c.id, rpmLimit)) return false;
+      const enabled = c.providerSpecificData?.enabledModels;
+      if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];
@@ -406,7 +409,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   // must win over any provider-supplied reset hint riding along on the same
   // response — otherwise the precise-cooldown branches would lock a healthy
   // account for a request that no account could serve.
-  const classified = checkFallbackError(status, errorText, backoffLevel);
+  const classified = checkFallbackError(status, errorText, backoffLevel, resolveProviderId(provider));
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (classified.shouldFallback && resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;

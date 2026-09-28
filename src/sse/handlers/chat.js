@@ -161,14 +161,32 @@ export async function handleChat(request, clientRawRequest = null, translationCa
     });
   }
 
-  // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  // Single model request — may still switch to a capacity-adapter model if the
+  // target lacks a capability the request needs (e.g. no vision, request has an image).
+  const soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings);
+  if (soloAugmented.length > 1) {
+    const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
+    log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
+    return handleComboChat({
+      body,
+      models: soloAugmented,
+      handleSingleModel: withCapacityAdapterStripping(
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, translationCache),
+        adapterAdded
+      ),
+      log,
+      comboName: modelStr,
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+    });
+  }
+
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, translationCache, contextMarker ? `${modelStr.slice(modelStr.indexOf("/") + 1)}[${contextMarker}]` : null);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, translationCache = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, translationCache = null, requestedModel = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -263,7 +281,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const cacheKey = buildCacheAffinityKey(body);
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId: pinnedConnectionId, cacheKey });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId: pinnedConnectionId, cacheKey, requestedModel: requestedModel || model });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
