@@ -127,6 +127,7 @@ import providerSiliconflow from "./siliconflow.js";
 import providerStabilityAi from "./stability-ai.js";
 import providerTavily from "./tavily.js";
 import providerTencent from "./tencent.js";
+import providerTinyfish from "./tinyfish.js";
 import providerTogether from "./together.js";
 import providerTokenharbor from "./tokenharbor.js";
 import providerTokenrouter from "./tokenrouter.js";
@@ -267,6 +268,7 @@ export default [
   providerStabilityAi,
   providerTavily,
   providerTencent,
+  providerTinyfish,
   providerTogether,
   providerTokenharbor,
   providerTokenrouter,
