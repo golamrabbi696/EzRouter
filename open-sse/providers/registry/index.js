@@ -133,6 +133,7 @@ import providerTokenharbor from "./tokenharbor.js";
 import providerTokenrouter from "./tokenrouter.js";
 import providerTopaz from "./topaz.js";
 import providerTortoise from "./tortoise.js";
+import providerV1m from "./v1m.js";
 import providerVenice from "./venice.js";
 import providerVercelAiGateway from "./vercel-ai-gateway.js";
 import providerVertexPartner from "./vertex-partner.js";
@@ -274,6 +275,7 @@ export default [
   providerTokenrouter,
   providerTopaz,
   providerTortoise,
+  providerV1m,
   providerVenice,
   providerVercelAiGateway,
   providerVertexPartner,
