@@ -53,8 +53,8 @@ import path from "path";
 describe("ModelSelectModal LIVE_CATALOG_PROVIDERS includes zed (#4244)", () => {
   let src;
   beforeAll(() => {
-    const filePath = path.resolve("../src/shared/components/ModelSelectModal.js");
-    src = fs.readFileSync(filePath, "utf-8");
+    const fileUrl = new URL("../../src/shared/components/ModelSelectModal.js", import.meta.url);
+    src = fs.readFileSync(fileUrl, "utf-8");
   });
 
   it("includes zed in LIVE_CATALOG_PROVIDERS", () => {
