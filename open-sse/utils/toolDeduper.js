@@ -50,16 +50,12 @@ function isDeepSeekModel(model) {
  */
 function dedupeTools(tools, opts = {}) {
   if (!Array.isArray(tools) || tools.length === 0) return { tools, stripped: [] };
+  const names = tools.map(getToolName);
+  const toStrip = new Set();
+  const toDrop = new Set(); // indices of duplicate same-name tools
 
-  const clientTool = opts.clientTool ?? null;
-  const model = opts.model ?? null;
-  const stripped = [];
-  let current = tools;
-
-  // 1. MCP-equivalent built-in rules (Claude clients only).
-  if (clientTool === "claude") {
-    const names = current.map(getToolName);
-    const toStrip = new Set();
+  // MCP-based built-in dedup: Claude clients only (existing behavior).
+  if (opts.clientTool === "claude") {
     for (const rule of DEDUP_RULES) {
       const hasTrigger = names.some((n) => rule.triggers.some((p) => matches(n, p)));
       if (!hasTrigger) continue;
@@ -67,33 +63,25 @@ function dedupeTools(tools, opts = {}) {
         if (rule.strip.some((p) => matches(n, p))) toStrip.add(n);
       }
     }
-    if (toStrip.size > 0) {
-      current = current.filter((t) => !toStrip.has(getToolName(t)));
-      stripped.push(...toStrip);
-    }
   }
 
-  // 2. Exact same-name dedup (DeepSeek models only). First definition wins.
-  if (isDeepSeekModel(model)) {
+  // Exact-name dedup: DeepSeek upstream rejects duplicate tool names. Applies to
+  // every client × provider that serves a deepseek-* model (official API, Console Go,
+  // LiteLLM gateways); non-DeepSeek models are untouched.
+  if (isDeepSeekModel(opts.model)) {
     const seen = new Set();
-    const unique = [];
-    for (const t of current) {
-      const name = getToolName(t);
-      if (!name) {
-        unique.push(t);
-        continue;
-      }
-      if (seen.has(name)) {
-        stripped.push(name);
-        continue;
-      }
-      seen.add(name);
-      unique.push(t);
+    for (let i = 0; i < tools.length; i++) {
+      const n = getToolName(tools[i]);
+      if (!n) continue;
+      if (seen.has(n)) toDrop.add(i);
+      else seen.add(n);
     }
-    current = unique;
   }
 
-  return { tools: current, stripped };
+  if (toStrip.size === 0 && toDrop.size === 0) return { tools, stripped: [] };
+  const out = tools.filter((t, i) => !toDrop.has(i) && !toStrip.has(getToolName(t)));
+  const stripped = Array.from(toDrop).map((i) => getToolName(tools[i])).concat(Array.from(toStrip));
+  return { tools: out, stripped };
 }
 
 export { dedupeTools };

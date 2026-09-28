@@ -34,6 +34,8 @@ describe("toolDeduper — MCP-equivalent built-in rules (existing behavior)", ()
   });
 
   it("legacy call without opts still applies MCP rules for claude callers (back-compat shape)", () => {
+    // chatCore always passes opts now, but old direct callers keep prior behavior:
+    // without clientTool, MCP rules stay dormant (they were claude-gated anyway).
     const { tools, stripped } = dedupeTools([MCP_EXA, { name: "WebSearch", description: "web" }]);
     expect(tools).toHaveLength(2);
     expect(stripped).toEqual([]);
