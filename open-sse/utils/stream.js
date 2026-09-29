@@ -1,5 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { extractReasoningText } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, enrichUsageCost, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
@@ -216,7 +217,7 @@ export function createSSEStream(options = {}) {
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              const reasoning = extractReasoningText(delta);
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -370,9 +371,10 @@ export function createSSEStream(options = {}) {
           accumulatedContent += parsed.choices[0].delta.content;
         }
         // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        const openaiReasoning = extractReasoningText(parsed.choices?.[0]?.delta);
+        if (openaiReasoning) {
+          totalContentLength += openaiReasoning.length;
+          accumulatedThinking += openaiReasoning;
         }
         // OpenAI Responses format - content/reasoning deltas
         if (typeof parsed.delta === "string" && typeof parsed.type === "string") {
