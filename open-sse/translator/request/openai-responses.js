@@ -11,6 +11,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  splitResponsesToolOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 import { generateToolCallId } from "../concerns/toolCall.js";
@@ -25,65 +26,6 @@ function safeJson(value) {
   } catch {
     return String(value);
   }
-}
-
-/**
- * Split a Responses `function_call_output.output` into chat-safe text plus images.
- *
- * Responses allows `output` to be an array of content parts, and Codex uses that
- * to hand back screenshots produced by image tools. A chat `tool` message only
- * accepts a string, so the old `JSON.stringify(output)` fallback turned every
- * screenshot into a few hundred KB of base64 *text*. Upstream tokenizers bill
- * that as text (~1.5 chars/token), so two screenshots alone could add ~500K
- * tokens and push a 1M-context request past its limit (HTTP 400 "maximum context
- * length"). Keep the text in the tool message and re-attach the images as a
- * following user turn, which is how vision-capable chat upstreams expect them.
- *
- * @param {unknown} output - function_call_output.output (string | content parts | anything)
- * @returns {{ text: string, images: Array<{ type: string, image_url: { url: string, detail: string } }> }}
- */
-function splitToolOutputContent(output) {
-  if (typeof output === "string") return { text: output, images: [] };
-  if (!Array.isArray(output)) return { text: coerceResponsesOutput(output), images: [] };
-
-  const texts = [];
-  const images = [];
-  let contentParts = 0;
-
-  for (const part of output) {
-    if (part === undefined || part === null) continue;
-    if (typeof part === "string") {
-      contentParts++;
-      texts.push(part);
-      continue;
-    }
-    if (part.type === RESPONSES_ITEM.INPUT_TEXT || part.type === OPENAI_BLOCK.TEXT) {
-      contentParts++;
-      if (typeof part.text === "string") texts.push(part.text);
-      continue;
-    }
-    if (part.type === RESPONSES_ITEM.INPUT_IMAGE || part.type === OPENAI_BLOCK.IMAGE_URL) {
-      contentParts++;
-      // Responses sends input_image with a plain string; relay chat-shaped
-      // image_url { url, detail } too, and degrade to text when neither is present.
-      const url = typeof part.image_url === "string"
-        ? part.image_url
-        : part.image_url?.url || part.file_id || "";
-      const detail = typeof part.image_url === "object" ? part.image_url?.detail : part.detail;
-      if (typeof url === "string" && url) {
-        images.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url, detail: detail || "auto" } });
-      } else {
-        texts.push("[image omitted: missing image payload]");
-      }
-      continue;
-    }
-    texts.push(safeJson(part));
-  }
-
-  // Nothing looked like Responses content parts (e.g. output: [1, 2]) — keep the
-  // old JSON.stringify(array) shape so this stays a pure upgrade for known shapes.
-  if (contentParts === 0) return { text: safeJson(output), images: [] };
-  return { text: texts.join("\n"), images };
 }
 
 /**
@@ -156,6 +98,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // Group items by conversation turn
   let currentAssistantMsg = null;
   let pendingToolResults = [];
+  let pendingToolImages = [];
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
@@ -198,6 +141,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
+
+    // Images from a run of tool outputs go in one user turn after all of them,
+    // so tool messages stay contiguous after their assistant tool_calls.
+    const isToolOutput = itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT;
+    if (!isToolOutput && pendingToolImages.length > 0) {
+      result.messages.push({ role: ROLE.USER, content: pendingToolImages });
+      pendingToolImages = [];
+    }
 
     if (itemType === RESPONSES_ITEM.MESSAGE) {
       // Flush any pending assistant message with tool calls
@@ -308,17 +259,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       if (outputCallId) {
         // Chat `tool` messages only take text, so an array output keeps its text
         // here and carries its images in a user turn.
-        const { text, images } = splitToolOutputContent(item.output);
+        const { text, images } = splitResponsesToolOutput(item.output);
         result.messages.push({
           role: ROLE.TOOL,
           tool_call_id: outputCallId,
-          content: text || (images.length > 0 ? "[tool returned images - see the next message]" : "")
+          content: text
         });
         if (images.length > 0) {
-          result.messages.push({
-            role: ROLE.USER,
-            content: [{ type: OPENAI_BLOCK.TEXT, text: "[images returned by the tool result above]" }, ...images]
-          });
+          pendingToolImages.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${outputCallId}]` }, ...images);
         }
       }
       // else: orphaned output (no pending call to answer) is dropped, matching the
@@ -350,6 +298,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     for (const tr of pendingToolResults) {
       result.messages.push(tr);
     }
+  }
+  if (pendingToolImages.length > 0) {
+    result.messages.push({ role: ROLE.USER, content: pendingToolImages });
   }
 
   // Convert tools format.

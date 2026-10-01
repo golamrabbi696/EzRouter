@@ -57,6 +57,60 @@ export function coerceResponsesArguments(value) {
   }
 }
 
+// Responses tool output may be a content array carrying input_image parts (Codex
+// view_image / screenshots). The Chat tool role is text-only, so stringifying it
+// bills base64 as text (multi-MB -> millions of tokens). Split images out so
+// callers can forward them as real image blocks in the following user turn.
+export function splitResponsesToolOutput(output) {
+  if (typeof output === "string") return { text: output, images: [] };
+  if (!Array.isArray(output)) return { text: coerceResponsesOutput(output), images: [] };
+
+  const texts = [];
+  const images = [];
+  let contentParts = 0;
+
+  for (const part of output) {
+    if (part === undefined || part === null) continue;
+    if (typeof part === "string") {
+      contentParts++;
+      texts.push(part);
+      continue;
+    }
+    if (part.type === RESPONSES_ITEM.INPUT_TEXT || part.type === OPENAI_BLOCK.TEXT) {
+      contentParts++;
+      if (typeof part.text === "string") texts.push(part.text);
+      continue;
+    }
+    if (part.type === RESPONSES_ITEM.INPUT_IMAGE || part.type === OPENAI_BLOCK.IMAGE_URL) {
+      contentParts++;
+      const url = typeof part.image_url === "string"
+        ? part.image_url
+        : part.image_url?.url || part.file_id || "";
+      const detail = typeof part.image_url === "object" ? part.image_url?.detail : part.detail;
+      if (typeof url === "string" && url) {
+        images.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url, detail: detail || "auto" } });
+      } else {
+        texts.push("[image omitted: missing image payload]");
+      }
+      continue;
+    }
+    try {
+      texts.push(JSON.stringify(part));
+    } catch {
+      texts.push(String(part));
+    }
+  }
+
+  if (contentParts === 0) {
+    try {
+      return { text: JSON.stringify(output), images: [] };
+    } catch {
+      return { text: String(output), images: [] };
+    }
+  }
+  return { text: texts.join("\n"), images };
+}
+
 // function_call_output.output must be a string — never null/object.
 export function coerceResponsesOutput(value) {
   if (typeof value === "string") return value;
@@ -98,6 +152,7 @@ export function convertResponsesApiFormat(body) {
   // correlation ids of tool calls whose *_output item has not been seen yet
   let pendingToolCallIds = [];
   let pendingToolResults = [];
+  let pendingToolImages = [];
   let toolCallSeq = 0;
 
   const inputItems = normalizeResponsesInput(body.input);
@@ -107,6 +162,14 @@ export function convertResponsesApiFormat(body) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
+
+    const isToolOutput = itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT;
+    if (!isToolOutput && pendingToolImages.length > 0) {
+      for (const tr of pendingToolResults) result.messages.push(tr);
+      pendingToolResults = [];
+      result.messages.push({ role: ROLE.USER, content: pendingToolImages });
+      pendingToolImages = [];
+    }
 
     if (itemType === RESPONSES_ITEM.MESSAGE) {
       // Flush any pending assistant message with tool calls
@@ -170,17 +233,23 @@ export function convertResponsesApiFormat(body) {
       // Add tool result, always with a correlation id (see the note above); an
       // output with no pending call becomes plain user context instead of a tool
       // message no upstream can pair.
-      const outputContent = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
+      const { text, images } = splitResponsesToolOutput(item.output);
       let outputCallId = typeof item.call_id === "string" && item.call_id ? item.call_id : "";
       if (outputCallId) {
         const queued = pendingToolCallIds.indexOf(outputCallId);
         if (queued >= 0) pendingToolCallIds.splice(queued, 1);
-        pendingToolResults.push({ role: ROLE.TOOL, tool_call_id: outputCallId, content: outputContent });
+        pendingToolResults.push({ role: ROLE.TOOL, tool_call_id: outputCallId, content: text });
       } else {
         const repaired = pendingToolCallIds.shift();
         // a repaired id keeps the result; a true orphan (no call to answer) is
         // dropped, matching the orphan-repair contract tracked in #2236
-        if (repaired) pendingToolResults.push({ role: ROLE.TOOL, tool_call_id: repaired, content: outputContent });
+        if (repaired) {
+          outputCallId = repaired;
+          pendingToolResults.push({ role: ROLE.TOOL, tool_call_id: repaired, content: text });
+        }
+      }
+      if (images.length > 0 && outputCallId) {
+        pendingToolImages.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${outputCallId}]` }, ...images);
       }
     }
     else if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
@@ -214,11 +283,15 @@ export function convertResponsesApiFormat(body) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
       }
+      const { text, images } = splitResponsesToolOutput(item.output);
       pendingToolResults.push({
         role: ROLE.TOOL,
         tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? "")
+        content: text
       });
+      if (images.length > 0) {
+        pendingToolImages.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${item.call_id}]` }, ...images);
+      }
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Skip reasoning items - they are for display only
@@ -234,6 +307,9 @@ export function convertResponsesApiFormat(body) {
     for (const tr of pendingToolResults) {
       result.messages.push(tr);
     }
+  }
+  if (pendingToolImages.length > 0) {
+    result.messages.push({ role: ROLE.USER, content: pendingToolImages });
   }
 
   // Cleanup Responses API specific fields

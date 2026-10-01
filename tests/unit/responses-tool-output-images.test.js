@@ -42,7 +42,7 @@ describe("Responses tool output with image content parts", () => {
     const imageTurn = findImageTurn(out.messages);
     expect(imageTurn).toBeTruthy();
     expect(imageTurn.content).toEqual([
-      { type: "text", text: "[images returned by the tool result above]" },
+      { type: "text", text: "[Image from tool result call_1]" },
       { type: "image_url", image_url: { url: IMAGE_URL, detail: "high" } },
     ]);
     // The image turn must follow its tool result, so tool_call_id pairing holds.
@@ -54,7 +54,7 @@ describe("Responses tool output with image content parts", () => {
       { type: "image_url", image_url: { url: IMAGE_URL, detail: "low" } },
     ]);
 
-    expect(out.messages.find((m) => m.role === "tool").content).toBe("[tool returned images - see the next message]");
+    expect(out.messages.find((m) => m.role === "tool").content).toBe("");
     expect(findImageTurn(out.messages).content.at(-1)).toEqual({
       type: "image_url",
       image_url: { url: IMAGE_URL, detail: "low" },
