@@ -1,40 +1,49 @@
-# v0.6.14 (2026-09-27)
+# v0.6.14 (2026-10-01)
 
-## Upstream Synchronization & Core Enhancements (decolua/9router #4375 - #4396)
-- **Streaming & SSE Protocol Integrity**:
-  - Terminate OpenAI SSE stream with `[DONE]` sentinel on clean completions (`#4375`).
-  - Forward SSE comment heartbeats (`: keep-alive`) in translate mode to prevent reverse-proxy timeouts (`#4376`).
-  - Populate complete `output` array in OpenAI Responses `response.completed` event (`#4380`).
-- **Structured Outputs & Tool Calling**:
-  - Carry structured outputs (`response_format` / `json_schema`) bi-directionally between OpenAI Responses and Chat Completions (`#4377`).
-  - Scope `tool_call_id` name lookup strictly to its own assistant turn to prevent cross-turn tool name contamination (`#4379`).
-  - Emit `custom_tool_call` instead of `function_call` for `type: "custom"` tools in Responses (`#4386`).
-  - Preserve message turns when input contains unknown or future content block types like `container_upload` (`#4383`).
-  - Keep function-tool `strict` semantics on all Responses routes (Chat->Responses maps omitted/null to `strict: false`, Claude->OpenAI carries boolean, executors preserve declared `null`/`false`/`true`) (`#4396`).
-- **Provider & Schema Compatibility**:
-  - Automatically rename tool parameters named `properties` to `tool_properties` to avoid Gemini 400 rejection (`#4382`).
-  - Strip `errorMessage` and other non-standard draft JSON schema keywords from Gemini tool declarations (`#4391`).
-  - Clamp `max_output_tokens` for OpenCode `muse-spark` to `[8000, 1M]` to prevent empty completion responses (`#4387`).
-  - Add DeepSeek v4.1 Flash vision capability alias and add Zed to live catalog providers (`#4392`).
-  - Add `codebuddy-intl` to OAuth test configuration with `tokenExists` strategy (`#4394`).
-- **Routing, Fallback & Error Handling**:
-  - Keep rotating connections on account-scoped 4xx errors (`#4378`).
-  - Fall through combos on model-scoped 400/410 errors and Codex SSE `response.failed` payloads (`#4381`).
-  - Reject disabled models at request time, not just in `/v1/models` listing (`#4388`).
-  - Reduce 500/502/503/504 connection cooldown from 30s to 5s to survive fast client retries (`#4393`).
-  - Keep upstream web search timeout armed until the entire response body is read (`#4385`).
-- **Storage, CLI Settings & UI Improvements**:
-  - Preserve active `modelLock_*` entries in database when connection status is marked active (`#4389`).
-  - Merge provider block and preserve custom `contextWindow` / `maxTokens` on Pi settings save (`#4390`).
-  - Sync `?provider=` URL parameter with provider filter on Quota page for bookmarkable deep links (`#4395`).
-  - Narrow auto-updater process whitelist and use `ps -eo` to avoid unintended SIGKILL of unrelated processes (`#4384`).
-- **Bug Fixes & Database Integrity**:
-  - **Usage Provider Map Test Node Leaks**: Fixed issue where automated test dummy connections (`seed-0`, `seed-1`, `seed-3`, etc.) leaked into the SQLite database and rendered as unwanted nodes in the `/dashboard/usage` topology map.
-  - **Topology Provider Guard**: Hardened `isLLMProvider` in `UsageStats.js` to strictly validate provider existence against `AI_PROVIDERS`, `FREE_PROVIDERS`, or user-registered custom provider nodes (`providerNodes`), preventing any unverified or orphaned connection names from appearing in the UI.
-  - **Database Migration 007**: Added automated migration `007-cleanup-test-connections` to automatically purge all residual test connection entries (`openai-compatible-*`, `seed-*`, `kimchi-nope`) from SQLite storage.
-  - **Test Isolation**: Isolated test databases in `provider-priority-insert-cost.test.js` and `api-key-policies.test.js` using temporary directories and set a global Vitest `DATA_DIR` fallback to completely safeguard the user's `~/.ezrouter` directory from being touched by test runs.
-  - **Grok CLI Tool Strict Preservation**: Enforced function tool strict preservation in `grok-cli-compat.js` via `readToolStrict` and `restoreToolStrict`.
-- **Branding & Invariants**:
+## Critical Security Fixes
+- **OS Command Injection & SSRF Hardening**: Fixed OS command injection vulnerability via the `--host` argument in browser launcher CLI, and eliminated authenticated SSRF risks via DNS rebinding and redirect following on provider-node validation routes and MCP probes (`#4455`).
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4396 - #4518)
+- **Models & Provider Integrations**:
+  - **GLM**: Added Z.ai OAuth login to GLM Coding (`glm-coding`) with dual-auth (API key + OAuth) (`#4502`), and enabled thinking effort support on `glm-5.2` and `glm-5.3-flash`.
+  - **Claude**: Added Claude Sonnet 5.5 (`claude-sonnet-5.5`) (`#4489`) and `claude-opus-5.5` models in Kiro registry (`#4409`).
+  - **Codex**: Added GPT-6.1 Sol (`#4488`) with CLI identity refresh (`#4473`), 1M context variants for GPT-6 and GPT-5.6 (`#4423`), preserved hosted web search on GPT-6 Sol/Luna (`#4420`), added `gpt-daybreak` and `gpt-reserve` models, and routed bare `gpt-5.x`/`gpt-6.x` slugs to Codex (`#4418`).
+  - **Gemini**: Added Gemini 4 Argon (`gemini-4-argon`) (`#4507`), summed usage parts when Gemini omits `totalTokenCount` (`#4412`), and sanitized `$`-prefixed keys (`$ref`, `$defs`) in functionResponse results (`#4456`).
+  - **NVIDIA**: Refreshed NVIDIA NIM model catalog from 7 chat models to 33 chat models (`#4515`).
+  - **Meta Muse & System One**: Added Meta Muse provider with OAuth login and model catalog (`#4401`), and added v1m System One provider (`#4407`).
+  - **Capabilities**: Added capability patterns for `qwen3.8*` and `longcat-2.5*` (`#4514`), seeded Agnes 2.5/3.0 model IDs (`#4403`), and published real GPT-6 and GPT-5.4+ context windows and combo token limits (`#4478`).
+- **CLI Launcher (`ezrouter`)**:
+  - Added `ezrouter connect` command for connecting client CLI tools to remote EzRouter servers (`#4497`).
+  - Replaced `sk_9router` placeholder with the first active dashboard API key in CLI tools (`#4419`).
+- **Thinking & Reasoning Blocks**:
+  - Added `xhigh` thinking level to Claude adaptive thinking (`#4494`).
+  - Resolved Claude Sonnet 5.x to adaptive thinking to prevent forged thinking placeholder injection (`#4483`).
+  - Injected unsigned thinking placeholders for OpenCode Go DeepSeek `/messages` (`#4436`).
+  - Captured streaming reasoning chunks arriving as `delta.reasoning` / `delta.reasoning_details` (`#4457`).
+- **Streaming & Translation Protocols**:
+  - Forwarded Responses `input_image` tool outputs as user image blocks rather than massive stringified base64 text, preserving contiguous tool messages (`#4518`).
+  - Bounded deferred completion waits in Responses API with a 3s watchdog and ensured real usage is populated before emitting `response.completed` (`#4476`).
+  - Carried in-band stream errors across format translation (`#4477`).
+  - Converted forced-SSE JSON responses for Claude clients and shared completion converters (`#4466`).
+  - Echoed client-requested model in `message_start` for routed streams (`#4513`).
+  - Cached a tool loop's final tool results with the 4th breakpoint in Claude (`#4485`).
+  - Preserved trailing user turn to prevent accidental assistant prefill (`#4482`), and preserved intentional prefill from non-messages source formats (`#4481`).
+  - Preserved user turns containing only `container_upload` blocks (`#4404`).
+- **Tool Calling & Schema Robustness**:
+  - Coerced free-form property values and tuple items in tool schemas (`#4442`).
+  - Deduped same-name tools for DeepSeek models (`#4417`).
+  - Always emitted tool_result `is_error` for Zed Anthropic wire (`#4464`).
+- **Proxy & Reliability**:
+  - Added automatic fallback to insecure TLS on self-signed cert errors (`#4405`).
+  - Maintained strictProxy hold when no proxy resolves (`#4406`).
+  - Prevented Codex refresh-token reuse on auto-ping to eliminate unintended logouts (`#4425`).
+  - Extracted `resetsAtMs` from Codebuddy 6004 rate limit error and forwarded `recurring` for codebuddy-intl quota packs (`#4422`).
+  - Sent Grok CLI 1.0.44 user-agent and version headers to prevent HTTP 426 (`#4410`).
+- **Dashboard & Persistence**:
+  - Excluded hidden providers from usage stats provider dropdown (`#4411`).
+  - Supported per-provider custom header overrides from registry (`#4402`).
+  - Synchronized `?provider=` URL parameter with provider filter on Quota page for bookmarkable deep links (`#4395`).
+- **Branding & Local Invariants**:
   - Preserved default gateway port strictly at **20126**.
   - Maintained EzRouter package and CLI branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`).
 

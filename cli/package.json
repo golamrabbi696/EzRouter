@@ -19,7 +19,8 @@
     "node-forge",
     "node-machine-id",
     "react",
-    "react-dom"
+    "react-dom",
+    "confbox"
   ],
   "scripts": {
     "dev": "nodemon -I --watch cli.js --watch src --watch hooks --ext js,json cli.js",

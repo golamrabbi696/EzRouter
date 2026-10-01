@@ -136,7 +136,6 @@ export async function POST(request) {
       if (em?.id) existingModelsMap[em.id] = em;
     }
 
-<<<<<<< HEAD
     // Normalize an incoming model entry to a Pi model object.
     // Handles both plain strings and objects from GenericCliToolCard.
     // Also normalises snake_case keys (context_window, max_tokens) sent by
