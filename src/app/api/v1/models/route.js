@@ -1,5 +1,6 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
+  ALIAS_TO_ID,
   AI_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
@@ -45,6 +46,22 @@ async function resolveQoderLiveModels(conn, provider) {
   const models = routableQoderModels(result);
   if (!models.length) return null;
   return { models: models.map((m) => ({ id: m.id, name: m.name })) };
+}
+
+// Combo seats use UI aliases; the model registry also has transport aliases.
+// Capability overrides and catalog limits are keyed by provider id.
+const ALIAS_TO_PROVIDER_ID = {
+  ...Object.fromEntries(
+    Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
+  ),
+  ...ALIAS_TO_ID,
+};
+
+function comboSeatCapabilities(seat) {
+  const slash = seat.indexOf("/");
+  if (slash <= 0) return null;
+  const alias = seat.slice(0, slash);
+  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -245,7 +262,48 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
-function comboToEntry(combo, comboByName) {
+// Nested combo names are valid seats — the model selector exposes them and
+// chat routing resolves them recursively — but a no-slash seat is otherwise
+// treated as a literal model and publishes the 200k floor. Expand nested
+// names (cycle-guarded) so the published window is the true min across the
+// whole chain.
+function comboSeatLimits(combo, combosByName, visiting = new Set()) {
+  const name = typeof combo?.name === "string" ? combo.name : null;
+  if (name) {
+    if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
+    visiting.add(name);
+  }
+
+  let contextWindow = Infinity;
+  let maxOutput = Infinity;
+  try {
+    for (const seat of Array.isArray(combo?.models) ? combo.models : []) {
+      if (typeof seat !== "string") continue;
+      const slash = seat.indexOf("/");
+      if (slash <= 0) {
+        const nested = combosByName.get(seat);
+        if (nested) {
+          const nestedLimits = comboSeatLimits(nested, combosByName, visiting);
+          if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
+          if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
+          continue;
+        }
+      }
+      const caps = comboSeatCapabilities(seat) || getCapabilitiesForModel(null, seat);
+      if (Number.isFinite(caps?.contextWindow)) contextWindow = Math.min(contextWindow, caps.contextWindow);
+      if (Number.isFinite(caps?.maxOutput)) maxOutput = Math.min(maxOutput, caps.maxOutput);
+    }
+  } finally {
+    if (name) visiting.delete(name);
+  }
+
+  return {
+    contextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
+    maxOutput: Number.isFinite(maxOutput) ? maxOutput : undefined,
+  };
+}
+
+function comboToEntry(combo, comboByName, combosByName) {
   const entry = {
     id: combo.name,
     object: "model",
@@ -254,12 +312,15 @@ function comboToEntry(combo, comboByName) {
   if (combo.kind === "webSearch" || combo.kind === "webFetch") {
     entry.kind = combo.kind;
   } else {
-    const caps = aggregateComboCapabilities(combo.models, comboByName);
-    if (caps) {
-      entry.capabilities = caps;
-      if (Number.isFinite(caps.contextWindow)) entry.context_length = caps.contextWindow;
-      if (Number.isFinite(caps.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
-    }
+    const comboCaps = aggregateComboCapabilities(combo.models, comboByName, comboSeatCapabilities);
+    if (comboCaps) entry.capabilities = comboCaps;
+    // Any seat can serve the request, so the only window a combo can promise is
+    // its smallest. Combo entries were the only models on this endpoint that
+    // published no limits at all, which leaves a client to guess from the name —
+    // and it guesses high (see the snake_case note on the per-provider path).
+    const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName);
+    if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
+    if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
   }
   return entry;
 }
@@ -381,11 +442,14 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   const models = [];
+  const combosByName = new Map(
+    combos.filter((c) => typeof c?.name === "string").map((c) => [c.name, c]),
+  );
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
-    const entry = comboToEntry(combo, comboByName);
+    const entry = comboToEntry(combo, comboByName, combosByName);
     models.push(entry);
   }
 
@@ -395,9 +459,6 @@ export async function buildModelsList(kindFilter, options = {}) {
     // install) only connection-less noAuth providers are listed — those work
     // with zero setup — so clients auto-detecting models don't see hundreds of
     // entries that would all reject their requests.
-    const aliasToProviderId = Object.fromEntries(
-      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
-    );
     const noAuthProviderIds = new Set();
     if (!connectionsFailed) {
       for (const entry of REGISTRY) {
@@ -407,7 +468,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
     }
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
-      const providerId = aliasToProviderId[alias] || alias;
+      const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       if (!connectionsFailed && !noAuthProviderIds.has(providerId)) continue;
       const enabledModels = resolveEnabledModels(providerId, null);
