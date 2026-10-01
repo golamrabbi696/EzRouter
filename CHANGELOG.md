@@ -1,4 +1,4 @@
-# v0.6.14 (2026-10-01)
+# v0.6.15 (2026-10-01)
 
 ## Critical Security Fixes
 - **OS Command Injection & SSRF Hardening**: Fixed OS command injection vulnerability via the `--host` argument in browser launcher CLI, and eliminated authenticated SSRF risks via DNS rebinding and redirect following on provider-node validation routes and MCP probes (`#4455`).
