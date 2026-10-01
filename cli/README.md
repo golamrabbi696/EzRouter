@@ -83,6 +83,24 @@ ezrouter --help             # Show all options
 
 ---
 
+## 🔌 Connect to a Remote EzRouter
+
+Already running EzRouter on another machine (e.g. a team server on your LAN)? Point this machine's CLI tools at it — no local server is started:
+
+```bash
+npx @rabbi696/ezrouter connect http://<server-host>:20126                       # pick tools interactively
+npx @rabbi696/ezrouter connect http://<server-host>:20126 --tools claude,codex  # or choose up front
+npx @rabbi696/ezrouter connect --reset --tools claude,codex                     # undo
+```
+
+It logs in with the dashboard password (hidden prompt), reuses or creates an API key named `cli-<hostname>`, and writes each tool's config (backing up the original once as `*.bak-ezrouter`).
+
+Supported: `claude`, `codex`, `opencode`, `droid`, `crush`, `kilo`, `cline`, or `all`. Other options: `--model`, `--opus/--sonnet/--haiku/--fable`, `--api-key`, `--key-name`, `--print-env`. See `ezrouter connect --help`.
+
+> ⚠️ Over plain `http://` the password and API key are sent unencrypted — use a trusted LAN/VPN or put HTTPS in front. The API key is stored in each tool's config file.
+
+---
+
 ## 🛠️ Supported CLI Tools
 
 Claude-Code • OpenClaw • Codex • OpenCode • Cursor • Antigravity • Cline • Continue • Droid • Roo • Copilot • Kilo Code • Gemini CLI • Qwen Code • iFlow • Crush • Crusher • Aider
