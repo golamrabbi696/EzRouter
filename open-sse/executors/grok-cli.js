@@ -250,9 +250,11 @@ export class GrokCliExecutor extends BaseExecutor {
     const suffixlessModel = modelEffort
       ? requestedModel.replace(new RegExp(`-${modelEffort}$`), "")
       : requestedModel;
-    const resolvedModel = getModelUpstreamId("gcli", requestedModel)
-      || getModelUpstreamId("grok-cli", requestedModel)
-      || suffixlessModel;
+    const upstream = getModelUpstreamId("gcli", requestedModel)
+      || getModelUpstreamId("grok-cli", requestedModel);
+    const resolvedModel = (upstream && upstream !== requestedModel)
+      ? upstream
+      : suffixlessModel;
     this._currentModel = resolvedModel;
 
     let input = source.input;
