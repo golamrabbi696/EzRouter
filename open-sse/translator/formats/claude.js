@@ -296,6 +296,8 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
+  const originalLastRole = Array.isArray(body.messages) ? body.messages[body.messages.length - 1]?.role : undefined;
+
   // 3. Wrap bare content-block objects as one-element arrays before folding.
   // Some clients send content: {block} instead of content: [{block}]; the
   // mid-conversation-system fold below assumes the array shape, so it must
@@ -395,10 +397,23 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
         !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim()));
       return msg.content.length > 0;
     });
+    body.messages = ensureTrailingUserTurn(body.messages, originalLastRole);
   }
 
-  applyAssistantPrefillPolicy(body, rawHeaders);
   return body;
+}
+
+// Newer Claude models reject a body that ends on an assistant turn ("does not
+// support assistant message prefill"). Cleanup passes delete messages left empty,
+// so a trailing user turn that was empty (or held only dropped blocks) silently
+// turns the previous assistant turn into the last one. Restore a user turn only
+// when the client did not itself end on assistant (real prefill is its choice).
+const TRAILING_USER_PLACEHOLDER = "Continue.";
+
+export function ensureTrailingUserTurn(messages, originalLastRole) {
+  if (!Array.isArray(messages) || originalLastRole === ROLE.ASSISTANT) return messages;
+  if (messages[messages.length - 1]?.role !== ROLE.ASSISTANT) return messages;
+  return [...messages, { role: ROLE.USER, content: [{ type: CLAUDE_BLOCK.TEXT, text: TRAILING_USER_PLACEHOLDER }] }];
 }
 
 // Put a 5m breakpoint on the last cache-eligible block of a message.
@@ -588,6 +603,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // 2. Messages: process in optimized passes
   if (body.messages && Array.isArray(body.messages)) {
     const len = body.messages.length;
+    const originalLastRole = body.messages[len - 1]?.role;
     let filtered = [];
 
     // Pass 1: remove cache_control + filter empty messages
@@ -612,10 +628,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // Pass 1.5: Fix tool_use/tool_result ordering
     // Each tool_use must have tool_result in the NEXT message (not same message with other content)
     filtered = fixToolUseOrdering(filtered);
+    filtered = ensureTrailingUserTurn(filtered, originalLastRole);
 
     body.messages = filtered;
-    applyAssistantPrefillPolicy(body, rawHeaders);
-    filtered = body.messages;
 
     // Check if thinking is enabled AND last message is from user
     const lastMessage = filtered[filtered.length - 1];
