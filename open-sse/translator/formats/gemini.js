@@ -396,6 +396,22 @@ function ensureArrayItems(obj) {
   forEachChildSchema(obj, ensureArrayItems);
 }
 
+// JSON Schema primitive type names Gemini's Schema proto understands.
+const JSON_SCHEMA_TYPES = new Set([
+  "string", "number", "integer", "boolean", "array", "object", "null"
+]);
+
+function isSchemaObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+// A bare type name used where a Schema is expected means "any value of this
+// type"; anything unrecognised degrades to a string.
+function schemaFromTypeHint(value) {
+  const hint = typeof value === "string" ? value.trim() : "";
+  return { type: JSON_SCHEMA_TYPES.has(hint) ? hint : "string" };
+}
+
 // Expand shorthand string schemas into real Schema objects.
 //
 // JSON Schema requires every subschema to be an object, but agent and MCP tool
@@ -413,7 +429,7 @@ const SCHEMA_SLOTS = ["items", "additionalItems", "contains", "if", "then", "els
 function expandStringSchemas(obj) {
   if (!obj || typeof obj !== "object") return;
 
-  const expand = (value) => (typeof value === "string" ? { type: value } : value);
+  const expand = (value) => (typeof value === "string" ? schemaFromTypeHint(value) : value);
 
   for (const slot of SCHEMA_SLOTS) {
     if (typeof obj[slot] === "string") obj[slot] = expand(obj[slot]);
@@ -434,65 +450,6 @@ function expandStringSchemas(obj) {
   }
 
   forEachChildSchema(obj, expandStringSchemas);
-}
-
-// Normalize shorthand string property definitions (e.g. { properties: { foo: "object" } })
-function normalizePropertyDefinitions(obj) {
-  if (!obj || typeof obj !== "object") return;
-
-  if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
-    for (const [key, prop] of Object.entries(obj.properties)) {
-      if (typeof prop === "string") {
-        obj.properties[key] = {
-          type: prop === "object" ? "object" : prop,
-        };
-      }
-    }
-  }
-
-  forEachChildSchema(obj, normalizePropertyDefinitions);
-}
-
-// Gemini's JSON Schema proto uses "properties" as the field name for sub-schemas of an object.
-// When a tool parameter itself is literally named "properties", the serialised wire value becomes
-// schema.properties["properties"] = { type: "object", ... } — the parser cannot distinguish the
-// keyword from the parameter name and rejects the whole request with 400 INVALID_ARGUMENT.
-//
-// Fix: rename any property called "properties" (case-sensitive) to "properties_" in every
-// object sub-schema, and update the parallel "required" array to match.
-// The rename is applied recursively so nested objects are also covered.
-function renamePropertiesConflict(obj) {
-  if (!obj || typeof obj !== "object") return;
-  if (obj.properties && typeof obj.properties === "object") {
-    if (Object.prototype.hasOwnProperty.call(obj.properties, "properties")) {
-      obj.properties["properties_"] = obj.properties["properties"];
-      delete obj.properties["properties"];
-      if (Array.isArray(obj.required)) {
-        const idx = obj.required.indexOf("properties");
-        if (idx !== -1) obj.required[idx] = "properties_";
-      }
-    }
-    for (const v of Object.values(obj.properties)) {
-      renamePropertiesConflict(v);
-    }
-  }
-  if (obj.items && typeof obj.items === "object") renamePropertiesConflict(obj.items);
-}
-
-// JSON Schema primitive type names Gemini's Schema proto understands.
-const JSON_SCHEMA_TYPES = new Set([
-  "string", "number", "integer", "boolean", "array", "object", "null"
-]);
-
-function isSchemaObject(value) {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-// A bare type name used where a Schema is expected means "any value of this
-// type"; anything unrecognised degrades to a string.
-function schemaFromTypeHint(value) {
-  const hint = typeof value === "string" ? value.trim() : "";
-  return { type: JSON_SCHEMA_TYPES.has(hint) ? hint : "string" };
 }
 
 // Mirror of selectBest(): keep the most informative member of a tuple.
@@ -566,8 +523,6 @@ export function cleanJSONSchemaForAntigravity(schema) {
   convertConstToEnum(cleaned);
   convertEnumValuesToStrings(cleaned);
 
-  // Phase 1.5: Normalize property definitions before structural transforms
-  normalizePropertyDefinitions(cleaned);
 
   // Phase 2: Flatten complex structures
   mergeAllOf(cleaned);
@@ -643,12 +598,6 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   addPlaceholders(cleaned);
 
-  // Phase 6: Rename any property literally named "properties" to "properties_".
-  // Must run after addPlaceholders (Phase 5) so that phase cannot re-introduce the conflict.
-  // Gemini's wire format uses "properties" as the keyword for object sub-schemas; a parameter
-  // with that exact name collides with the keyword and causes 400 INVALID_ARGUMENT.
-  // Affects real MCP servers: Notion (notion-create-pages) and Atlassian (getJiraIssue).
-  renamePropertiesConflict(cleaned);
 
   return cleaned;
 }
