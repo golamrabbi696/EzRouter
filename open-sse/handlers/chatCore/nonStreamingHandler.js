@@ -13,7 +13,7 @@ import { PROVIDERS } from "../../config/providers.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { appendRequestLog, saveRequestDetail, trackPendingRequest } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
@@ -491,6 +491,7 @@ export async function handleNonStreamingResponse({
       console.error("[RequestDetail] Failed to save:", err.message);
     });
 
+    trackPendingRequest?.(model, provider, effectiveConnId, false);
     trackDone?.();
 
     const res = new Response(JSON.stringify(restoreToolNames(translatedResponse, toolNameMap)), {
@@ -501,6 +502,7 @@ export async function handleNonStreamingResponse({
     res.response = res;
     return res;
   } catch (err) {
+    trackPendingRequest?.(model, provider, effectiveConnId, false);
     trackDone?.();
     appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
     console.error(`[ChatCore] Error in handleNonStreamingResponse (${provider}/${model}):`, err?.message || err);

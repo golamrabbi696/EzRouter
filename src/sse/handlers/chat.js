@@ -338,7 +338,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         translationCache,
         body: { ...structuredClone(body), model: `${provider}/${model}` },
         modelInfo: { provider, model },
-        credentials: refreshedCredentials,
+        credentials: { ...refreshedCredentials, rawHeaders: clientRawRequest?.headers },
         log,
         clientRawRequest,
         connectionId: credentials.connectionId,

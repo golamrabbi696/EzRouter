@@ -67,6 +67,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       return connectionId || "";
     }
   })();
+  if (credentials) {
+    credentials.clientSessionId = sessionSeed;
+  }
   const reqTag = log?.tagForSession ? log.tagForSession(sessionSeed) : (log?.nextTag ? log.nextTag() : "");
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
@@ -448,6 +451,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const executor = getExecutor(provider);
+  global._pendingSelections?.delete(connectionId);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
