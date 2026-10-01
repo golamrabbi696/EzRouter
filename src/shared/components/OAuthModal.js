@@ -349,6 +349,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "grok-cli",
         "frontier-for-all",
         "muse",
+        "glm",
       ];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
@@ -391,6 +392,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             }
           : (provider === "kimi" || provider === "kimi-coding")
           ? { _kimiDeviceId: data._kimiDeviceId }
+          : provider === "glm"
+          ? { _zcodePollToken: data._zcodePollToken }
           : null;
         startPolling(
           data.device_code,

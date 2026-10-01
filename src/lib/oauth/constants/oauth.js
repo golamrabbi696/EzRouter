@@ -196,6 +196,13 @@ export const WINDSURF_CONFIG = {
   oauthTimeoutMs: 600_000,
 };
 
+// GLM Coding (Z.ai) OAuth — ZCode CLI polling flow (NOT PKCE): init mints a
+// one-off poll token, the browser opens the server-generated authorize_url,
+// poll/ready returns the tokens. The Z.AI OAuth token is then exchanged for a
+// platform business JWT and finally a long-lived coding-plan API key (no
+// refresh grant).
+export const GLM_OAUTH_CONFIG = { ...PROVIDER_OAUTH["glm"] };
+
 // Zed hosted LLM aggregator — RSA keypair native-app auth (NOT OAuth).
 export const ZED_HOSTED_CONFIG = {
   webBaseUrl: "https://zed.dev",
@@ -236,4 +243,7 @@ export const PROVIDERS = {
   KIMCHI: "kimchi",
   GROK_CLI: "grok-cli",
   FRONTIER: "frontier-for-all",
+  MUSE: "muse",
+  GLM: "glm",
+  ZED: "zed",
 };
