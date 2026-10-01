@@ -196,7 +196,7 @@ export function openaiToClaudeResponse(chunk, state) {
     // createSSEStream). Echoing the upstream provider's chunk.model (e.g.
     // "glm-5.3" behind a claude-* combo) makes Anthropic-format clients save
     // that name as the session model and fail to restore it on resume.
-    state.model = state.model || chunk.model || MODEL_FALLBACK;
+    state.model = state.responseModel || state.model || chunk.model || MODEL_FALLBACK;
     state.nextBlockIndex = 0;
     results.push({
       type: "message_start",
