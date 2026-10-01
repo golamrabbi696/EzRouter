@@ -77,6 +77,8 @@ const DEFAULT_SETTINGS = {
     maxTotalChars: 150000,
     preserveErrors: true,
   },
+  // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
+  providerOverrides: {},
 };
 
 async function readRaw() {

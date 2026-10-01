@@ -57,7 +57,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, toolHistoryPruning, translationCache, sourceFormatOverride, providerThinking, toolDisclosure }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, toolHistoryPruning, translationCache, sourceFormatOverride, providerThinking, toolDisclosure, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -504,7 +504,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let providerResponseFormat = targetFormat;
   const dispatchModel = upstreamModel || model;
   try {
-    const result = await executor.execute({ model: dispatchModel, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({
+      model: dispatchModel,
+      body: translatedBody,
+      stream,
+      credentials,
+      signal: streamController.signal,
+      log,
+      proxyOptions,
+      providerOverrides,
+    });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -573,6 +582,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             signal: streamController.signal,
             log,
             proxyOptions,
+            providerOverrides,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;

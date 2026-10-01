@@ -362,6 +362,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         onPxpipeEvent: appendPxpipeEvent,
         toolHistoryPruning: chatSettings.toolHistoryPruning || { enabled: false },
         providerThinking,
+        // Per-provider user overrides (custom headers / connect timeout) from settings
+        providerOverrides: (chatSettings.providerOverrides || {})[provider] || null,
         toolDisclosure: (chatSettings.toolDisclosureEnabled || chatSettings.toolDisclosureFilterEnabled) ? {
           disclosureEnabled: !!chatSettings.toolDisclosureEnabled,
           filterEnabled: !!chatSettings.toolDisclosureFilterEnabled,
