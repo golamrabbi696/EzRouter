@@ -319,10 +319,7 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined)
       if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
       else delete body.thinking;
       const level = toLevel(eff);
-      // xhigh goes on the wire only where the model supports it natively
-      // (Opus 4.7/4.8/5, Sonnet 5, Fable 5 — per thinkingLevels overrides);
-      // older adaptive models (4.6 era) reject it, so keep clamping to high.
-      // "auto" is never a valid wire effort for claude-adaptive → always high.
+      // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
       const effort = (level === "auto" || !level)
         ? "high"
         : level === "minimal"
