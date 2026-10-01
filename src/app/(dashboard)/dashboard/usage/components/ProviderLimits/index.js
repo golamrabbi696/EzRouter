@@ -1384,6 +1384,27 @@ export default function ProviderLimits() {
                         </button>
                       </Tooltip>
                     )}
+                    {isCodex && (
+                      <Tooltip
+                        text={
+                          conn.providerSpecificData?.codexFastMode === true
+                            ? "Fast mode ON — Codex requests on this account use the priority tier. Click to disable."
+                            : "Force fast mode — Codex requests on this account use the priority tier."
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFastMode(conn)}
+                          disabled={rowBusy}
+                          aria-label="Toggle fast mode"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${conn.providerSpecificData?.codexFastMode === true ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className={`material-symbols-outlined text-[18px] ${fastModeId === conn.id ? "animate-spin" : ""}`}>
+                            {fastModeId === conn.id ? "progress_activity" : "speed"}
+                          </span>
+                        </button>
+                      </Tooltip>
+                    )}
                     <Tooltip text="Refresh quota">
                       <button
                         type="button"

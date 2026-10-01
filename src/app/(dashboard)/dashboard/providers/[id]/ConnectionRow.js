@@ -340,6 +340,19 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
               <span className="text-[10px] leading-tight font-semibold">Reconnect</span>
             </button>
           )}
+          {fastMode && (
+            <Tooltip text={fastMode.on
+              ? "Fast mode ON — Codex requests on this account use the priority tier. Click to disable."
+              : "Force fast mode — Codex requests on this account use the priority tier."}>
+              <button
+                onClick={() => fastMode.onToggle(!fastMode.on)}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${fastMode.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">speed</span>
+                <span className="text-[10px] leading-tight">Fast</span>
+              </button>
+            </Tooltip>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>

@@ -31,6 +31,15 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
+export function applyCodexFastMode(body, provider, model, settings, credentials = null) {
+  if (
+    provider !== "codex" ||
+    (settings?.codexFastMode !== true && credentials?.providerSpecificData?.codexFastMode !== true) ||
+    body.service_tier
+  ) return body;
+
+  return { ...body, service_tier: "priority" };
+}
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats

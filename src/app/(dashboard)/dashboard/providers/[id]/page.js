@@ -1757,6 +1757,18 @@ export default function ProviderDetailPage() {
                   </div>
                 )}
               </div>
+              {providerId === "codex" && (
+                <Toggle
+                  checked={codexFastMode}
+                  onChange={handleCodexFastModeChange}
+                  disabled={savingCodexFastMode}
+                  label="Fast inference"
+                  description="Use the priority tier for Codex models (all accounts). Per-account override lives on each connection row and quota card."
+                />
+              )}
+              {providerId === "codex" && codexFastModeError && (
+                <span className="text-xs text-red-500" role="alert">{codexFastModeError}</span>
+              )}
             </div>
           </div>
 
