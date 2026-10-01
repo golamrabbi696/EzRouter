@@ -25,6 +25,8 @@ const ALIAS_TOKENS = [
   "bzl","bazaarlink","kgw","kilo-gateway","hunyuan","tencent","qianfan","baidu","ernie",
   "dv","devin","devin-cli","morph","morphllm",
   "br","bedrock","aws-bedrock",
+  "muse","muse-ai","meta-model-api",
+  "muse-code","muse-subscription",
 ];
 
 // Sort idToAlias by key — runtime accesses by key, order is irrelevant (content-based)

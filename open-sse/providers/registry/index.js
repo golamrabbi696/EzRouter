@@ -89,6 +89,7 @@ import providerMinimax from "./minimax.js";
 import providerMistral from "./mistral.js";
 import providerMmf from "./mmf.js";
 import providerMorph from "./morph.js";
+import providerMuse from "./muse.js";
 import providerNanobanana from "./nanobanana.js";
 import providerNebius from "./nebius.js";
 import providerNous from "./nous.js";
@@ -231,6 +232,7 @@ export default [
   providerMistral,
   providerMmf,
   providerMorph,
+  providerMuse,
   providerNanobanana,
   providerNebius,
   providerNous,

@@ -131,6 +131,9 @@ export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 // CodeBuddy International — same shape as CN, .ai domain (mirror of codebuddy-cn).
 export const CODEBUDDY_INTL_CONFIG = { ...PROVIDER_OAUTH["codebuddy-intl"] };
 
+// Muse — subscription device code flow to auth.meta.com, no refresh
+// (Meta rejects refresh_token grants; the minted Model API key never expires).
+export const MUSE_CONFIG = { ...PROVIDER_OAUTH["muse"] };
 // Xiaomi MiMo Desktop OAuth — custom ECDH encrypted-callback flow (NOT standard OAuth2).
 //   1) Client generates X25519 keypair
 //   2) Browser opens ${platformUrl}/authorize?pk=<pubkey>&redirect_uri=http://localhost:<port>/&kn=mimocode&key_name=...

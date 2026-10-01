@@ -182,6 +182,15 @@ export const MODEL_PRICING = {
   "grok-4.5":                     { input: 2.00,  output: 6.00,  cached: 0.30,  reasoning: 6.00,   cache_creation: 2.00, long_context: { threshold: 200000, inclusive: true, input: 4.00, output: 12.00, cached: 0.60, reasoning: 12.00, cache_creation: 4.00 } },
   "grok-4.6":                     { input: 2.00,  output: 6.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 2.00, long_context: { threshold: 200000, inclusive: true, input: 4.00, output: 12.00, cached: 1.00, reasoning: 12.00, cache_creation: 4.00 } },
 
+  // === Muse (Meta Model API) ===
+  // Rates from https://dev.meta.ai/docs/pricing-rate-limits (contributor tier:
+  // cheaper, Meta may train on the data).
+  "muse-spark-1.3":                { input: 1.25, output: 4.25, cached: 0.15,  reasoning: 4.25,   cache_creation: 0 },
+  "muse-spark-1.2":                { input: 1.25, output: 4.25, cached: 0.15,  reasoning: 4.25,   cache_creation: 0 },
+  "muse-spark-1.1":                { input: 1.25, output: 4.25, cached: 0.15,  reasoning: 4.25,   cache_creation: 0 },
+  "muse-spark-1.3-contributor":    { input: 0.10, output: 0.20, cached: 0.002, reasoning: 0.20,   cache_creation: 0 },
+  "muse-spark-1.2-contributor":    { input: 0.10, output: 0.20, cached: 0.002, reasoning: 0.20,   cache_creation: 0 },
+
   // === OpenRouter fallback ===
   "auto":                         { input: 2.00,  output: 8.00,  cached: 1.00,  reasoning: 12.00,  cache_creation: 2.00  },
 
