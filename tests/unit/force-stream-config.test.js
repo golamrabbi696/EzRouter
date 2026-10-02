@@ -129,6 +129,26 @@ function makeOptions(bodyStream) {
   };
 }
 
+describe("client streaming default", () => {
+  beforeEach(() => {
+    executeMock.mockReset();
+    executeMock.mockRejectedValue(new Error("boom"));
+  });
+
+  it.each([undefined, null, false, true])("honors explicit stream=true without an Accept header (%s)", async (bodyStream) => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const options = makeOptions(bodyStream);
+    options.modelInfo = { provider: "deepseek", model: "deepseek-chat" };
+    options.clientRawRequest.headers = {};
+
+    await handleChatCore(options);
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(executeMock.mock.calls[0][0].stream).toBe(bodyStream === true);
+  });
+});
+
+
 describe("forceStream provider config", () => {
   beforeEach(() => {
     executeMock.mockReset();
