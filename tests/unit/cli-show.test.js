@@ -46,7 +46,8 @@ describe("ezrouter show", () => {
       const [r] = await Promise.all([show.__test__.inspect(t)]);
       expect(r.configured, t.id).toBe(true);
       expect(r.apiKey, t.id).toBe("sk-sho…6789");
-      expect(Object.values(r.models).join(" "), t.id).toContain("srv/");
+      // omp lists every server model via discovery instead of a fixed id.
+      expect(Object.values(r.models).join(" "), t.id).toContain(t.id === "omp" ? "discovery" : "srv/");
     }
     await show.run([]);
     const text = out.join("\n");

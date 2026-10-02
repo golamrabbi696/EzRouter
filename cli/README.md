@@ -106,7 +106,7 @@ Models come from the **server's own CLI-tools configuration**, so a client gets 
 | `claude` | tier flag (`--opus` …) → server's Claude tier → *left unset* (Claude Code's own default) |
 | others | `--model` → that tool's own model on the server → server's OpenCode model → *tool skipped* |
 
-`kilo` has no readable model on the server, so it always uses `--model` or the OpenCode model. A Claude tier the server doesn't set is removed from your config rather than kept from an earlier run. A skipped tool makes the command exit `1`.
+`kilo` has no readable model on the server, so it always uses `--model` or the OpenCode model. `omp` (Oh My Pi) needs no model: it uses proxy discovery, so every server model appears under `9router` in `/model`. A Claude tier the server doesn't set is removed from your config rather than kept from an earlier run. A skipped tool makes the command exit `1`.
 
 ### Overriding the server's models
 
