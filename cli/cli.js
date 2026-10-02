@@ -94,10 +94,11 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
-// `ezrouter connect <url>` configures local CLI tools against a remote server —
-// no local server, no runtime deps. Usable via `npx @rabbi696/ezrouter connect …`.
-if (args[0] === "connect") {
-  const { run } = require("./src/cli/commands/connect");
+// `ezrouter connect <url>` configures local CLI tools against a remote server, and
+// `ezrouter show` prints what they're currently set to — no local server, no
+// runtime deps. Usable via `npx @rabbi696/ezrouter …`.
+if (args[0] === "connect" || args[0] === "show") {
+  const { run } = require(args[0] === "show" ? "./src/cli/commands/show" : "./src/cli/commands/connect");
   run(args.slice(1))
     .then((code) => process.exit(code))
     .catch((err) => {
@@ -190,7 +191,8 @@ Options:
 Commands:
   connect <server-url> Configure CLI tools for a remote EzRouter server
                       (npx @rabbi696/ezrouter connect http://host:20126 — no install needed)
-  codex auth-token     Print the provider-scoped Codex bridge token
+  show [tool…]        Show each CLI tool's current EzRouter config and models
+                      (e.g. ezrouter show claude)
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)
