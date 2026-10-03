@@ -702,7 +702,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         type: "json_schema",
         name: js.name || "response",
         schema: js.schema,
-        ...(js.strict !== undefined ? { strict: js.strict } : {}),
+        strict: js.strict !== false,
         ...(js.description ? { description: js.description } : {}),
       },
     };
