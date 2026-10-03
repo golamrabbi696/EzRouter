@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import https from "https";
+import { MAX_TOOL_NAME_LEN } from "../config/appConstants.js";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
@@ -379,7 +380,12 @@ function normalizeResponsesTools(body) {
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
     if (body.tool_choice.type === "function") {
       const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
-      if (!n || !validNames.has(n)) delete body.tool_choice;
+      // validNames holds the CLAMPED names, so a tool_choice still carrying the
+      // original would not match and would be dropped — silently turning a forced
+      // tool call into an unforced one. Compare against the same clamped form.
+      const clamped = n.slice(0, MAX_TOOL_NAME_LEN);
+      if (!n || !validNames.has(n) && !validNames.has(clamped)) delete body.tool_choice;
+      else body.tool_choice.name = clamped;
     }
   }
 }
