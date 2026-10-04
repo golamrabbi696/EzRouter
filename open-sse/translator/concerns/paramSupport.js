@@ -30,10 +30,6 @@ const STRIP_RULES = [
   // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
   // min() with the model ceiling still applies if a variant's own limit is lower.
   { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
-  // Custom OpenAI-compatible providers (Codex App, etc.) reject reasoning_effort /
-  // reasoning — they speak plain OpenAI chat completions without thinking support.
-  // Drop them to avoid HTTP 400 "Unsupported parameter: reasoning_effort". #3008
-  { provider: /openai-compatible|custom/i, drop: ["reasoning_effort", "reasoning"] },
   // OpenAI gpt-5.x rejects `max_tokens`; it must be `max_completion_tokens`.
   // Rename to avoid HTTP 400 "Unsupported parameter: 'max_tokens'". #2830
   { provider: "openai", match: /gpt-5/i, rename: [["max_tokens", "max_completion_tokens"]] },

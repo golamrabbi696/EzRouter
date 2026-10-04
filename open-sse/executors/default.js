@@ -153,22 +153,6 @@ export class DefaultExecutor extends BaseExecutor {
         const bare = suffix ? model.slice(0, suffix.index).trim() : model;
         if (quirkModels.includes(bare) && transformed.tool_choice !== "auto") transformed.tool_choice = "auto";
       }
-
-      // Go Muse Spark Responses endpoint rejects Chat param `reasoning_effort`.
-      // Only convert when we are actually on /responses for this model.
-      if (typeof transformed.reasoning_effort === "string") {
-        const baseUrl = credentials?.runtimeTransport?.baseUrl || "";
-        const onResponses = String(baseUrl).includes("/responses");
-        const isGoMuse = this.provider === "opencode-go" && /muse-spark/i.test(String(model || ""));
-        if (onResponses && isGoMuse) {
-          const cur = transformed.reasoning;
-          const curObj = cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
-          const normalized = transformed.reasoning_effort.toLowerCase().trim();
-          const effort = (normalized === "none" || normalized === "off") ? "minimal" : normalized;
-          transformed.reasoning = { ...curObj, effort, summary: curObj.summary || "auto" };
-          delete transformed.reasoning_effort;
-        }
-      }
     }
 
     const injected = injectReasoningContent({ provider: this.provider, model, body: transformed });
@@ -206,7 +190,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
+      const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {

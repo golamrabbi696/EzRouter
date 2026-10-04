@@ -177,9 +177,7 @@ export const MODEL_CAPABILITIES = {
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
   "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  // OpenCode Go Muse Spark 1.3 — same Responses reasoning (minimal..xhigh, cannot
-  // disable); multimodal (text+image).
-  "muse-spark-1.3-contributor": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.3-contributor": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   // OpenCode Free Union Alpha — multimodal (text+vision), 262K context, 131K max output
   "union-alpha": { vision: true, contextWindow: 262144, maxOutput: 131072 },
 };
@@ -587,8 +585,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*laguna*",        caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
 
   // ── Meta / OpenCode Muse (multimodal text+image; OpenAI Responses reasoning supports up to xhigh) ─
-  { pattern: "*muse-spark*free*", caps: { vision: true, videoInput: true, audioInput: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1048576, maxOutput: 131072 } },
-  { pattern: "*muse-spark*",    caps: { vision: true, videoInput: true, audioInput: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*muse-spark*",    caps: { vision: true, videoInput: true, audioInput: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*muse*spark*",    caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*muse-glimmer*",  caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
   { pattern: "*muse*",          caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },

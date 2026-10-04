@@ -184,3 +184,5 @@ export function responsesJsonToClaudeMessage(jsonResponse, model, textContent, t
     },
   };
 }
+
+export const chatCompletionToClaudeMessage = openAICompletionToClaudeMessage;

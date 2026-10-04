@@ -16,7 +16,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { openAICompletionToClaudeMessage, openAICompletionToResponses } from "./completionConverters.js";
+import { openAICompletionToClaudeMessage, chatCompletionToClaudeMessage, openAICompletionToResponses } from "./completionConverters.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
