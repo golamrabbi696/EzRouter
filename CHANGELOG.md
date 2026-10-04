@@ -1,48 +1,53 @@
-# v0.6.15 (2026-10-01)
+# v0.6.15 (2026-10-05)
 
-## Critical Security Fixes
+## Critical Security Fixes & PR Audit
 - **OS Command Injection & SSRF Hardening**: Fixed OS command injection vulnerability via the `--host` argument in browser launcher CLI, and eliminated authenticated SSRF risks via DNS rebinding and redirect following on provider-node validation routes and MCP probes (`#4455`).
+- **Security Audit of Upstream PRs (#4518 - #4571)**:
+  - **REJECTED PR #4539**: Malicious / unvetted Qoder rewards scanning attempting to run `runtime-info.exe` and execute PowerShell commands targeting DPAPI passwords on client machines.
+  - **REJECTED PR #4540**: Extraneous personal deployment config (`fly.toml`).
+  - **SUPERSEDED PRs #4538, #4541, #4560**: Competing implementations unified under the official core maintainer access control architecture in `#4567`.
 
-## Upstream Synchronization & Core Enhancements (decolua/9router #4396 - #4518)
+## Upstream Synchronization & Core Enhancements (decolua/9router #4396 - #4571)
+- **API Key Access Control & Scoping**:
+  - Added per-API-key access control allowing restriction of individual API keys to selected model combos and models with DB migration `012`, repos, service policy checks, and `/v1/models` catalog filtering (`#4567`).
+- **CLI Launcher (`ezrouter`)**:
+  - Added `ezrouter show` command to inspect local CLI tool configurations offline with masked API keys (`#4519`).
+  - Upgraded `ezrouter connect` to inherit model configurations directly from remote server settings (dropping hardcoded defaults) and supported `--save` flag for mode-600 password persistence in `~/.ezrouter/connect.env` (`#4519`).
+  - Added support for Pi (`pi-coding-agent`) and Oh My Pi (`omp`) CLI tools in `connect` and `show` (`#4519`).
+  - Attached server lifecycle events before entering tray mode to avoid unhandled exits (`#4522`).
 - **Models & Provider Integrations**:
-  - **GLM**: Added Z.ai OAuth login to GLM Coding (`glm-coding`) with dual-auth (API key + OAuth) (`#4502`), and enabled thinking effort support on `glm-5.2` and `glm-5.3-flash`.
+  - **Codex**: Added context window expansion for `gpt-6.1-sol` to 872k tokens (`#4524`), enabled force fast mode (priority tier) for all Codex models (`#4525`), CLI identity refresh (`#4473`), 1M context variants for GPT-6 and GPT-5.6 (`#4423`), and preserved hosted web search on GPT-6 Sol/Luna (`#4420`).
+  - **Antigravity**: Added Claude Sonnet 5.5 and Opus 5.5 high/medium/low tier routing (`#4566`), stopped sending unsigned thinking blocks (`#4559`), and added in-flight awareness with per-tab session isolation (`#4530`).
+  - **GLM**: Corrected GLM-5.2 and GLM-5.3 context window to 1M tokens (`#4561`), and added Z.ai OAuth login to GLM Coding (`#4502`).
+  - **Kimi**: Routed Responses API clients directly to Kimi Code `/responses` endpoint with appropriate headers (`#4569`).
+  - **ElevenLabs**: Added ElevenLabs Scribe STT provider transport with audio upload handling and derived provider aliases (`#4537`).
+  - **MiMo & Kiro MITM**: Added models for Xiaomi MiMo and Kiro MITM interception (`#4546`).
+  - **Tokenharbor**: Seeded current free-tier model identifiers (`#4564`).
+  - **noAuth Providers**: Published free noAuth provider models in `/v1/models` (cached via suggested-models filters) while keeping retired/hidden models excluded (`#4565`).
+  - **CommandCode**: Surfaced cache tokens in usage without artificially inflating `prompt_tokens` (`#4523`).
+  - **Usage & Quotas**: Labeled per-model decode speed stats with model name on quota cards (`#4526`), and preserved reasoning and cached token details in Responses API usage tracking (`#4551`, `#4536`).
   - **Claude**: Added Claude Sonnet 5.5 (`claude-sonnet-5.5`) (`#4489`) and `claude-opus-5.5` models in Kiro registry (`#4409`).
-  - **Codex**: Added GPT-6.1 Sol (`#4488`) with CLI identity refresh (`#4473`), 1M context variants for GPT-6 and GPT-5.6 (`#4423`), preserved hosted web search on GPT-6 Sol/Luna (`#4420`), added `gpt-daybreak` and `gpt-reserve` models, and routed bare `gpt-5.x`/`gpt-6.x` slugs to Codex (`#4418`).
-  - **Gemini**: Added Gemini 4 Argon (`gemini-4-argon`) (`#4507`), summed usage parts when Gemini omits `totalTokenCount` (`#4412`), and sanitized `$`-prefixed keys (`$ref`, `$defs`) in functionResponse results (`#4456`).
+  - **Gemini**: Added Gemini 4 Argon (`gemini-4-argon`) (`#4507`), summed usage parts when Gemini omits `totalTokenCount` (`#4412`), and sanitized `$`-prefixed keys in functionResponse results (`#4456`).
   - **NVIDIA**: Refreshed NVIDIA NIM model catalog from 7 chat models to 33 chat models (`#4515`).
   - **Meta Muse & System One**: Added Meta Muse provider with OAuth login and model catalog (`#4401`), and added v1m System One provider (`#4407`).
-  - **Capabilities**: Added capability patterns for `qwen3.8*` and `longcat-2.5*` (`#4514`), seeded Agnes 2.5/3.0 model IDs (`#4403`), and published real GPT-6 and GPT-5.4+ context windows and combo token limits (`#4478`).
-- **CLI Launcher (`ezrouter`)**:
-  - Added `ezrouter connect` command for connecting client CLI tools to remote EzRouter servers (`#4497`).
-  - Replaced `sk_9router` placeholder with the first active dashboard API key in CLI tools (`#4419`).
-- **Thinking & Reasoning Blocks**:
+- **Format Translation & Protocols**:
+  - Ensured non-streaming responses are returned in the client's native format across all translator routes (`#4571`).
+  - Aligned Responses transport, reasoning extraction, and JSON reply handling (`#4563`).
+  - Defaulted omitted stream requests to JSON (`#4534`).
+  - Honored explicit `max_tokens` / `max_completion_tokens` caps across clients (`#4533`).
+  - Forwarded Responses `input_image` tool outputs as user image blocks rather than stringified base64 text (`#4518`).
+  - Clamped tool names to 64 characters across all providers to adhere to API limits (`#4545`).
+  - Mapped Chat Completions `response_format` to `text.format` for Responses clients (`#4547`).
+  - Preserved explicit function tool `strict` modes in Codex translation (`#4543`).
+  - Handled all Cursor `ExecServerMessage` variants in `EXEC_RESULT_FIELD` and degraded unknown variants safely (`#4550`).
   - Added `xhigh` thinking level to Claude adaptive thinking (`#4494`).
   - Resolved Claude Sonnet 5.x to adaptive thinking to prevent forged thinking placeholder injection (`#4483`).
-  - Injected unsigned thinking placeholders for OpenCode Go DeepSeek `/messages` (`#4436`).
-  - Captured streaming reasoning chunks arriving as `delta.reasoning` / `delta.reasoning_details` (`#4457`).
-- **Streaming & Translation Protocols**:
-  - Forwarded Responses `input_image` tool outputs as user image blocks rather than massive stringified base64 text, preserving contiguous tool messages (`#4518`).
-  - Bounded deferred completion waits in Responses API with a 3s watchdog and ensured real usage is populated before emitting `response.completed` (`#4476`).
-  - Carried in-band stream errors across format translation (`#4477`).
-  - Converted forced-SSE JSON responses for Claude clients and shared completion converters (`#4466`).
-  - Echoed client-requested model in `message_start` for routed streams (`#4513`).
   - Cached a tool loop's final tool results with the 4th breakpoint in Claude (`#4485`).
   - Preserved trailing user turn to prevent accidental assistant prefill (`#4482`), and preserved intentional prefill from non-messages source formats (`#4481`).
-  - Preserved user turns containing only `container_upload` blocks (`#4404`).
-- **Tool Calling & Schema Robustness**:
-  - Coerced free-form property values and tuple items in tool schemas (`#4442`).
-  - Deduped same-name tools for DeepSeek models (`#4417`).
-  - Always emitted tool_result `is_error` for Zed Anthropic wire (`#4464`).
 - **Proxy & Reliability**:
   - Added automatic fallback to insecure TLS on self-signed cert errors (`#4405`).
   - Maintained strictProxy hold when no proxy resolves (`#4406`).
   - Prevented Codex refresh-token reuse on auto-ping to eliminate unintended logouts (`#4425`).
-  - Extracted `resetsAtMs` from Codebuddy 6004 rate limit error and forwarded `recurring` for codebuddy-intl quota packs (`#4422`).
-  - Sent Grok CLI 1.0.44 user-agent and version headers to prevent HTTP 426 (`#4410`).
-- **Dashboard & Persistence**:
-  - Excluded hidden providers from usage stats provider dropdown (`#4411`).
-  - Supported per-provider custom header overrides from registry (`#4402`).
-  - Synchronized `?provider=` URL parameter with provider filter on Quota page for bookmarkable deep links (`#4395`).
 - **Branding & Local Invariants**:
   - Preserved default gateway port strictly at **20126**.
   - Maintained EzRouter package and CLI branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`).

@@ -1,5 +1,43 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`GOLDEN buildHeaders (default executor providers) > agnes → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > ainetcafe → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > alicode → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -145,6 +183,44 @@ exports[`GOLDEN buildHeaders (default executor providers) > assemblyai → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > atria → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > bai → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > baidu → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -180,6 +256,14 @@ exports[`GOLDEN buildHeaders (default executor providers) > bazaarlink → heade
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
   },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > bedrock → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": "THROW: Cannot read properties of undefined (reading 'header')",
+  "nonStream": "THROW: Cannot read properties of undefined (reading 'header')",
+  "oauth": "THROW: Cannot read properties of undefined (reading 'header')",
 }
 `;
 
@@ -544,6 +628,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > codebuddy-intl → h
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > cohere → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > dahl → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1069,6 +1172,26 @@ exports[`GOLDEN buildHeaders (default executor providers) > morph → headers (a
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > muse → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "x-api-version": "1.0.0",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > nanobanana → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1341,6 +1464,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > poolside → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > qoder-cn → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > qoderwork-cn → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1437,6 +1579,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > tencent → headers 
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > together → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > tokenharbor → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1591,6 +1752,20 @@ exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (api
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > agnes → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://apihub.agnes-ai.com/v1/chat/completions",
+  "stream": "https://apihub.agnes-ai.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > ainetcafe → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://microquickjs.com/v1/chat/completions",
+  "stream": "https://microquickjs.com/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > alicode → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
@@ -1640,6 +1815,20 @@ exports[`GOLDEN buildUrl (default executor providers) > assemblyai → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > atria → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.atria-asi.ai/v1/chat/completions",
+  "stream": "https://api.atria-asi.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > bai → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.b.ai/v1/chat/completions",
+  "stream": "https://api.b.ai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > baidu → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://qianfan.baidubce.com/v2/chat/completions",
@@ -1651,6 +1840,13 @@ exports[`GOLDEN buildUrl (default executor providers) > bazaarlink → url (stre
 {
   "nonStream": "https://bazaarlink.ai/api/v1/chat/completions",
   "stream": "https://bazaarlink.ai/api/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > bedrock → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://bedrock-runtime.{region}.amazonaws.com",
+  "stream": "https://bedrock-runtime.{region}.amazonaws.com",
 }
 `;
 
@@ -1742,6 +1938,13 @@ exports[`GOLDEN buildUrl (default executor providers) > cohere → url (stream +
 {
   "nonStream": "https://api.cohere.ai/v1/chat/completions",
   "stream": "https://api.cohere.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > dahl → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://inference.dahl.global/v1/chat/completions",
+  "stream": "https://inference.dahl.global/v1/chat/completions",
 }
 `;
 
@@ -1913,6 +2116,13 @@ exports[`GOLDEN buildUrl (default executor providers) > morph → url (stream + 
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > muse → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.meta.ai/v1/chat/completions",
+  "stream": "https://api.meta.ai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > nanobanana → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.nanobananaapi.ai/v1/chat/completions",
@@ -2011,6 +2221,13 @@ exports[`GOLDEN buildUrl (default executor providers) > poolside → url (stream
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > qoder-cn → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
+  "stream": "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > qoderwork-cn → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://gateway.qoder.com.cn/algo/api/v2/service/pro/sse/agent_chat_generation",
@@ -2050,6 +2267,13 @@ exports[`GOLDEN buildUrl (default executor providers) > together → url (stream
 {
   "nonStream": "https://api.together.xyz/v1/chat/completions",
   "stream": "https://api.together.xyz/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > tokenharbor → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://tokenharbor.ai/v1/chat/completions",
+  "stream": "https://tokenharbor.ai/v1/chat/completions",
 }
 `;
 

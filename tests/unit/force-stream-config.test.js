@@ -77,8 +77,10 @@ vi.mock("../../open-sse/rtk/headroom.js", async (importOriginal) => ({
   compressWithHeadroom: vi.fn(async () => null),
 }));
 
-vi.mock("../../open-sse/providers/capabilities.js", () => ({
+vi.mock("../../open-sse/providers/capabilities.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getCapabilitiesForModel: vi.fn(() => ({})),
+  withDeclaredCapabilities: vi.fn((inferred, declared) => ({ ...(inferred || {}), ...(declared || {}) })),
 }));
 
 vi.mock("../../open-sse/translator/concerns/modality.js", () => ({
