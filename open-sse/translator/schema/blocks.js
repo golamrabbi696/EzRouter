@@ -44,6 +44,13 @@ export const RESPONSES_ITEM = {
   SUMMARY_TEXT: "summary_text",
 };
 
+// Top-level discriminators of non-streaming response bodies, per client format.
+export const RESPONSE_BODY = {
+  CLAUDE_MESSAGE_TYPE: "message",
+  RESPONSES_OBJECT: "response",
+  RESPONSES_STATUS_COMPLETED: "completed",
+};
+
 // Valid OpenAI block types (used by filterToOpenAIFormat).
 export const VALID_OPENAI_CONTENT_TYPES = [
   OPENAI_BLOCK.TEXT, OPENAI_BLOCK.IMAGE_URL, OPENAI_BLOCK.IMAGE, OPENAI_BLOCK.INPUT_AUDIO, OPENAI_BLOCK.AUDIO_URL, OPENAI_BLOCK.FILE,

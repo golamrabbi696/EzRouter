@@ -1,5 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
+import { toOpenAIFinish, fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat, enrichUsageCost } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
@@ -15,8 +16,8 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { openAICompletionToClaudeMessage, chatCompletionToClaudeMessage, openAICompletionToResponses } from "./completionConverters.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
+import { openAICompletionToClientFormat } from "./nonStreamClientFormat.js";
 
 /**
  * Whether a translated response actually contains something the client can use:
@@ -101,10 +102,10 @@ function openAIResponsesBodyToChatCompletion(responseBody) {
 }
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate a non-streaming response body from the provider format into the
+ * client's format: provider → OpenAI Chat Completions (hub) → client.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
-  if (!responseBody || typeof responseBody !== "object") return responseBody;
   if (targetFormat === sourceFormat) {
     if (targetFormat === FORMATS.OPENAI) {
       for (const choice of responseBody?.choices || []) {
@@ -117,21 +118,21 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     }
     return responseBody;
   }
+  const openAIBody = providerResponseToOpenAI(responseBody, targetFormat);
+  return openAICompletionToClientFormat(openAIBody, sourceFormat, customToolNames);
+}
 
-  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat !== FORMATS.OPENAI_RESPONSES) {
-    const chatBody = openAIResponsesBodyToChatCompletion(responseBody);
-    if (sourceFormat === FORMATS.OPENAI) return chatBody;
-    if (sourceFormat === FORMATS.CLAUDE) return chatCompletionToClaudeMessage(chatBody);
-  }
-
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
-  }
-
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
-  }
+/**
+ * Translate a non-streaming response body from the provider format into the
+ * OpenAI Chat Completions hub format. Bodies already in that shape, and formats
+ * without a converter, are returned unchanged.
+ */
+export function providerResponseToOpenAI(responseBody, targetFormat) {
   if (targetFormat === FORMATS.OPENAI) return responseBody;
+
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+    return openAIResponsesBodyToChatCompletion(responseBody);
+  }
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
@@ -169,8 +170,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
     if (!message.content && !message.tool_calls) message.content = "";
 
-    let finishReason = (candidate.finishReason || "stop").toLowerCase();
-    if (finishReason === "stop" && toolCalls.length > 0) finishReason = "tool_calls";
+    // Same mapping as the streaming Gemini translator (MAX_TOKENS → length, SAFETY → content_filter).
+    let finishReason = toOpenAIFinish(candidate.finishReason, FORMATS.GEMINI);
+    if (finishReason === OPENAI_FINISH.STOP && toolCalls.length > 0) finishReason = OPENAI_FINISH.TOOL_CALLS;
 
     const result = {
       id: `chatcmpl-${response.responseId || Date.now()}`,
@@ -195,12 +197,6 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
-    }
-    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-      return openAICompletionToResponses(result, customToolNames);
-    }
-    if (sourceFormat === FORMATS.CLAUDE) {
-      return chatCompletionToClaudeMessage(result);
     }
     return result;
   }
@@ -232,8 +228,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
     if (!message.content && !message.tool_calls) message.content = "";
 
+    let finishReason = responseBody.stop_reason || "stop";
+    if (finishReason === "end_turn") finishReason = "stop";
+    if (finishReason === "tool_use") finishReason = "tool_calls";
+
     const usage = responseBody.usage || {};
-    const result = {
+    return {
       id: `chatcmpl-${responseBody.id || Date.now()}`,
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
@@ -241,7 +241,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       choices: [{
         index: 0,
         message,
-        finish_reason: fromOpenAIFinish(responseBody.stop_reason, FORMATS.OPENAI) || "stop"
+        finish_reason: finishReason
       }],
       usage: {
         prompt_tokens: usage.input_tokens || 0,
@@ -249,21 +249,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         total_tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0)
       }
     };
-    return sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? openAICompletionToResponses(result, customToolNames)
-      : result;
   }
 
   // Ollama
   if (targetFormat === FORMATS.OLLAMA) {
-    const result = ollamaBodyToOpenAI(responseBody);
-    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-      return openAICompletionToResponses(result, customToolNames);
-    }
-    if (sourceFormat === FORMATS.CLAUDE) {
-      return chatCompletionToClaudeMessage(result);
-    }
-    return result;
+    return ollamaBodyToOpenAI(responseBody);
   }
 
   return responseBody;
@@ -341,7 +331,7 @@ export async function handleNonStreamingResponse({
           FORMATS.VERTEX,
         ].includes(PROVIDERS[provider]?.format);
 
-        const parsed = isGeminiSse
+        const parsed = (isGeminiSse && !sseText.includes('"chat.completion'))
           ? parseGeminiSSEToOpenAIResponse(sseText, model)
           : parseSSEToOpenAIResponse(sseText, model);
 
@@ -356,6 +346,7 @@ export async function handleNonStreamingResponse({
           return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
         }
         responseBody = parsed;
+        targetFormat = FORMATS.OPENAI;
       }
     } else {
       try {
@@ -404,9 +395,25 @@ export async function handleNonStreamingResponse({
     saveUsageStats({ provider, model: recordedModel, tokens: usage, connectionId: effectiveConnId, apiKey: effectiveApiKey, endpoint: clientRawRequest?.endpoint, pricingMultiplier, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-    const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-      ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
-      : responseBody;
+    // provider → OpenAI Chat Completions (hub) → client format. Every provider body is
+    // converted to the client's format, not only bodies from OpenAI-format providers.
+    const translate = needsTranslation(targetFormat, sourceFormat);
+    const openAIResponse = translate ? providerResponseToOpenAI(responseBody, targetFormat) : responseBody;
+
+    // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other").
+    // Applied to the hub body so the client format (e.g. Claude stop_reason) inherits it.
+    if (openAIResponse?.choices?.[0]) {
+      const choice = openAIResponse.choices[0];
+      const msg = choice.message;
+      const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+      if (hasToolCalls && choice.finish_reason !== OPENAI_FINISH.TOOL_CALLS) {
+        choice.finish_reason = OPENAI_FINISH.TOOL_CALLS;
+      }
+    }
+
+    const translatedResponse = translate
+      ? openAICompletionToClientFormat(openAIResponse, sourceFormat, customToolNames)
+      : openAIResponse;
 
     if (!translatedResponse || typeof translatedResponse !== "object") {
       trackDone?.();
@@ -446,11 +453,7 @@ export async function handleNonStreamingResponse({
     }
 
     if (translatedResponse?.usage) {
-      translatedResponse.usage = enrichUsageCost(
-        filterUsageForFormat(translatedResponse.usage, sourceFormat),
-        provider,
-        model
-      );
+      translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
     }
 
     // Strip reasoning_content only when content is non-empty.
@@ -476,10 +479,11 @@ export async function handleNonStreamingResponse({
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: responseBody || null,
+      // Recorded from the hub body, so the detail reads the same whatever the client format.
       response: {
-        content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
-        thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
-        finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown",
+        content: openAIResponse?.choices?.[0]?.message?.content || openAIResponse?.content || null,
+        thinking: openAIResponse?.choices?.[0]?.message?.reasoning_content || openAIResponse?.reasoning_content || null,
+        finish_reason: openAIResponse?.choices?.[0]?.finish_reason || "unknown",
       },
       pxpipe,
       status: "success",
