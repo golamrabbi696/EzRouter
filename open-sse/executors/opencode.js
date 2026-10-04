@@ -62,7 +62,6 @@ function isPrivateIp(ip) {
   return false;
 }
 
-const MAX_TOOL_NAME_LEN = 128;
 const OPENCODE_UA = "opencode/1.18.31";
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
