@@ -75,6 +75,7 @@ vi.mock("open-sse/executors/index.js", () => ({
 describe("quota auto-ping", () => {
   let runQuotaAutoPingTick;
   let configureQuotaAutoPing;
+  let pingAccountNow;
   let deps;
   let state;
   let getCodexUsage;
@@ -93,14 +94,14 @@ describe("quota auto-ping", () => {
     ({ getCodexModels } = await import("open-sse/services/usage/codex.js"));
     ({ getClaudeUsage } = await import("open-sse/services/usage/claude.js"));
     ({ getExecutor } = await import("open-sse/executors/index.js"));
-    ({ runQuotaAutoPingTick, configureQuotaAutoPing } = await import("../../src/shared/services/quotaAutoPing.js"));
+    ({ runQuotaAutoPingTick, configureQuotaAutoPing, pingAccountNow } = await import("../../src/shared/services/quotaAutoPing.js"));
 
     deps = {
       getSettings: vi.fn(),
       getProviderConnections: vi.fn(),
       updateProviderConnection: vi.fn(),
       resolveConnectionProxyConfig: vi.fn().mockResolvedValue({}),
-      refreshAndUpdateCredentials: vi.fn(async (connection) => ({ connection, refreshed: false })),
+      refreshAndUpdateCredentials: vi.fn(async (connection) => ({ connection: { accessToken: "test-token", ...connection }, refreshed: false })),
       proxyAwareFetch: vi.fn().mockResolvedValue({ ok: true }),
       getExecutor: vi.fn(() => ({
         execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
@@ -124,7 +125,64 @@ describe("quota auto-ping", () => {
     expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
+  it("pings immediately without a prior reset observation or auto-ping opt-in", async () => {
+    const connection = { id: "manual", provider: "codex", authType: "oauth", isActive: true };
+    deps.getProviderConnections.mockResolvedValue([connection]);
+    getCodexUsage.mockResolvedValue({ quotas: { session: { used: 0, total: 100, resetAt: "2026-01-01T17:00:00Z" } } });
+    codexResponseText.mockResolvedValue('data: {"type":"response.completed","response":{"status":"completed"}}\n\n');
+    const result = await pingAccountNow("manual", {}, deps, state);
+    expect(result.status).toBe("succeeded");
+    expect(deps.getSettings).not.toHaveBeenCalled();
+    expect(deps.updateProviderConnection).toHaveBeenCalledWith("manual", expect.objectContaining({ lastPingAt: expect.any(String) }));
+  });
+
+  it("does not report HTTP 200 with an SSE error as a successful manual ping", async () => {
+    deps.getProviderConnections.mockResolvedValue([{ id: "manual", provider: "codex", authType: "oauth", isActive: true }]);
+    getCodexUsage.mockResolvedValue({ quotas: { session: { used: 0, total: 100 } } });
+    codexResponseText.mockResolvedValue('data: {"type":"error","message":"private upstream detail"}\n\n');
+    expect((await pingAccountNow("manual", {}, deps, state)).status).toBe("failed");
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("keeps blocking quota checks on manual ping", async () => {
+    deps.getProviderConnections.mockResolvedValue([{ id: "manual", provider: "codex", authType: "oauth", isActive: true }]);
+    getCodexUsage.mockResolvedValue({ quotas: { session: { used: 0, total: 100 }, weekly: { remaining: 0 } } });
+    expect((await pingAccountNow("manual", {}, deps, state)).status).toBe("skipped");
+    expect(deps.getExecutor).not.toHaveBeenCalled();
+  });
+
+  it("does not ping unsupported or inactive accounts", async () => {
+    deps.getProviderConnections.mockResolvedValue([{ id: "manual", provider: "codex", authType: "oauth", isActive: false }]);
+    expect((await pingAccountNow("manual", {}, deps, state)).status).toBe("skipped");
+    expect(getCodexUsage).not.toHaveBeenCalled();
+  });
+
+  it("rejects overlapping manual pings for the same account", async () => {
+    deps.getProviderConnections.mockResolvedValue([{ id: "manual", provider: "codex", authType: "oauth", isActive: true }]);
+    state.inFlight = new Set(["manual"]);
+    expect((await pingAccountNow("manual", {}, deps, state)).message).toContain("already");
+    expect(getCodexUsage).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a truncated successful stream as completed", async () => {
+    deps.getProviderConnections.mockResolvedValue([{ id: "manual", provider: "codex", authType: "oauth", isActive: true }]);
+    getCodexUsage.mockResolvedValue({ quotas: { session: { remaining: 100 } } });
+    codexResponseText.mockResolvedValue('data: {"type":"response.output_text.delta","delta":"OK"}\n\n');
+    expect((await pingAccountNow("manual", {}, deps, state)).status).toBe("failed");
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("supports an explicit Claude ping and preserves proxy configuration", async () => {
+    deps.getProviderConnections.mockResolvedValue([{ id: "manual", provider: "claude", authType: "oauth", isActive: true, accessToken: "token" }]);
+    getClaudeUsage.mockResolvedValue({ quotas: { "session (5h)": { remaining: 100 } } });
+    deps.resolveConnectionProxyConfig.mockResolvedValue({ connectionProxyEnabled: true, connectionProxyUrl: "http://proxy.test:8080" });
+    deps.proxyAwareFetch.mockResolvedValue({ ok: true, json: async () => ({ type: "message" }) });
+    expect((await pingAccountNow("manual", {}, deps, state)).status).toBe("succeeded");
+    expect(deps.proxyAwareFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: expect.any(AbortSignal) }), expect.objectContaining({ connectionProxyUrl: "http://proxy.test:8080" }));
+  });
+
   it("starts the scheduler only when an account opts in", () => {
+    vi.useRealTimers();
     vi.useFakeTimers();
 
     configureQuotaAutoPing({ codexAutoPing: { connections: {} } });
@@ -135,6 +193,7 @@ describe("quota auto-ping", () => {
   });
 
   it("stops the scheduler when the last account opts out", () => {
+    vi.useRealTimers();
     vi.useFakeTimers();
     configureQuotaAutoPing({ claudeAutoPing: { connections: { "claude-1": true } } });
 

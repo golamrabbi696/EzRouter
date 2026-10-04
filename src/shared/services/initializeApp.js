@@ -106,6 +106,12 @@ async function runHeavyStartup() {
 
   configureTunnelMonitoring(settings);
 
+  if (settings.wakeupState?.tasks?.length) {
+    import("@/shared/services/wakeupTasks")
+      .then(({ configureWakeupTasks }) => configureWakeupTasks(settings.wakeupState))
+      .catch(() => console.warn("[Wakeup] Scheduler start failed."));
+  }
+
   if (hasQuotaAutoPingEnabled(settings)) {
     import("@/shared/services/quotaAutoPing")
       .then(({ startQuotaAutoPing }) => startQuotaAutoPing())

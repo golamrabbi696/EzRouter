@@ -11,5 +11,15 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    if (process.env.NEXT_PHASE !== "phase-production-build" && process.env.NEXT_PHASE !== "phase-export") {
+      const { getWakeupState, recoverWakeupRuns } = await import("@/lib/db/repos/wakeupRepo.js");
+      await recoverWakeupRuns();
+      const wakeups = await getWakeupState();
+      if (wakeups.enabled && wakeups.tasks.some((task) => task.enabled)) {
+        const { configureWakeupTasks } = await import("@/shared/services/wakeupTasks");
+        configureWakeupTasks(wakeups);
+      }
+    }
   }
 }

@@ -6,6 +6,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 import { getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import PingNowButton from "@/shared/components/PingNowButton";
 
 const AUTH_EXPIRED_PATTERNS = [
   "invalid_grant",
@@ -353,6 +354,7 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
               </button>
             </Tooltip>
           )}
+          {autoPing && <PingNowButton connectionId={connection.id} disabled={connection.isActive === false} />}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>

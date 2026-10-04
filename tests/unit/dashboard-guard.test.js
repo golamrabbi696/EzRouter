@@ -64,6 +64,11 @@ describe("dashboard guard public LLM API access", () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
 
+  it("requires dashboard authentication for wakeup APIs", async () => {
+    const response = await proxy(request("/api/wakeup"));
+    expect(response.status).toBe(401);
+  });
+
   it("allows loopback public LLM API without API key", async () => {
     const response = await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }));
 

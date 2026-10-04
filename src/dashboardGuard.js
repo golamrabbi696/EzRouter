@@ -57,7 +57,6 @@ const ALWAYS_PROTECTED = [
 // adding a path to it looks like protecting that path.
 // tests/unit/dashboard-guard-api-deny-by-default.test.js holds that rule now.
 
-
 // Routes that spawn child processes or read host secrets — restrict to localhost.
 const LOCAL_ONLY_PATHS = [
   "/api/cli-tools/cowork-settings",

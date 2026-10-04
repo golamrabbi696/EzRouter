@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import PingNowButton from "@/shared/components/PingNowButton";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
@@ -1404,6 +1405,9 @@ export default function ProviderLimits() {
                           </span>
                         </button>
                       </Tooltip>
+                    )}
+                    {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
+                      <PingNowButton connectionId={conn.id} disabled={conn.isActive === false} onComplete={() => refreshProvider(conn.id, conn.provider)} />
                     )}
                     <Tooltip text="Refresh quota">
                       <button
