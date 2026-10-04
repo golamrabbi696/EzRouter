@@ -65,6 +65,12 @@ export default {
       baseUrl: "https://api.moonshot.cn/v1/chat/completions",
       auth: { combined: true, header: "Authorization", scheme: "bearer" },
     },
+    // Kimi Code natively serves the OpenAI Responses API (Codex wire_api = "responses").
+    {
+      format: "openai-responses",
+      baseUrl: "https://api.kimi.com/coding/v1/responses",
+      auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["kimiHeaders"] },
+    },
   ],
   models: [
     // Flagship K3 — platform.kimi.ai id `kimi-k3`, Kimi Code OAuth id `k3` (up to 1M)
