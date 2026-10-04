@@ -706,6 +706,56 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+
+  // noAuth providers never get a connection row, so the connection loop above
+  // can't see them — yet their models route with zero credentials. Publish them
+  // (static registry ids + the provider's public modelsFetcher, cached), or
+  // OpenAI-compatible clients (Zed, ACP agents, …) see a near-empty
+  // /v1/models while /v1/chat/completions works fine for the same models.
+  for (const [providerId, provider] of Object.entries(AI_PROVIDERS)) {
+    if (provider?.noAuth !== true) continue;
+    // hidden = retired/free-ended upstreams (mimo-free, mmf, …) the registry
+    // keeps only for routing legacy ids — publishing them makes pickers offer
+    // models whose upstream now answers 400 "Unsupported model".
+    if (provider?.hidden === true) continue;
+    if (activeConnectionByProvider.has(providerId)) continue;
+    if (!providerMatchesKinds(providerId, kindFilter)) continue;
+
+    const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    const outputAlias = (getProviderAlias(providerId) || staticAlias).trim();
+    const providerModels = PROVIDER_MODELS[staticAlias] || [];
+
+    let rawModelIds = providerModels.map((model) => model.id);
+    // passthroughModels providers (OpenCode Free, …) keep only overrides in the
+    // static registry — the full list lives on the public modelsFetcher endpoint.
+    const needsLiveIds =
+      provider.modelsFetcher &&
+      (provider.passthroughModels === true || rawModelIds.length === 0);
+    if (needsLiveIds && !skipDynamicFetch) {
+      const liveIds = await fetchNoAuthModelIds(provider.modelsFetcher);
+      rawModelIds = Array.from(new Set([...rawModelIds, ...liveIds]));
+    }
+
+    const staticKindById = new Map(providerModels.map((m) => [m.id, modelKind(m)]));
+    for (const modelId of rawModelIds) {
+      const kind = staticKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
+      if (!kindFilter.includes(kind)) continue;
+      if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+
+      const model = {
+        id: `${outputAlias}/${modelId}`,
+        object: "model",
+        owned_by: outputAlias,
+      };
+      if (kind === LLM_KIND) {
+        const caps = getCapabilitiesForModel(staticAlias, modelId);
+        if (caps) model.capabilities = caps;
+        if (Number.isFinite(caps?.contextWindow)) model.context_length = caps.contextWindow;
+        if (Number.isFinite(caps?.maxOutput)) model.max_completion_tokens = caps.maxOutput;
+      }
+      models.push(model);
+    }
+  }
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {
