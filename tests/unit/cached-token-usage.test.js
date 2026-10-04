@@ -3,6 +3,7 @@ import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/util
 import { calculateCostFromTokens, MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 import { extractUsageFromResponse } from "../../open-sse/handlers/chatCore/requestDetail.js";
+import { openaiResponsesToOpenAIResponse } from "../../open-sse/translator/response/openai-responses.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -190,6 +191,38 @@ describe("provider-reported exact cost extraction", () => {
       output: 12,
       cached: 1,
     });
+  });
+});
+
+describe("Responses streaming usage", () => {
+  const usage = {
+    input_tokens: 25421, output_tokens: 120,
+    input_tokens_details: { cached_tokens: 24320 },
+    output_tokens_details: { reasoning_tokens: 65 },
+  };
+
+  it.each([
+    { type: "response.completed", response: { usage } },
+    { type: "response.done", response: { usage } },
+    { usage },
+  ])("extracts cache and reasoning from %j", (event) => {
+    const tokens = canonicalizeUsage(extractUsage(event));
+    expect(tokens).toMatchObject({
+      prompt_tokens: 25421, completion_tokens: 120,
+      cached_tokens: 24320, reasoning_tokens: 65,
+    });
+  });
+
+  it("keeps cache and reasoning when translating a Codex completion to OpenAI", () => {
+    const state = {};
+    const event = { type: "response.completed", response: { usage } };
+    const output = openaiResponsesToOpenAIResponse(event, state);
+    const tokens = canonicalizeUsage(state.usage);
+
+    expect(output.usage.prompt_tokens_details.cached_tokens).toBe(24320);
+    expect(output.usage.completion_tokens_details.reasoning_tokens).toBe(65);
+    expect(tokens.cached_tokens).toBe(24320);
+    expect(tokens.reasoning_tokens).toBe(65);
   });
 });
 

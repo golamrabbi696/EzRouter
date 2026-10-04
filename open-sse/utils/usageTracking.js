@@ -341,10 +341,12 @@ export function extractUsage(chunk) {
     });
   }
 
-  // OpenAI Responses API format (response.completed or response.done)
-  if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
-    const usage = chunk.response.usage;
-    const cachedTokens = usage.input_tokens_details?.cached_tokens;
+  // OpenAI Responses usage can arrive on response.completed, response.done,
+  // or directly as an upstream usage payload in a translated stream.
+  const responsesUsage = chunk.response?.usage ?? chunk.usage;
+  if (responsesUsage && typeof responsesUsage === "object" && responsesUsage.input_tokens !== undefined) {
+    const usage = responsesUsage;
+    const cachedTokens = usage.input_tokens_details?.cached_tokens ?? usage.cached_tokens;
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
@@ -353,7 +355,7 @@ export function extractUsage(chunk) {
       cost_usd: usage.cost_usd,
       cost_in_usd: usage.cost_in_usd,
       cost_in_usd_ticks: usage.cost_in_usd_ticks,
-      prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
+      prompt_tokens_details: cachedTokens !== undefined ? { cached_tokens: cachedTokens } : undefined
     });
   }
 
