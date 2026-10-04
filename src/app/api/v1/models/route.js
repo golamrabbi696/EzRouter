@@ -27,6 +27,7 @@ import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, withDeclaredCapabilities, aggregateComboCapabilities, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
+import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -324,6 +325,37 @@ function comboToEntry(combo, comboByName, combosByName) {
     if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
   }
   return entry;
+}
+
+// Live model ids for noAuth providers (OpenCode Free, mimo-free, …). The
+// browser-side helper (shared/utils/providerModelsFetcher) fetches a relative
+// URL and can't run inside a route handler, so hit the provider's public
+// endpoint directly, through the same FILTERS as /api/providers/suggested-models.
+const noAuthIdsCache = new Map(); // url → { ids, expiresAt }
+const NO_AUTH_IDS_TTL_MS = 10 * 60 * 1000;
+
+async function fetchNoAuthModelIds(fetcher) {
+  if (!fetcher?.url || !fetcher?.type) return [];
+  const hit = noAuthIdsCache.get(fetcher.url);
+  if (hit && Date.now() < hit.expiresAt) return hit.ids;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(fetcher.url, { cache: "no-store", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const raw = json.data ?? json.models ?? json;
+    const filter = FILTERS[fetcher.type];
+    if (!filter) return [];
+    const ids = (filter(Array.isArray(raw) ? raw : []) || [])
+      .map((m) => m?.id)
+      .filter((id) => typeof id === "string" && id.trim() !== "");
+    noAuthIdsCache.set(fetcher.url, { ids, expiresAt: Date.now() + NO_AUTH_IDS_TTL_MS });
+    return ids;
+  } catch {
+    return [];
+  }
 }
 
 /**
