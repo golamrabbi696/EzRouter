@@ -7,6 +7,7 @@ import {
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
+import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -84,6 +85,10 @@ export async function handleEmbeddings(request) {
   const { provider, model } = modelInfo;
   const policy = await authorizeApiKeyRequest(request, { model: `${provider}/${model}`, body });
   if (policy.error) return policy.error;
+
+  // Per-key access control: checked before any credential lookup.
+  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
+  if (keyAccessDenied) return keyAccessDenied;
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);

@@ -14,6 +14,7 @@ import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getApiKeyScopeByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
 import { getEnabledModels } from "@/lib/enabledModelsDb";
+import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
@@ -897,10 +898,15 @@ export async function GET(request) {
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
     const policy = await getModelListPolicy(request);
     if (policy.error) return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401, headers: { "Access-Control-Allow-Origin": "*" } });
-    const data = await getCachedModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
+    const rawData = await getCachedModelsList([LLM_KIND], { skipDynamicFetch, apiKey: policy.key });
     const apiKey = extractApiKey(request);
     const scope = apiKey ? await getApiKeyScopeByKey(apiKey) : null;
-    return Response.json({ object: "list", data: filterModelsByScope(data, scope) }, {
+    const scoped = filterModelsByScope(rawData, scope);
+    const data = await filterModelsListForKey(
+      await getKeyAccessContext(request),
+      scoped
+    );
+    return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

@@ -3,7 +3,7 @@ const migration = {
   name: "convoy-provider-scope",
   up(db) {
     const columns = db.all("PRAGMA table_info(convoyRules)");
-    if (!columns.some((column) => column.name === "providerIds")) {
+    if (columns.length > 0 && !columns.some((column) => column.name === "providerIds")) {
       db.exec("ALTER TABLE convoyRules ADD COLUMN providerIds TEXT DEFAULT '[]'");
     }
   },

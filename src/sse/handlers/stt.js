@@ -5,6 +5,7 @@ import {
 import { getSettings, getCustomModels } from "@/lib/localDb";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getModelInfo } from "../services/model.js";
+import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -57,10 +58,13 @@ export async function handleStt(request) {
   if (!formData.get("file")) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
-
   const { provider, model } = modelInfo;
   const policy = await authorizeApiKeyRequest(request, { model: `${provider}/${model}` });
   if (policy.error) return policy.error;
+
+  // Per-key access control: checked before any credential lookup.
+  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
+  if (keyAccessDenied) return keyAccessDenied;
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   const modelTransport = await resolveCustomModelTransport(provider, model);

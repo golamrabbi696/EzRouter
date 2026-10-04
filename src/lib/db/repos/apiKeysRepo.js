@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { normalizeScopeInput } from "../../apiKeyScope.js";
+import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
+import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 
 function parseScope(raw) {
   if (!raw) return null;
@@ -50,12 +52,14 @@ function rowToKey(row) {
     })(),
     createdAt: row.createdAt,
     scope: parseScope(row.scope),
+    access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
   };
 }
 
 export async function getApiKeys() {
   const db = await getAdapter();
-  return db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`).map(rowToKey);
+  const rows = db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
+  return rows.map(rowToKey);
 }
 
 export async function getApiKeyById(id) {
@@ -63,10 +67,15 @@ export async function getApiKeyById(id) {
   return rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
 }
 
-export async function getApiKeyByValue(key) {
+// Used by the /v1 handlers to read the presented key's access settings.
+export async function getApiKeyByKey(key) {
+  if (!key) return null;
   const db = await getAdapter();
-  return rowToKey(db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]));
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
+  return rowToKey(row);
 }
+
+export const getApiKeyByValue = getApiKeyByKey;
 
 export async function createApiKey(name, machineId, policy = {}) {
   if (!machineId) throw new Error("machineId is required");
@@ -83,10 +92,12 @@ export async function createApiKey(name, machineId, policy = {}) {
     allowedModels: normalizeAllowedModels(policy?.allowedModels),
     createdAt: new Date().toISOString(),
     scope: normalizedScope,
+    access: policy?.access || { restricted: false, allow: [] },
   };
+  const cols = keyAccessToColumns(apiKey.access || KEY_ACCESS_UNRESTRICTED);
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt, scope) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt, normalizedScope ? JSON.stringify(normalizedScope) : null]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt, scope, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt, normalizedScope ? JSON.stringify(normalizedScope) : null, cols.accessRestricted, cols.accessAllow]
   );
   return apiKey;
 }
@@ -107,11 +118,12 @@ export async function updateApiKey(id, data) {
       merged.tokenLimit += increment;
     }
     if ("scope" in data) merged.scope = normalizeScopeInput(data.scope);
+    const cols = keyAccessToColumns(merged.access);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, tokenLimit = ?, tokensUsed = ?, tokensReserved = ?, allowedModels = ?, scope = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, merged.tokenLimit == null ? null : Number(merged.tokenLimit), Number(merged.tokensUsed || 0), Number(merged.tokensReserved || 0), merged.allowedModels ? JSON.stringify(merged.allowedModels) : null, merged.scope ? JSON.stringify(merged.scope) : null, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, tokenLimit = ?, tokensUsed = ?, tokensReserved = ?, allowedModels = ?, scope = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, merged.tokenLimit == null ? null : Number(merged.tokenLimit), Number(merged.tokensUsed || 0), Number(merged.tokensReserved || 0), merged.allowedModels ? JSON.stringify(merged.allowedModels) : null, merged.scope ? JSON.stringify(merged.scope) : null, cols.accessRestricted, cols.accessAllow, id]
     );
-    result = merged;
+    result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });
   return result;
 }

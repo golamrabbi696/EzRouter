@@ -8,6 +8,7 @@ import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { isCustomVideoProvider } from "@/shared/constants/providers";
 import { getModelInfo } from "../services/model.js";
+import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { findProviderByJobId } from "open-sse/handlers/videoProviders/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -137,6 +138,13 @@ export async function handleVideoCreate(request, action) {
   const { provider, model } = resolved;
   const policy = await authorizeApiKeyRequest(request, { model: model ? `${provider}/${model}` : "__implicit_video_model__" });
   if (policy.error) return policy.error;
+
+  // Per-key access control: the routed provider/model must be listed. A body
+  // we cannot read a model from (multipart) is denied for restricted keys.
+  const keyAccessDenied = await enforceKeyAccessResolved(
+    await getKeyAccessContext(request), bodyInfo.parsed?.model ? String(bodyInfo.parsed.model) : "", provider, model
+  );
+  if (keyAccessDenied) return keyAccessDenied;
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.

@@ -2,6 +2,7 @@ import { getCachedModelsList } from "../route.js";
 import { extractApiKey } from "@/sse/services/auth.js";
 import { getApiKeyScopeByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { filterModelsByScope } from "@/lib/scopeModelsFilter.js";
+import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -46,24 +47,32 @@ export async function GET(request, { params }) {
     const path = Array.isArray(model) ? model : [model];
     const identifier = path.filter(Boolean).join("/");
     const kindFilter = path.length === 1 ? KIND_SLUG_MAP[identifier] : null;
+    const keyAccess = await getKeyAccessContext(request);
 
     const apiKey = extractApiKey(request);
     const scope = apiKey ? await getApiKeyScopeByKey(apiKey) : null;
 
     if (kindFilter) {
-      const data = await getCachedModelsList(kindFilter);
-      return json({ object: "list", data: filterModelsByScope(data, scope) });
+      const filtered = filterModelsByScope(await getCachedModelsList(kindFilter), scope);
+      const data = await filterModelsListForKey(keyAccess, filtered);
+      return json({ object: "list", data });
     }
 
     // Match the same LLM catalog exposed by GET /v1/models. A catch-all
     // parameter is required because provider-prefixed IDs contain a slash.
-    const models = filterModelsByScope(await getCachedModelsList([LLM_KIND]), scope);
+    const models = await filterModelsListForKey(
+      keyAccess,
+      filterModelsByScope(await getCachedModelsList([LLM_KIND]), scope)
+    );
     let matchedModel = models.find((candidate) => candidate.id === identifier);
 
     if (!matchedModel) {
       // The cached list may predate a model added moments ago. Rebuild fresh
       // before declaring the model missing.
-      const fresh = filterModelsByScope(await getCachedModelsList([LLM_KIND], { forceFresh: true }), scope);
+      const fresh = await filterModelsListForKey(
+        keyAccess,
+        filterModelsByScope(await getCachedModelsList([LLM_KIND], { forceFresh: true }), scope)
+      );
       matchedModel = fresh.find((candidate) => candidate.id === identifier);
     }
 
