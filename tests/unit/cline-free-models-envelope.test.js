@@ -16,9 +16,9 @@ vi.mock("@/shared/utils/machineId", () => ({ getConsistentMachineId: vi.fn(async
 // requestDetail.js imports from @/lib/usageDb.js too, so one mock covers both
 // the handler and its usage/detail helpers.
 vi.mock("@/lib/usageDb.js", () => ({
-  appendRequestLog: vi.fn(async () => {}),
+appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
-  saveRequestUsage: vi.fn(async () => {}),
+  saveRequestUsage: vi.fn(async () => {}),  trackPendingRequest: vi.fn(),
 }));
 
 const { pingModelByKind } = await import("../../src/app/api/models/test/ping.js");

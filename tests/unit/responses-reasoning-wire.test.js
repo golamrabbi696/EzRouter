@@ -70,6 +70,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(() => Promise.resolve()),
   saveRequestDetail: vi.fn(() => Promise.resolve()),
+  saveRequestUsage: vi.fn(() => Promise.resolve()),
 }));
 
 const MUSE = "muse";

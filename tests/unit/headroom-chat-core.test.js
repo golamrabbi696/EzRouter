@@ -30,10 +30,10 @@ vi.mock("../../open-sse/utils/stream.js", () => ({
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
-  trackPendingRequest: vi.fn(),
+trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
-  recordTokenSaverEvent: recordTokenSaverEventMock,
+  recordTokenSaverEvent: recordTokenSaverEventMock,  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");

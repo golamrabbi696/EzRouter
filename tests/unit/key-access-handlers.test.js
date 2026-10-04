@@ -33,7 +33,10 @@ vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({
   getApiKeyByValue: async (k) => fx.keys[k] || null,
   getApiKeyScopeByKey: async () => null,
 }));
-vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsage: vi.fn() }));
+vi.mock("@/lib/usageDb.js", () => ({
+saveRequestUsage: vi.fn(),
+  trackPendingRequest: vi.fn(),
+}));
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
   markAccountUnavailable: vi.fn(async () => ({ shouldFallback: false })),

@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 // nonStreamingHandler pulls in requestDetail → src/lib/usageDb via @/ alias.
 vi.mock("@/lib/usageDb.js", () => ({
-  saveRequestUsage: vi.fn(),
+saveRequestUsage: vi.fn(),
   appendRequestLog: vi.fn(),
-  saveRequestDetail: vi.fn(),
+  saveRequestDetail: vi.fn(),  trackPendingRequest: vi.fn(),
 }));
 
 import { translateNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";

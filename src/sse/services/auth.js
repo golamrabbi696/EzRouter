@@ -177,7 +177,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         // belongs to this model.
         const errorMatchesModel = earliestConn?.lastErrorModel
           ? earliestConn.lastErrorModel === (model || null)
-          : false;
+          : true;
         const lastError = errorMatchesModel ? earliestConn?.lastError || null : null;
         const lastErrorCode = errorMatchesModel ? earliestConn?.errorCode || null : null;
 
@@ -501,7 +501,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
+  if (!conn.testStatus && !conn.lastError && !conn.errorCode && allLockKeys.length === 0) return;
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
@@ -511,7 +511,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError && !conn.errorCode) return;
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {

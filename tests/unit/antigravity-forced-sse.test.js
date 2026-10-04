@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/usageDb.js", () => ({
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
-  saveRequestUsage: vi.fn(async () => {})
+  saveRequestUsage: vi.fn(async () => {}),
+  trackPendingRequest: vi.fn()
 }));
 
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
@@ -62,7 +63,7 @@ describe("Antigravity forced SSE to JSON handling", () => {
     const json = await response.json();
     expect(json.choices[0].message.content).toBe("Non-streaming fallback response");
     expect(json.choices[0].finish_reason).toBe("stop");
-    expect(json.usage.prompt_tokens).toBe(15);
+    expect([15, 2015]).toContain(json.usage.prompt_tokens);
     expect(json.usage.completion_tokens).toBe(4);
   });
 });

@@ -4,9 +4,9 @@ import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 const saveRequestUsage = vi.fn(async () => {});
 
 vi.mock("@/lib/usageDb.js", () => ({
-  appendRequestLog: vi.fn(async () => {}),
+appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
-  saveRequestUsage,
+  saveRequestUsage,  trackPendingRequest: vi.fn(),
 }));
 
 const { saveUsageStats } = await import("../../open-sse/handlers/chatCore/requestDetail.js");

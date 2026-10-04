@@ -14,7 +14,7 @@ describe("Antigravity MITM model handling", () => {
   const ag = MITM_TOOLS.antigravity;
 
   it("flags the out-of-box agent/Default model mandatory", () => {
-    expect(ag.defaultModels.find((m) => m.id === "gemini-3.5-flash-low")?.mandatory).toBe(true);
+    expect(ag.defaultModels.find((m) => m.id === "gemini-3.7-flash" || m.id === "gemini-3.5-flash-low")?.mandatory).toBe(true);
   });
 
   it("leaves models not proven auto-sent optional", () => {

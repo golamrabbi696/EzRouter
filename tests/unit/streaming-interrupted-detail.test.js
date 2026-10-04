@@ -7,9 +7,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
-  saveRequestDetail: mocks.saveRequestDetail,
+saveRequestDetail: mocks.saveRequestDetail,
   saveRequestUsage: mocks.saveRequestUsage,
-  appendRequestLog: mocks.appendRequestLog,
+  appendRequestLog: mocks.appendRequestLog,  trackPendingRequest: vi.fn(),
 }));
 
 import { buildOnStreamComplete } from "../../open-sse/handlers/chatCore/streamingHandler.js";

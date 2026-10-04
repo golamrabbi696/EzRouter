@@ -9,7 +9,7 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { responsesJsonToClaudeMessage } from "./completionConverters.js";
-import { openAICompletionToClientFormat } from "./nonStreamClientFormat.js";
+import { openAICompletionToClientFormat, openAICompletionToResponses } from "./nonStreamClientFormat.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;

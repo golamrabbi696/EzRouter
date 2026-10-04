@@ -69,12 +69,12 @@ vi.mock("@/sse/services/tokenRefresh", () => ({
   updateProviderCredentials: async () => {},
 }));
 
-vi.mock("@/lib/usageDb", () => ({
-  recordTokenSaverEvent: recordTokenSaverEventMock,
+vi.mock("@/lib/usageDb.js", () => ({
+recordTokenSaverEvent: recordTokenSaverEventMock,
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
-  getUsageStats: vi.fn(),
+  getUsageStats: vi.fn(),  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/headroom/detect", () => ({

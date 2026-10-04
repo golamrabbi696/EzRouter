@@ -19,10 +19,10 @@ describe("OpenAI → Gemini / Vertex requests ending with model turn", () => {
     const lastVertexTurn = vertexReq.contents.at(-1);
 
     expect(lastGeminiTurn.role).toBe("user");
-    expect(lastGeminiTurn.parts[0].text).toBe("Continue");
+    expect(lastGeminiTurn.parts[0].text).toBe("Continue.");
 
     expect(lastVertexTurn.role).toBe("user");
-    expect(lastVertexTurn.parts[0].text).toBe("Continue");
+    expect(lastVertexTurn.parts[0].text).toBe("Continue.");
   });
 
   it("appends user turn with functionResponse when assistant message ends with unresponded tool_calls", () => {

@@ -191,11 +191,18 @@ export function getModelLockKey(model) {
  */
 export function getModelLockUntil(connection, model) {
   if (!connection) return null;
+  const now = Date.now();
+  const getActiveMs = (val) => {
+    if (!val) return 0;
+    const ms = new Date(val).getTime();
+    return Number.isFinite(ms) && ms > now ? ms : 0;
+  };
   const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  const expiryMs = expiry ? new Date(expiry).getTime() : NaN;
-  if (!Number.isFinite(expiryMs) || expiryMs <= Date.now()) return null;
-  return new Date(expiryMs).toISOString();
+  const modelMs = getActiveMs(connection[key]);
+  const allMs = getActiveMs(connection[MODEL_LOCK_ALL]);
+  const maxMs = Math.max(modelMs, allMs);
+  if (maxMs <= 0) return null;
+  return new Date(maxMs).toISOString();
 }
 
 /**

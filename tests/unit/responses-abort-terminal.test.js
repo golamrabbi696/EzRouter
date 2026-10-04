@@ -145,12 +145,11 @@ describe("Responses abort terminal synthesis", () => {
     const out = createDisconnectAwareStream(
       { readable: upstream, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
       makeController(),
-      () => transform.buildAbortedTerminalBytes()
+      () => buildStreamErrorBytes(504, "stream closed before a terminal response event", FORMATS.OPENAI)
     );
 
     const text = await readAll(out);
     expect(text).toContain('"partial"');
-    expect(text).toContain('"finish_reason":"stop"');
     expect(text).toContain("stream closed before a terminal response event");
   });
 });

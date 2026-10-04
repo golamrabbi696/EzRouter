@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/usageDb.js", () => ({
-  trackPendingRequest: vi.fn(),
+trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
-  saveRequestDetail: vi.fn(async () => {}),
+  saveRequestDetail: vi.fn(async () => {}),  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 const { handleStreamingResponse } = await import("../../open-sse/handlers/chatCore/streamingHandler.js");

@@ -34,7 +34,10 @@ vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
   updateProviderCredentials: vi.fn(),
   checkAndRefreshToken: async (_provider, credentials) => credentials,
 }));
-vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsage: mocks.saveRequestUsage }));
+vi.mock("@/lib/usageDb.js", () => ({
+saveRequestUsage: mocks.saveRequestUsage,
+  trackPendingRequest: vi.fn(),
+}));
 
 import { handleEmbeddings } from "../../src/sse/handlers/embeddings.js";
 

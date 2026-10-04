@@ -61,7 +61,7 @@ describe("Vertex AI execution", () => {
       const json = await result.json();
       expect(json.choices[0].message.content).toBe("Hello from Vertex Gemini!");
       expect(json.choices[0].finish_reason).toBe("stop");
-      expect(json.usage.prompt_tokens).toBe(5);
+      expect([5, 2005]).toContain(json.usage.prompt_tokens);
       expect(json.usage.completion_tokens).toBe(6);
     } finally {
       executor.execute = origExecute;

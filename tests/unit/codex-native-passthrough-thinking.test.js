@@ -24,9 +24,9 @@ vi.mock("../../open-sse/utils/requestLogger.js", () => ({
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
-  trackPendingRequest: vi.fn(),
+trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
-  saveRequestDetail: vi.fn(async () => {}),
+  saveRequestDetail: vi.fn(async () => {}),  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 vi.mock("../../open-sse/handlers/chatCore/sseToJsonHandler.js", () => ({

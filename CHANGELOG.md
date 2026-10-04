@@ -1,3 +1,20 @@
+# v0.6.16 (2026-10-05)
+
+## Core Stability, Provider Translation & Test Parity
+- **Account Lock Aggregation & Cooldown Synchronization**:
+  - Corrected `getModelLockUntil` in `accountFallback.js` to compare active lock timestamps across model-specific and account-wide locks (`Math.max`), properly waiting for all applicable cooldowns to expire.
+  - Fixed `clearAccountError` in `auth.js` to evaluate `conn.errorCode` before exiting, ensuring stale error codes are cleared on successful connection reuse.
+  - Permitted unrecorded `lastErrorModel` connections to match in `errorMatchesModel`, avoiding false error suppression.
+- **Runtime Stream & Format Translation Robustness**:
+  - Resolved `ReferenceError: openAICompletionToResponses is not defined` in `open-sse/handlers/chatCore/sseToJsonHandler.js` by importing `openAICompletionToResponses` from `nonStreamClientFormat.js`.
+  - Propagated `{ aborted: true }` metadata down to `onStreamComplete` when a stream is canceled mid-flight in `open-sse/utils/stream.js`.
+- **Test Suite Modernization & Parity**:
+  - Modernized `kimchi.test.js` to Vitest with native runner support.
+  - Aligned Windsurf executor test expectations to live endpoint `https://server.codeium.com`.
+  - Updated Antigravity MITM mandatory model assertions to recognize current default `gemini-3.7-flash`.
+  - Synchronized terminal model-turn expectations to `Continue.` in Gemini format normalization.
+  - Backfilled `@/lib/usageDb.js` mocks across unit test suites for `saveRequestUsage` and `trackPendingRequest`.
+
 # v0.6.15 (2026-10-05)
 
 ## Critical Security Fixes & PR Audit

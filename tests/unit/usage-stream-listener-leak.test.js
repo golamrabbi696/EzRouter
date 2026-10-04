@@ -27,10 +27,10 @@ const db = {
   getActiveRequests: async () => ({ activeRequests: [], recentRequests: [], errorProvider: null }),
 };
 
-vi.mock("@/lib/usageDb", () => ({
-  statsEmitter,
+vi.mock("@/lib/usageDb.js", () => ({
+statsEmitter,
   getUsageStats: (...args) => db.getUsageStats(...args),
-  getActiveRequests: (...args) => db.getActiveRequests(...args),
+  getActiveRequests: (...args) => db.getActiveRequests(...args),  saveRequestUsage: vi.fn(async () => {}),  trackPendingRequest: vi.fn(),
 }));
 
 /** Listener bookkeeping is what leaks; count both events the route subscribes to. */

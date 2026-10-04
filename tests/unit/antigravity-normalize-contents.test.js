@@ -55,11 +55,12 @@ describe("Antigravity normalizeAntigravityContents (via transformRequest)", () =
       { projectId: "p", connectionId: "c" },
     );
 
-    expect(out.request.contents).toHaveLength(2);
+    expect(out.request.contents).toHaveLength(3);
     expect(out.request.contents[0].parts).toHaveLength(2);
     expect(out.request.contents[0].parts[0].text).toBe("first");
     expect(out.request.contents[0].parts[1].text).toBe("second");
     expect(out.request.contents[1].parts[0].text).toBe("answer");
+    expect(out.request.contents[2].role).toBe("user");
   });
 
   it("preserves valid text content", () => {
@@ -74,9 +75,10 @@ describe("Antigravity normalizeAntigravityContents (via transformRequest)", () =
       { projectId: "p", connectionId: "c" },
     );
 
-    expect(out.request.contents).toHaveLength(2);
+    expect(out.request.contents).toHaveLength(3);
     expect(out.request.contents[0].parts[0].text).toBe("question");
     expect(out.request.contents[1].parts[0].text).toBe("answer");
+    expect(out.request.contents[2].role).toBe("user");
   });
 
   it("preserves valid functionCall content", () => {
@@ -91,9 +93,10 @@ describe("Antigravity normalizeAntigravityContents (via transformRequest)", () =
       { projectId: "p", connectionId: "c" },
     );
 
-    expect(out.request.contents).toHaveLength(2);
+    expect(out.request.contents).toHaveLength(3);
     expect(out.request.contents[1].parts[0].functionCall.name).toBe("bash");
     expect(out.request.contents[1].parts[0].functionCall.args).toEqual({ command: "ls" });
+    expect(out.request.contents[2].role).toBe("user");
   });
 
   it("preserves valid functionResponse with role normalized to user (Claude models)", () => {
@@ -156,8 +159,9 @@ describe("Antigravity normalizeAntigravityContents (via transformRequest)", () =
       { projectId: "p", connectionId: "c" },
     );
 
-    expect(out.request.contents).toHaveLength(2);
+    expect(out.request.contents).toHaveLength(3);
     expect(out.request.contents[0].parts[0].text).toBe("hi");
     expect(out.request.contents[1].parts[0].text).toBe("answer");
+    expect(out.request.contents[2].role).toBe("user");
   });
 });

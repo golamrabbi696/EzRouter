@@ -95,7 +95,7 @@ export function createSSEStream(options = {}) {
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
-  const finalizeStream = () => {
+  const finalizeStream = (meta = {}) => {
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     if (finalized) return;
     finalized = true;
@@ -122,7 +122,7 @@ export function createSSEStream(options = {}) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
+      }, finalUsage, ttftAt, meta);
     }
   };
 
@@ -605,7 +605,7 @@ export function createSSEStream(options = {}) {
     // client closes after the answer completed.
     cancel() {
       try {
-        finalizeStream();
+        finalizeStream({ aborted: true });
       } catch (error) {
         console.log("Error in cancel:", error);
       }

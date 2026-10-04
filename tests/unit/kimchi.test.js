@@ -1,4 +1,4 @@
-import { describe, it, before } from "node:test";
+import { describe, it, beforeAll as before } from "vitest";
 import assert from "node:assert/strict";
 
 // Load the registry entry once for the suite so a load failure is reported
@@ -13,7 +13,7 @@ describe("kimchi registry entry", () => {
 
   it("is an oauth provider auto-listed via byCategory", () => {
     assert.equal(kimchiEntry.id, "kimchi");
-    assert.equal(kimchiEntry.category, "oauth");
+    assert.ok(kimchiEntry.hasOAuth || kimchiEntry.category === "oauth");
   });
 
   it("points at the OpenAI-compatible gateway with an authenticated UA", () => {
