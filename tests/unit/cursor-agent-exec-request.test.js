@@ -212,14 +212,36 @@ describe("CursorExecutor AgentService exec_request handling", () => {
   it("keeps the pi_* and mini_swe renumbering out of the way", async () => {
     // pi_read_args is field 45 on the server side but field 46 on the client side,
     // so the map is not an identity and a copy-pasted offset would go unnoticed.
-    const { written } = await runAgent({
-      frames: [textFrame("answer"), execRequestFrame(45)],
-      stream: true,
-    });
+    //
+    // All eight renumbered entries are pinned here, not just 45. A wrong value
+    // still produces exactly one write and no IDE-tool error, so the identity
+    // loop above stays green: 52: 53 (53 being an identity entry) is precisely
+    // the mistake this table exists to fail on.
+    const renumbered = [
+      [45, 46],
+      [46, 47],
+      [47, 48],
+      [48, 49],
+      [49, 50],
+      [50, 51],
+      [51, 52],
+      [52, 55],
+    ];
 
-    const fields = protobufFieldNumbers(Buffer.from(written[1]));
-    expect(fields).toContain(46);
-    expect(fields).not.toContain(45);
+    for (const [serverField, clientField] of renumbered) {
+      const { written } = await runAgent({
+        frames: [textFrame("answer"), execRequestFrame(serverField)],
+        stream: true,
+      });
+
+      const fields = protobufFieldNumbers(Buffer.from(written[1]));
+      expect(fields, `variant ${serverField} must answer on client field ${clientField}`).toContain(
+        clientField,
+      );
+      expect(fields, `variant ${serverField} must not answer on its own field`).not.toContain(
+        serverField,
+      );
+    }
   });
 
   it("streams Composer visible content from thinking_delta after </think>", async () => {
