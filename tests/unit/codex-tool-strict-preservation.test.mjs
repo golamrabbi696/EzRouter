@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 
+import { readToolStrict, restoreToolStrict } from '../../open-sse/translator/concerns/toolStrict.js';
+import { coerceCodexSchemaShapes } from '../../open-sse/utils/codexToolSchema.js';
+
 // Exercise the production normalizer without importing unrelated network dependencies.
 const source = readFileSync(new URL('../../open-sse/executors/codex.js', import.meta.url), 'utf8');
 const normalizer = source.slice(source.indexOf('function normalizeCodexTools('), source.indexOf('// Resolve prompt-cache session id:'));
@@ -10,6 +13,7 @@ function normalize(tools) {
   const body = { tools: structuredClone(tools) };
   runInNewContext(`${normalizer}\nnormalizeCodexTools(body);`, {
     body, stripCodexUnsupportedPatterns: value => value,
+    coerceCodexSchemaShapes, readToolStrict, restoreToolStrict,
     CODEX_PASSTHROUGH_TOOL_TYPES: new Set(['custom']),
     CODEX_HOSTED_TOOL_TYPES: new Set(), dbg() {},
   });
