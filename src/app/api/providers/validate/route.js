@@ -14,6 +14,7 @@ import {
 import { normalizeProviderId } from "@/lib/providerNormalization";
 import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 import { fetchWithTimeout } from "@/lib/network/fetchWithTimeout.js";
+import { ANTHROPIC_VALIDATION_MODEL } from "@/shared/constants/anthropicValidation";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Google PSE needs a successful search with its engine ID; other providers use an auth probe.
@@ -208,7 +209,7 @@ export async function POST(request) {
         }
 
         const messagesUrl = `${normalizedBase}/v1/messages`;
-        const model = body.defaultModel || node.defaultModel || "claude-3-haiku-20240307";
+        const model = body.defaultModel || node.defaultModel || ANTHROPIC_VALIDATION_MODEL;
 
         const res = await fetchWithTimeout(messagesUrl, {
           method: "POST",
@@ -337,7 +338,7 @@ export async function POST(request) {
               "content-type": "application/json",
             },
             body: JSON.stringify({
-              model: "claude-3-haiku-20240307",
+              model: ANTHROPIC_VALIDATION_MODEL,
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
             }),
