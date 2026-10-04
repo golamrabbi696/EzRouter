@@ -97,6 +97,27 @@ const REFRESH_GRANTS = Object.fromEntries(
     })
 );
 
+function isResponsesWire(provider, config, credentials) {
+  const runtimeFormat = credentials?.runtimeTransport?.format;
+  if (runtimeFormat) return runtimeFormat === "openai-responses";
+  if (provider?.startsWith?.("openai-compatible-")) {
+    return resolveOpenAICompatibleApiType(provider, credentials) === "responses";
+  }
+  return config?.format === "openai-responses";
+}
+
+function normalizeResponsesReasoning(body) {
+  if (!body || typeof body !== "object" || body.reasoning_effort === undefined) return body;
+
+  const reasoning = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+    ? { ...body.reasoning }
+    : {};
+  reasoning.effort = body.reasoning_effort;
+  body.reasoning = reasoning;
+  delete body.reasoning_effort;
+  return body;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
@@ -150,7 +171,10 @@ export class DefaultExecutor extends BaseExecutor {
       }
     }
 
-    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+    const injected = injectReasoningContent({ provider: this.provider, model, body: transformed });
+    return isResponsesWire(this.provider, this.config, credentials)
+      ? normalizeResponsesReasoning(injected)
+      : injected;
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.

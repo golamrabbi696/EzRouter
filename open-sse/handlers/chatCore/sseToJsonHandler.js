@@ -5,6 +5,8 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { openAICompletionToClaudeMessage, openAICompletionToResponses, responsesJsonToClaudeMessage } from "./completionConverters.js";
 
@@ -217,7 +219,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        const res = new Response(JSON.stringify(restoreToolNames(jsonResponse, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+        const res = new Response(JSON.stringify(restoreToolNames(jsonResponse, toolNameMap)), { headers: { ...upstreamResponseHeaders(providerResponse?.headers), "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
         res.success = true;
         res.response = res;
         return res;
@@ -284,7 +286,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
-      const res = new Response(JSON.stringify(restoreToolNames(finalResp, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      const res = new Response(JSON.stringify(restoreToolNames(finalResp, toolNameMap)), { headers: { ...upstreamResponseHeaders(providerResponse?.headers), "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
       res.success = true;
       res.response = res;
       return res;
@@ -368,7 +370,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       finalBody = openAICompletionToClaudeMessage(parsed);
     }
 
-    const res = new Response(JSON.stringify(restoreToolNames(finalBody, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    const res = new Response(JSON.stringify(restoreToolNames(finalBody, toolNameMap)), { headers: { ...upstreamResponseHeaders(providerResponse?.headers), "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
     res.success = true;
     res.response = res;
     return res;
