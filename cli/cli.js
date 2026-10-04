@@ -777,6 +777,69 @@ function startServer(updatePromise) {
     setTimeout(() => process.exit(0), 100);
   });
 
+  function attachServerEvents() {
+    server.on("error", (err) => {
+      console.error("Failed to start server:", err.message);
+      if (!isShuttingDown) tryRestart();
+      else { cleanup(); process.exit(1); }
+    });
+
+    server.on("close", (code, signal) => {
+      if (isShuttingDown || code === 0) {
+        process.exit(code || 0);
+        return;
+      }
+      tryRestart(code, signal);
+    });
+  }
+
+  function tryRestart(code, signal) {
+    const aliveMs = Date.now() - serverStartTime;
+    // Reset counter if last run was stable
+    if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
+
+    if (restartCount >= MAX_RESTARTS) {
+      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
+      try {
+        const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "ezrouter", "db.json") : path.join(".ezrouter", "db.json"));
+        if (fs.existsSync(dbPath)) {
+          const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
+          if (db.settings) db.settings.mitmEnabled = false;
+          fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+        }
+      } catch { /* best effort */ }
+      restartCount = 0;
+      server = spawnServer();
+      attachServerEvents();
+      return;
+    }
+
+    restartCount++;
+    const delay = Math.min(1000 * restartCount, 10000);
+    const exitReason = code !== null && code !== undefined ? `code=${code}` : (signal ? `signal=${signal}` : "code=unknown");
+    console.error(`\n⚠️  Server exited (${exitReason}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
+    if (crashLog.length) {
+      const meaningfulLogs = crashLog.filter(l =>
+        !l.includes("[MODULE_TYPELESS_PACKAGE_JSON]") &&
+        !l.includes("Reparsing as ES module") &&
+        !l.includes("To eliminate this warning") &&
+        !l.includes("[DB] better-sqlite3 unavailable")
+      );
+      if (meaningfulLogs.length) {
+        console.error("\n--- Server crash log ---");
+        meaningfulLogs.forEach(l => console.error(l));
+        console.error("--- End crash log ---\n");
+      }
+    }
+
+    setTimeout(() => {
+      server = spawnServer();
+      attachServerEvents();
+    }, delay);
+  }
+
+  attachServerEvents();
+
   // Initialize tray icon (runs alongside TUI)
   const initTrayIcon = () => {
     if (homebrewManaged) {
@@ -893,7 +956,7 @@ function startServer(updatePromise) {
           });
           bgProcess.unref();
 
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
+          console.log(`🔔 EzRouter is now running in background (PID: ${bgProcess.pid})`);
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
@@ -913,67 +976,4 @@ function startServer(updatePromise) {
       process.exit(1);
     }
   });
-
-  function attachServerEvents() {
-    server.on("error", (err) => {
-      console.error("Failed to start server:", err.message);
-      if (!isShuttingDown) tryRestart();
-      else { cleanup(); process.exit(1); }
-    });
-
-    server.on("close", (code, signal) => {
-      if (isShuttingDown || code === 0) {
-        process.exit(code || 0);
-        return;
-      }
-      tryRestart(code, signal);
-    });
-  }
-
-  function tryRestart(code, signal) {
-    const aliveMs = Date.now() - serverStartTime;
-    // Reset counter if last run was stable
-    if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
-
-    if (restartCount >= MAX_RESTARTS) {
-      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
-      try {
-        const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
-        if (fs.existsSync(dbPath)) {
-          const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-          if (db.settings) db.settings.mitmEnabled = false;
-          fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-        }
-      } catch { /* best effort */ }
-      restartCount = 0;
-      server = spawnServer();
-      attachServerEvents();
-      return;
-    }
-
-    restartCount++;
-    const delay = Math.min(1000 * restartCount, 10000);
-    const exitReason = code !== null && code !== undefined ? `code=${code}` : (signal ? `signal=${signal}` : "code=unknown");
-    console.error(`\n⚠️  Server exited (${exitReason}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
-    if (crashLog.length) {
-      const meaningfulLogs = crashLog.filter(l =>
-        !l.includes("[MODULE_TYPELESS_PACKAGE_JSON]") &&
-        !l.includes("Reparsing as ES module") &&
-        !l.includes("To eliminate this warning") &&
-        !l.includes("[DB] better-sqlite3 unavailable")
-      );
-      if (meaningfulLogs.length) {
-        console.error("\n--- Server crash log ---");
-        meaningfulLogs.forEach(l => console.error(l));
-        console.error("--- End crash log ---\n");
-      }
-    }
-
-    setTimeout(() => {
-      server = spawnServer();
-      attachServerEvents();
-    }, delay);
-  }
-
-  attachServerEvents();
 }
