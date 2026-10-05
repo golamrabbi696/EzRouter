@@ -1,6 +1,7 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { toOpenAIFinish, fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { openAICompletionToClaudeMessage } from "./claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat, enrichUsageCost } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";

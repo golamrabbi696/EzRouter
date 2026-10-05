@@ -11,6 +11,7 @@ import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 import { responsesJsonToClaudeMessage } from "./completionConverters.js";
 import { openAICompletionToClientFormat, openAICompletionToResponses } from "./nonStreamClientFormat.js";
+import { openAICompletionToClaudeMessage } from "./claudeMessage.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
