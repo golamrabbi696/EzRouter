@@ -10,6 +10,7 @@ import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
 import { ROLE, GEMINI_ROLE } from "./schema/roles.js";
+import { restoreNamespaceToolCalls } from "./concerns/responsesNamespaces.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
 // translator modules call register() (side-effect) before this module's body runs.
@@ -120,7 +121,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       if (targetFormat !== FORMATS.OPENAI) {
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
+          const namespaceToolMap = result._namespaceToolMap;
+          const customToolNames = result._customToolNames;
           result = fromOpenAI(model, result, stream, credentials);
+          if (namespaceToolMap) result._namespaceToolMap = namespaceToolMap;
+          if (customToolNames) result._customToolNames = customToolNames;
         }
       }
     }
@@ -201,7 +206,7 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   if (directFn) {
     const converted = directFn(chunk, state);
     const directResults = converted ? (Array.isArray(converted) ? converted : [converted]) : [];
-    return restoreToolNames(directResults, state?.toolNameMap);
+    return restoreNamespaceToolCalls(restoreToolNames(directResults, state?.toolNameMap), state?.namespaceToolMap);
   }
 
   // Step 1: target -> openai (if target is not openai)
@@ -233,6 +238,7 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   }
 
   results = restoreToolNames(results, state?.toolNameMap);
+  results = restoreNamespaceToolCalls(results, state?.namespaceToolMap);
 
   // Attach OpenAI intermediate results for logging
   if (openaiResults && sourceFormat !== FORMATS.OPENAI && targetFormat !== FORMATS.OPENAI) {
@@ -287,6 +293,7 @@ export function initState(sourceFormat) {
       funcArgsBuf: {},
       funcNames: {},
       funcCallIds: {},
+      funcItemAdded: {},
       funcArgsDone: {},
       funcItemDone: {},
       funcOutputIndexes: {},

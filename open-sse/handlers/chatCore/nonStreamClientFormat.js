@@ -3,6 +3,7 @@
 // cannot import each other (nonStreamingHandler already imports from sseToJsonHandler).
 import { FORMATS } from "../../translator/formats.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { restoreNamespaceToolCalls } from "../../translator/concerns/responsesNamespaces.js";
 import { ROLE, CLAUDE_BLOCK, RESPONSES_ITEM, RESPONSE_BODY, OPENAI_FINISH, MODEL_FALLBACK } from "../../translator/schema/index.js";
 
 function parseToolArguments(value) {
@@ -73,7 +74,7 @@ function extractCustomToolInput(argumentsValue) {
  * text, reasoning and tool calls surface as Responses `output` items.
  * Bodies without `choices` are returned unchanged.
  */
-export function openAICompletionToResponses(responseBody, customToolNames = null) {
+export function openAICompletionToResponses(responseBody, customToolNames = null, namespaceToolMap = null) {
   const choice = responseBody?.choices?.[0];
   if (!choice) return responseBody;
 
@@ -103,7 +104,7 @@ export function openAICompletionToResponses(responseBody, customToolNames = null
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
     const custom = customToolNames?.has(fn.name);
-    output.push({
+    output.push(restoreNamespaceToolCalls({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
       call_id: tc.id || "",
@@ -111,7 +112,7 @@ export function openAICompletionToResponses(responseBody, customToolNames = null
       ...(custom
         ? { input: extractCustomToolInput(fn.arguments) }
         : { arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}) }),
-    });
+    }, namespaceToolMap));
   }
 
   const usage = responseBody.usage || {};
@@ -141,8 +142,8 @@ export function openAICompletionToResponses(responseBody, customToolNames = null
  * clients, Responses `response` for Responses clients. Other client formats get the
  * hub body unchanged, as before.
  */
-export function openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames = null) {
+export function openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames = null, namespaceToolMap = null) {
   if (sourceFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(responseBody);
-  if (sourceFormat === FORMATS.OPENAI_RESPONSES) return openAICompletionToResponses(responseBody, customToolNames);
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) return openAICompletionToResponses(responseBody, customToolNames, namespaceToolMap);
   return responseBody;
 }

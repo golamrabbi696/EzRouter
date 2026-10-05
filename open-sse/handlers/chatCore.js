@@ -198,6 +198,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let translatedBody;
   let toolNameMap;
   let customToolNames;
+  let namespaceToolMap;
 
   // Translation cache: combo/account fallback hops re-send the SAME client body with
   // only the model swapped. Reuse the fully-processed translated body to avoid
@@ -219,6 +220,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         translatedBody = hit.translatedBody;
         toolNameMap = hit.toolNameMap;
         customToolNames = hit.customToolNames;
+        namespaceToolMap = hit.namespaceToolMap;
         cacheHit = true;
         // Model may differ per combo hop — swap only the model field.
         translatedBody.model = stripThinkingSuffix(upstreamModel);
@@ -266,6 +268,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       delete translatedBody._toolNameMap;
       customToolNames = translatedBody._customToolNames;
       delete translatedBody._customToolNames;
+      namespaceToolMap = translatedBody._namespaceToolMap;
+      delete translatedBody._namespaceToolMap;
       translatedBody.model = stripThinkingSuffix(upstreamModel);
       stripContinuityFields(translatedBody);
       if (targetFormat !== FORMATS.GEMINI && targetFormat !== FORMATS.GEMINI_CLI && targetFormat !== FORMATS.ANTIGRAVITY && targetFormat !== FORMATS.VERTEX) {
@@ -445,7 +449,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (translationCache && cacheFingerprint && !usedPassthrough) {
     try {
       if (!cacheHit) {
-        translationCache.set(cacheFingerprint, { translatedBody, toolNameMap, customToolNames });
+        translationCache.set(cacheFingerprint, { translatedBody, toolNameMap, customToolNames, namespaceToolMap });
       }
     } catch {}
   }
@@ -650,7 +654,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const pricingMultiplier = credentials?.providerSpecificData?.fastMode === true
     ? executor.config.fastMode?.pricingMultiplier || 1
     : 1;
-  const sharedCtx = { provider, model, statisticsModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onEmptyStream, pxpipe: pxpipeSummary, reqTag, log, targetFormat: providerResponseFormat || targetFormat, pricingMultiplier };
+  const sharedCtx = { provider, model, statisticsModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onEmptyStream, pxpipe: pxpipeSummary, reqTag, log, targetFormat: providerResponseFormat || targetFormat, pricingMultiplier, namespaceToolMap };
   const appendLog = (extra) => appendRequestLog({ model: statisticsModel, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

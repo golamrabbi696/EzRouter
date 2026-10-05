@@ -105,7 +105,7 @@ function openAIResponsesBodyToChatCompletion(responseBody) {
  * Translate a non-streaming response body from the provider format into the
  * client's format: provider → OpenAI Chat Completions (hub) → client.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, namespaceToolMap = null) {
   if (targetFormat === sourceFormat) {
     if (targetFormat === FORMATS.OPENAI) {
       for (const choice of responseBody?.choices || []) {
@@ -119,7 +119,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return responseBody;
   }
   const openAIBody = providerResponseToOpenAI(responseBody, targetFormat);
-  return openAICompletionToClientFormat(openAIBody, sourceFormat, customToolNames);
+  return openAICompletionToClientFormat(openAIBody, sourceFormat, customToolNames, namespaceToolMap);
 }
 
 /**
@@ -278,6 +278,7 @@ export async function handleNonStreamingResponse({
   reqTag = "",
   log = null,
   customToolNames = null,
+  namespaceToolMap = null,
   stream = false,
   finalBody = null,
   translatedBody = null,
@@ -412,7 +413,7 @@ export async function handleNonStreamingResponse({
     }
 
     const translatedResponse = translate
-      ? openAICompletionToClientFormat(openAIResponse, sourceFormat, customToolNames)
+      ? openAICompletionToClientFormat(openAIResponse, sourceFormat, customToolNames, namespaceToolMap)
       : openAIResponse;
 
     if (!translatedResponse || typeof translatedResponse !== "object") {

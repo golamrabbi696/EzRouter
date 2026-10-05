@@ -16,6 +16,7 @@ import {
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 import { generateToolCallId } from "../concerns/toolCall.js";
 import { chatStrictForResponses, chatStrictFrom } from "../concerns/toolStrict.js";
+import { createNamespaceToolBridge } from "../concerns/responsesNamespaces.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -101,7 +102,6 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingToolImages = [];
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
-  const additionalTools = [];
   const customToolNames = new Set();
   // correlation ids of tool calls that have not received their *_output item yet,
   // used to repair outputs that arrive without `call_id`
@@ -116,6 +116,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
 
   const inputItems = stripOrphanedToolOutputs(normalizeResponsesInput(body.input));
   if (!inputItems) return body;
+
+  const responseTools = [
+    ...(Array.isArray(body.tools) ? body.tools : []),
+    ...inputItems
+      .filter(item => item?.type === RESPONSES_ITEM.ADDITIONAL_TOOLS)
+      .flatMap(item => Array.isArray(item.tools) ? item.tools : []),
+  ];
+  const { flattenedTools, namespaceToolMap, flattenName } = createNamespaceToolBridge(responseTools, inputItems);
 
   // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
   const extractReasoningText = (item) => {
@@ -138,6 +146,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   };
 
   for (const item of inputItems) {
+    if (!item || typeof item !== "object") continue;
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
@@ -209,7 +218,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const name = flattenName(item.namespace, item.name);
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(name);
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
@@ -222,7 +232,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         id: callId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name,
           // Codex replays raw streamed args verbatim; non-JSON strings (partial
           // fragments / freeform text) must be coerced or upstream rejects the
           // chat/completions body with "function.arguments must be valid JSON".
@@ -273,9 +283,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       // orphan-repair contract tracked in #2236 — a tool message without a call is
       // rejected by every strict upstream.
     }
-    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
-      if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
-    }
+    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) continue;
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Buffer reasoning text; attached to next assistant message/function_call.
       // Also stash encrypted_content so a later openai→responses hop can restore
@@ -308,13 +316,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
-  ];
   if (responseTools.length > 0) {
-    result.tools = responseTools
-      .flatMap(tool => {
+    result.tools = flattenedTools
+      .map(tool => {
+        if (!tool || (tool.type && ![OPENAI_BLOCK.FUNCTION, "custom"].includes(tool.type))) return null;
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) {
           // Some providers reject dotted tool names; sanitize and keep the map so the
@@ -328,43 +333,6 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
             return { ...tool, function: { ...fn, name: safe } };
           }
           return tool;
-        }
-        // Responses API namespace tool (e.g. codex `collaboration`): a group of sub-tools.
-        // Chat Completions has no namespace concept, so expand each sub-tool into an
-        // individual `{namespace}.{subtool}` function. The response side splits the name
-        // back into Responses `name` + `namespace`.
-        if (tool.type === "namespace" && Array.isArray(tool.tools)) {
-          const ns = tool.name || "";
-          return tool.tools
-            .filter(sub => sub && sub.name)
-            .map(sub => {
-              // Keep a flat-name -> namespace map so the response side can route a
-              // tool call that arrives by flat name (wait_agent, not collaboration.wait_agent).
-              if (ns) {
-                nsToolNames.set(sub.name, ns);
-                globalThis.__CB_NS_TOOLS__ ||= {};
-                globalThis.__CB_NS_TOOLS__[sub.name] = ns;
-              }
-              // Some providers (deepseek, codebuddy) reject dotted tool names, so
-              // sanitize dots to `__` on the way out and keep the map for the
-              // response side to restore the namespace-qualified name.
-              const full = ns ? `${ns}.${sub.name}` : sub.name;
-              const safe = full.includes(".") ? full.replace(/\./g, "__") : full;
-              if (full !== safe) {
-                toolNameMap.set(safe, full);
-                globalThis.__CB_TOOL_MAP__ ||= {};
-                globalThis.__CB_TOOL_MAP__[safe] = full;
-              }
-              return {
-                type: OPENAI_BLOCK.FUNCTION,
-                function: {
-                  name: safe,
-                  description: String(sub.description || tool.description || ""),
-                  parameters: normalizeToolParameters(sub.parameters),
-                  strict: sub.strict
-                }
-              };
-            });
         }
         // Responses API function/custom tool: { type, name, description, parameters|format }.
         // Chat Completions has no freeform custom-tool declaration, so expose custom
@@ -417,6 +385,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+  if (namespaceToolMap.size > 0) result._namespaceToolMap = namespaceToolMap;
+
+  if (body.tool_choice?.type === OPENAI_BLOCK.FUNCTION) {
+    const choiceName = body.tool_choice.name || body.tool_choice.function?.name;
+    result.tool_choice = {
+      type: OPENAI_BLOCK.FUNCTION,
+      function: { name: flattenName(body.tool_choice.namespace, choiceName) },
+    };
+  }
 
   // Hand the response side this request's own name maps (chatCore lifts `_toolNameMap` into
   // stream state). The legacy globalThis mirrors below are REPLACED per request — never
