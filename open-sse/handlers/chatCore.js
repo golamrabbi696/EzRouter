@@ -1,6 +1,6 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { stripThinkingSuffix, extractThinking, applyThinking } from "../translator/concerns/thinkingUnified.js";
+import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -54,6 +54,11 @@ export function stripContinuityFields(body) {
     }
   }
   return body;
+}
+
+export function requestLineThinkingIntent(translatedBody, provider, upstreamModel, originalBody) {
+  return extractThinking(translatedBody)
+    || (provider === "codex" ? parseSuffix(upstreamModel).override || extractThinking(originalBody) : null);
 }
 
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, toolHistoryPruning, translationCache, sourceFormatOverride, providerThinking, toolDisclosure, providerOverrides }) {
@@ -326,7 +331,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const toolN = translatedBody.tools?.length || body.tools?.length || 0;
     const fmtStr = passthrough ? `FMT: ${sourceFormat} (passthrough)` : `FMT: ${sourceFormat}→${targetFormat}`;
     const showThinking = provider !== "grok-cli" || supportsGrokCliReasoningEffort(model);
-    const think = showThinking ? log.fmtThink?.(extractThinking(translatedBody)) : null;
+    // Codex can supply its effort through a model suffix or the original
+    // request. The request-line runs before its executor applies that effort,
+    // so the translated body alone can leave THINK blank.
+    const thinkingIntent = requestLineThinkingIntent(translatedBody, provider, upstreamModel, body);
+    const think = showThinking ? log.fmtThink?.(thinkingIntent) : null;
     const acc = credentials?.connectionName || credentials?.connectionId?.slice(0, 8) || "-";
     const parts = [
       `POST ${clientModel} → ${provider}/${model}`,
