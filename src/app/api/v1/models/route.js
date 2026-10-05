@@ -989,7 +989,70 @@ export async function GET(request) {
       await getKeyAccessContext(request),
       scoped
     );
-    return Response.json({ object: "list", data }, {
+
+    // Format models array for Codex CLI / Desktop model catalog parser
+    const codexModels = [];
+    const seenSlugs = new Set();
+    const addCodexModel = (slug, m) => {
+      if (!slug || seenSlugs.has(slug)) return;
+      seenSlugs.add(slug);
+      const ctx = m.context_length || m.capabilities?.contextWindow || 272000;
+      // Auto-compact at 75% to keep sufficient headroom before hard provider limits
+      const compactLimit = Math.floor(ctx * 0.75);
+      codexModels.push({
+        slug,
+        id: slug,
+        display_name: slug,
+        description: m.description || "",
+        context_window: ctx,
+        max_context_window: ctx,
+        auto_compact_token_limit: compactLimit,
+        visibility: "list",
+        supported_in_api: true,
+        priority: 1,
+        shell_type: "unified_exec",
+        support_verbosity: true,
+        default_verbosity: "low",
+        apply_patch_tool_type: "freeform",
+        web_search_tool_type: "text_and_image",
+        input_modalities: ["text", "image"],
+        supports_image_detail_original: true,
+        truncation_policy: { mode: "tokens", limit: 10000 },
+        supports_parallel_tool_calls: true,
+        tool_mode: "code_mode_only",
+        multi_agent_version: "v2",
+        multi_agent_reasoning_effort: "xhigh",
+        use_responses_lite: true,
+        supports_reasoning_effort_updates: true,
+        supports_reasoning_summary_parameter: true,
+        supports_reasoning_summaries: true,
+        supports_search_tool: true,
+        prefer_websockets: false,
+        default_reasoning_summary: "none",
+        default_reasoning_level: "low",
+        supported_reasoning_levels: [
+          { effort: "low", description: "Fast responses with lighter reasoning" },
+          { effort: "medium", description: "Balances speed and reasoning depth for everyday tasks" },
+          { effort: "high", description: "Greater reasoning depth for complex problems" },
+          { effort: "xhigh", description: "Extra high reasoning depth for complex problems" },
+          { effort: "max", description: "Maximum reasoning depth for the hardest problems" },
+        ],
+        experimental_supported_tools: ["send_user_message_async", "clock"],
+        base_instructions: "You are Codex, a coding agent.",
+        model_messages: {
+          instructions_template: "You are Codex, a coding agent.",
+        },
+      });
+    };
+
+    for (const m of data) {
+      addCodexModel(m.id, m);
+      if (typeof m.id === "string" && m.id.includes("/")) {
+        addCodexModel(m.id.slice(m.id.indexOf("/") + 1), m);
+      }
+    }
+
+    return Response.json({ object: "list", data, models: codexModels }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
