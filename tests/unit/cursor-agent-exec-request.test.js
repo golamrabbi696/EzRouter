@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { CursorExecutor } from "../../open-sse/executors/cursor.js";
-import { encodeField, wrapConnectRPCFrame } from "../../open-sse/utils/cursorProtobuf.js";
+import { decodeMessage, encodeField, wrapConnectRPCFrame } from "../../open-sse/utils/cursorProtobuf.js";
 
 const LEN = 2;
 
@@ -142,6 +142,23 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     await expect(response.text()).rejects.toThrow("transport interrupted");
     expect(written).toHaveLength(1);
   });
+
+  for (const intent of [{ reasoning_effort: "high" }, { reasoning: { effort: "high" } }]) {
+    it(`passes ${Object.keys(intent)[0]} through the AgentService executor`, async () => {
+      const executor = new CursorExecutor();
+      const written = stubAgentSession(executor, [textFrame("hello"), turnEndedFrame()]);
+      const result = await executor.executeAgent({
+        model: "gpt-5.2", body: { messages: [{ role: "user", content: "hi" }], ...intent },
+        stream: false, credentials,
+      });
+      expect(result.response.status).toBe(200);
+      const run = decodeMessage(decodeMessage(written[0].subarray(5)).get(1)[0].value);
+      const requested = decodeMessage(run.get(9)[0].value);
+      const parameter = decodeMessage(requested.get(3)[0].value);
+      expect(Buffer.from(parameter.get(1)[0].value).toString()).toBe("reasoning");
+      expect(Buffer.from(parameter.get(2)[0].value).toString()).toBe("high");
+    });
+  }
   it("acknowledges a request-context exec request without ending the turn", async () => {
     const { result, written } = await runAgent({
       frames: [execRequestFrame(10), textFrame("hello")],
