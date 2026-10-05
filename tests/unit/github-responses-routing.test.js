@@ -1,13 +1,17 @@
 /**
- * Regression test for #1062:
- * GitHub Copilot's /responses endpoint only serves OpenAI (gpt/codex) models.
- * Gemini/Claude models must never be routed/escalated there, otherwise they
- * fail with a misleading 400 "does not support Responses API".
+ * Regression test for #1062 and Copilot /responses routing:
+ * - GitHub Copilot's /responses endpoint only serves OpenAI/codex models.
+ * - Gemini/Claude models must never be routed/escalated there.
+ * - gpt-6*, gpt-5.6*, gpt-5.5, gpt-5.4-mini, codex, and grok-4 models route
+ *   directly to /responses without a failing /chat/completions attempt.
+ * - Fallback catches unsupported_api_for_model and /v1/responses hints.
+ * - executeWithResponsesEndpoint returns responseFormat: FORMATS.OPENAI_RESPONSES.
  */
 
 import { describe, it, expect, vi } from "vitest";
 import { GithubExecutor } from "../../open-sse/executors/github.js";
 import { createErrorResult, parseUpstreamError } from "../../open-sse/utils/error.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const { proxyFetchMock } = vi.hoisted(() => ({ proxyFetchMock: vi.fn() }));
 
@@ -32,6 +36,7 @@ describe("GithubExecutor.supportsResponsesEndpoint", () => {
     expect(exec.supportsResponsesEndpoint("gpt-5.5-codex")).toBe(true);
     expect(exec.supportsResponsesEndpoint("o4-mini")).toBe(true);
     expect(exec.supportsResponsesEndpoint("gpt-4.1")).toBe(true);
+    expect(exec.supportsResponsesEndpoint("gpt-6-luna")).toBe(true);
   });
 
   it("is null-safe", () => {
@@ -40,16 +45,80 @@ describe("GithubExecutor.supportsResponsesEndpoint", () => {
   });
 });
 
-describe("GithubExecutor.execute cached-route guard (#1062)", () => {
+describe("GithubExecutor.isResponsesModel", () => {
+  const exec = new GithubExecutor();
+
+  it("detects gpt-6* models as responses models", () => {
+    expect(exec.isResponsesModel("gpt-6-luna")).toBe(true);
+    expect(exec.isResponsesModel("gpt-6-sol")).toBe(true);
+    expect(exec.isResponsesModel("gpt-6-astra")).toBe(true);
+    expect(exec.isResponsesModel("gpt-6.1-sol")).toBe(true);
+  });
+
+  it("detects gpt-5.6*, gpt-5.5, gpt-5.4-mini, and codex models", () => {
+    expect(exec.isResponsesModel("gpt-5.6-luna")).toBe(true);
+    expect(exec.isResponsesModel("gpt-5.6-sol")).toBe(true);
+    expect(exec.isResponsesModel("gpt-5.6-terra")).toBe(true);
+    expect(exec.isResponsesModel("gpt-5.5")).toBe(true);
+    expect(exec.isResponsesModel("gpt-5.4-mini")).toBe(true);
+    expect(exec.isResponsesModel("gpt-5.3-codex")).toBe(true);
+    expect(exec.isResponsesModel("grok-4.7")).toBe(true);
+    expect(exec.isResponsesModel("mai-code-v1")).toBe(true);
+  });
+
+  it("does not flag legacy chat models or excluded providers", () => {
+    expect(exec.isResponsesModel("gpt-5.2")).toBe(false);
+    expect(exec.isResponsesModel("gpt-5.4")).toBe(false);
+    expect(exec.isResponsesModel("gpt-4.1")).toBe(false);
+    expect(exec.isResponsesModel("gemini-2.5-pro")).toBe(false);
+    expect(exec.isResponsesModel("claude-sonnet-4.6")).toBe(false);
+    expect(exec.isResponsesModel(undefined)).toBe(false);
+    expect(exec.isResponsesModel("")).toBe(false);
+  });
+});
+
+describe("GithubExecutor.requiresMaxCompletionTokens", () => {
+  const exec = new GithubExecutor();
+
+  it("matches gpt-5+, gpt-6+, and o-series models", () => {
+    expect(exec.requiresMaxCompletionTokens("gpt-5.2")).toBe(true);
+    expect(exec.requiresMaxCompletionTokens("gpt-5.6-luna")).toBe(true);
+    expect(exec.requiresMaxCompletionTokens("gpt-6-luna")).toBe(true);
+    expect(exec.requiresMaxCompletionTokens("gpt-6.1-sol")).toBe(true);
+    expect(exec.requiresMaxCompletionTokens("o3-mini")).toBe(true);
+    expect(exec.requiresMaxCompletionTokens("o4-mini")).toBe(true);
+  });
+
+  it("does not match older models", () => {
+    expect(exec.requiresMaxCompletionTokens("gpt-4.1")).toBe(false);
+    expect(exec.requiresMaxCompletionTokens("claude-opus-4.7")).toBe(false);
+  });
+});
+
+describe("GithubExecutor.execute routing", () => {
+  it("routes gpt-6-luna directly to executeWithResponsesEndpoint", async () => {
+    const exec = new GithubExecutor();
+    const respSpy = vi
+      .spyOn(exec, "executeWithResponsesEndpoint")
+      .mockResolvedValue({ via: "responses" });
+    const baseSpy = vi
+      .spyOn(Object.getPrototypeOf(Object.getPrototypeOf(exec)), "execute")
+      .mockResolvedValue({ response: { status: 200 }, via: "chat" });
+
+    const result = await exec.execute({ model: "gpt-6-luna", body: { messages: [] }, log: null });
+
+    expect(respSpy).toHaveBeenCalled();
+    expect(baseSpy).not.toHaveBeenCalled();
+    expect(result.via).toBe("responses");
+  });
+
   it("does NOT use /responses for a Gemini model even if it was wrongly cached as codex", async () => {
     const exec = new GithubExecutor();
-    // Simulate a prior misclassification that cached the Gemini model.
     exec.knownCodexModels.add("gemini-3.1-pro-preview");
 
     const respSpy = vi
       .spyOn(exec, "executeWithResponsesEndpoint")
       .mockResolvedValue({ via: "responses" });
-    // Short-circuit the /chat/completions path (BaseExecutor.execute).
     const baseSpy = vi
       .spyOn(Object.getPrototypeOf(Object.getPrototypeOf(exec)), "execute")
       .mockResolvedValue({ response: { status: 200 }, via: "chat" });
@@ -59,6 +128,45 @@ describe("GithubExecutor.execute cached-route guard (#1062)", () => {
     expect(respSpy).not.toHaveBeenCalled();
     expect(baseSpy).toHaveBeenCalled();
     expect(result.via).toBe("chat");
+  });
+
+  it("falls back to /responses when chat/completions returns reasoning/responses error", async () => {
+    const exec = new GithubExecutor();
+    const errorMsg = 'Function tools with reasoning_effort are not supported for model in /v1/chat/completions. To use function tools, use /v1/responses';
+
+    const respSpy = vi
+      .spyOn(exec, "executeWithResponsesEndpoint")
+      .mockResolvedValue({ via: "responses-fallback" });
+    vi.spyOn(Object.getPrototypeOf(Object.getPrototypeOf(exec)), "execute")
+      .mockResolvedValue({
+        response: new Response(errorMsg, { status: 400 }),
+        via: "chat"
+      });
+
+    const result = await exec.execute({ model: "gpt-custom-preview", body: { messages: [] }, log: null });
+
+    expect(respSpy).toHaveBeenCalled();
+    expect(exec.knownCodexModels.has("gpt-custom-preview")).toBe(true);
+    expect(result.via).toBe("responses-fallback");
+  });
+
+  it("returns responseFormat: FORMATS.OPENAI_RESPONSES from executeWithResponsesEndpoint", async () => {
+    const exec = new GithubExecutor();
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => new Response(JSON.stringify({ id: "resp_123" }), { status: 200 });
+      const result = await exec.executeWithResponsesEndpoint({
+        model: "gpt-6-luna",
+        body: { messages: [{ role: "user", content: "hi" }] },
+        stream: false,
+        credentials: { accessToken: "test-token" },
+        signal: null,
+        log: null
+      });
+      expect(result.responseFormat).toBe(FORMATS.OPENAI_RESPONSES);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

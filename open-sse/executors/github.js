@@ -206,7 +206,7 @@ export class GithubExecutor extends BaseExecutor {
 
   // Newer OpenAI models (gpt-5+, o1, o3, o4) require max_completion_tokens instead of max_tokens
   requiresMaxCompletionTokens(model) {
-    return /gpt-5|o[134]-/i.test(model);
+    return /gpt-[5-9]|o[134]-/i.test(model);
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -222,6 +222,16 @@ export class GithubExecutor extends BaseExecutor {
     // Config-driven strip of params unsupported by this provider/model
     stripUnsupportedParams("github", model, transformed);
     return transformed;
+  }
+
+  // Copilot serves gpt-6*, gpt-5.6*, gpt-5.5, gpt-5.4-mini, codex, grok-4, and mai-code
+  // exclusively via the /responses endpoint. Route them directly without an initial
+  // failing round-trip to /chat/completions.
+  isResponsesModel(model) {
+    if (!model) return false;
+    const m = model.toLowerCase();
+    if (m.includes("gemini") || m.includes("claude")) return false;
+    return /gpt-[6-9]|gpt-5\.[5-9]|gpt-5\.4-mini|codex|grok-4|mai-code/i.test(m);
   }
 
   // GitHub Copilot's /responses endpoint only serves OpenAI (gpt/codex) models.
@@ -268,8 +278,8 @@ export class GithubExecutor extends BaseExecutor {
 
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).
-    if (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model)) {
-      log?.debug("GITHUB", `Using cached /responses route for ${model}`);
+    if ((this.isResponsesModel(model) || this.knownCodexModels.has(model)) && this.supportsResponsesEndpoint(model)) {
+      log?.debug("GITHUB", `Using /responses route for ${model}`);
       return withResolvedModel(await this.executeWithResponsesEndpoint(executionOptions));
     }
 
@@ -288,7 +298,13 @@ export class GithubExecutor extends BaseExecutor {
     if (result.response.status === HTTP_STATUS.BAD_REQUEST && this.supportsResponsesEndpoint(model)) {
       const errorBody = await result.response.clone().text();
 
-      if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
+      if (
+        errorBody.includes("not accessible via the /chat/completions endpoint") ||
+        errorBody.includes("The requested model is not supported") ||
+        errorBody.includes("unsupported_api_for_model") ||
+        errorBody.includes("/v1/responses") ||
+        errorBody.includes("/responses")
+      ) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
         this.knownCodexModels.add(model);
         return withResolvedModel(await this.executeWithResponsesEndpoint(executionOptions));
@@ -313,69 +329,12 @@ export class GithubExecutor extends BaseExecutor {
       signal
     }, proxyOptions);
 
-    if (!response.ok) {
-      return { response, url, headers, transformedBody };
-    }
-
-    const state = initState("openai-responses");
-    state.model = model;
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const transformStream = new TransformStream({
-      async transform(chunk, controller) {
-        buffer += decoder.decode(chunk, { stream: true });
-        const lines = buffer.split("\n");
-
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          const parsed = parseSSELine(trimmed);
-          if (!parsed) continue;
-
-          if (parsed.done && stream === true) {
-            controller.enqueue(new TextEncoder().encode(SSE_DONE));
-            continue;
-          }
-
-          const converted = openaiResponsesToOpenAIResponse(parsed, state);
-          if (converted) {
-            const sseString = formatSSE(converted, "openai");
-            controller.enqueue(new TextEncoder().encode(sseString));
-          }
-        }
-      },
-      flush(controller) {
-        if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
-          if (parsed && !parsed.done) {
-            const converted = openaiResponsesToOpenAIResponse(parsed, state);
-            if (converted) {
-              controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
-            }
-          }
-        }
-      }
-    });
-
-    if (!response.body) {
-      return { response: new Response("", { status: response.status, headers: response.headers }), url, headers, transformedBody };
-    }
-    const convertedStream = response.body.pipeThrough(transformStream);
-
     return {
-      response: new Response(convertedStream, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers
-      }),
+      response,
       url,
       headers,
-      transformedBody
+      transformedBody,
+      responseFormat: FORMATS.OPENAI_RESPONSES
     };
   }
 

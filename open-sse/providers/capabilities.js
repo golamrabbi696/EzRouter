@@ -250,8 +250,14 @@ const QODER_PROVIDER_MODEL_CAPS = {
 };
 
 const CLAUDE_4_6_PLUS_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 };
+const GITHUB_CLAUDE_200K_CAPS = { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 264000, maxPrompt: 200000, maxOutput: 64000 };
 
 export const PROVIDER_CAPABILITIES = {
+  "github": {
+    "claude-fable-5": GITHUB_CLAUDE_200K_CAPS,
+    "claude-opus-4.8": GITHUB_CLAUDE_200K_CAPS,
+    "claude-opus-5": GITHUB_CLAUDE_200K_CAPS,
+  },
   "qoder": QODER_PROVIDER_MODEL_CAPS,
   "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
 
