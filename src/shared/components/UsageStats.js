@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { USAGE_PERIOD_OPTIONS } from "@/lib/usagePeriods.js";
 import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { addUsedFreeProviders } from "./usageTopologyProviders";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds.
 // Validates that the provider exists in AI_PROVIDERS, FREE_PROVIDERS, or is a registered custom provider node.
@@ -274,8 +275,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
-  // Fetch connected providers once, deduplicate by provider type
-  // Always include noAuth free providers (e.g. opencode) regardless of connections
+  // Fetch connected providers once, deduplicate by provider type.
   useEffect(() => {
     Promise.all([
       fetch("/api/providers").then((r) => r.ok ? r.json() : null),
@@ -299,10 +299,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           ...c,
           nodeName: nodeNameMap[c.provider] || null,
         }));
-        const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !p.hidden && !seen.has(p.id) && isLLMProvider(p.id, nodeNameMap))
-          .map((p) => ({ provider: p.id, name: p.name }));
-        setProviders([...unique, ...noAuthProviders]);
+        setProviders(unique);
       })
       .catch(() => {});
   }, []);
@@ -313,6 +310,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .then((data) => setConvoyRules(data?.items || []))
       .catch(() => setConvoyRules([]));
   }, []);
+
+  const topologyProviders = useMemo(
+    () => addUsedFreeProviders(providers, FREE_PROVIDERS, stats?.byProvider, isLLMProvider),
+    [providers, stats?.byProvider]
+  );
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
@@ -557,7 +559,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       });
     }
 
-    return providers.map((p) => {
+    return topologyProviders.map((p) => {
       const pKey = p.provider?.toLowerCase();
       const config = AI_PROVIDERS[pKey] || AI_PROVIDERS[p.provider] || {};
 
@@ -590,7 +592,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
       return { ...p, models };
     });
-  }, [providers, stats?.byModel]);
+  }, [topologyProviders, stats?.byModel]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
