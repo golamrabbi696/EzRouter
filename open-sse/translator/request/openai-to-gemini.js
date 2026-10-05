@@ -82,6 +82,42 @@ function sanitizeSystemPrompt(text) {
     return "antigravity";
   });
 }
+
+/**
+ * Rewrites duplicate tool_call_ids so every emitted functionCall id is unique.
+ *
+ * Gemini validates functionCall id uniqueness across the WHOLE history and
+ * answers 400 INVALID_ARGUMENT otherwise, but an OpenAI tool_call_id is only
+ * unique within its own assistant turn — a long agent session can replay the
+ * same id in a later turn (#4532).
+ *
+ * Uniqueness is per OCCURRENCE, not per id: two different calls that share an id
+ * must end up with different emitted ids, so the mapping is consumed in
+ * document order rather than memoized by id. Each call site calls next() once
+ * per emitted functionCall, and keeps the returned value so the matching
+ * functionResponse reuses it.
+ *
+ * Ids that were already unique are passed through untouched, so a valid
+ * conversation is byte-identical to before.
+ */
+function createToolCallIdUniquifier() {
+  const used = new Set();
+  return {
+    next(id) {
+      if (!id) return id;
+      if (!used.has(id)) {
+        used.add(id);
+        return id;
+      }
+      let n = 2;
+      let candidate = `${id}-${n}`;
+      // An id may already end in "-2"; keep counting rather than collide again.
+      while (used.has(candidate)) candidate = `${id}-${n++}`;
+      used.add(candidate);
+      return candidate;
+    },
+  };
+}
 // Core: Convert OpenAI request to Gemini format (base for all variants)
 function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE, sessionId = null) {
   const result = {
@@ -105,21 +141,31 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     result.generationConfig.maxOutputTokens = body.max_tokens;
   }
 
-  // Build tool responses cache keyed by tool_call_id.
-  // NOTE: do NOT build a global tool_call_id→name map here. In long sessions
-  // the same ID string can be reused by different tool calls in different turns
-  // (e.g. call_81334 for "edit" at turn 30, then for "bash" at turn 70).
-  // A global map would overwrite the earlier entry and corrupt the
-  // functionResponse.name for that turn, causing Gemini 400 INVALID_ARGUMENT.
-  // Instead we resolve names inline per-turn from the assistant message itself.
+  // Build tool responses cache.
+  // Queued per id rather than a single value: an OpenAI tool_call_id is only
+  // unique within its own assistant turn, so a long agent session can reuse one
+  // id for two different tool results. A plain id->content map keeps only the
+  // LAST one, and the earlier turn would then be answered with the later
+  // turn's output. Each functionCall consumes the oldest unconsumed result for
+  // its id instead. #4273
   const toolResponses = {};
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id] = msg.content;
+        (toolResponses[msg.tool_call_id] ||= []).push(msg.content);
       }
     }
   }
+  const toolResponseCursor = {};
+
+  // Gemini validates that functionCall ids are unique across the WHOLE history,
+  // and rejects the entire request with 400 INVALID_ARGUMENT when one repeats.
+  // tool_call_id is only unique within a single assistant turn, so a long agent
+  // session can legitimately emit call_51859 at turn 14 and again at turn 22.
+  //
+  // Each functionCall takes the next free id here and passes it down to its
+  // matching functionResponse, so the pair always agrees. #4532
+  const toolCallIdUniquifier = createToolCallIdUniquifier();
 
   // Convert messages
   // Every system message becomes one systemInstruction part, in order; a
@@ -187,9 +233,12 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             firstFunctionCallSeen = true;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
+            // Emitted id is uniquified; the thought-signature lookup above stays
+            // on the ORIGINAL id so a cached signature is still found. #4532
+            const emitId = toolCallIdUniquifier.next(tc.id);
             const part = {
               functionCall: {
-                id: tc.id,
+                id: emitId,
                 name: sanitizeGeminiFunctionName(tc.function.name),
                 args: args
               }
@@ -198,7 +247,11 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               part.thoughtSignature = callSig;
             }
             parts.push(part);
-            toolCallIds.push(tc.id);
+            // The NAME travels with the pair for the same reason the id does:
+            // tcID2Name is a conversation-wide id->name map, so a later call
+            // reusing the id would otherwise rename this turn's response.
+            // #4273
+            toolCallIds.push({ origId: tc.id, emitId, name: tc.function?.name });
           }
 
           if (parts.length > 0) {
@@ -207,26 +260,38 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
           // Check if there are actual tool responses in the next messages
           const isIntermediate = i < body.messages.length - 1;
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid] !== undefined);
+          const hasActualResponses = toolCallIds.some(
+            ({ origId }) => (toolResponseCursor[origId] || 0) < (toolResponses[origId]?.length ?? 0)
+          );
 
           if (hasActualResponses || isIntermediate) {
             const toolParts = [];
-            for (const fid of toolCallIds) {
-              let resp = toolResponses[fid];
-              if (resp === undefined) {
-                if (isIntermediate) resp = "";
-                else continue;
+            for (const { origId, emitId, name: callName } of toolCallIds) {
+              // Content resolves on the ORIGINAL id, consuming the oldest
+              // unconsumed result; only the emitted id is uniquified. #4273 #4532
+              const queue = toolResponses[origId];
+              const cursor = toolResponseCursor[origId] || 0;
+              let resp;
+              if (queue && cursor < queue.length) {
+                resp = queue[cursor];
+                toolResponseCursor[origId] = cursor + 1;
+              } else if (isIntermediate) {
+                resp = "";
+              } else {
+                continue;
               }
 
-              // Resolve name from the turn-scoped map (avoids cross-turn ID collisions).
-              // Fall back to ID-based heuristic only if the turn map has no entry.
-              let name = turnIdToName[fid];
+              // Name comes from THIS call, not from the conversation-wide id->name map,
+              // which a later duplicate of the same id would have overwritten.
+              let name = callName || turnIdToName[origId];
               if (!name) {
-                // Generated ids encode the name: `name_<ts>_<idx>` (current) or
-                // `name-<ts>-<idx>` (legacy). Foreign ids (toolu_..., upstream
-                // functionCall.id) don't — fall back to the id itself, as before.
-                const m = fid.match(/^(.+?)[-_]\d{10,}[-_]\d+$/);
-                name = m ? m[1] : fid;
+                const m = String(origId).match(/^(.+?)[-_]\d{10,}[-_]\d+$/);
+                if (m) {
+                  name = m[1];
+                } else {
+                  const idParts = String(origId).split("-");
+                  name = idParts.length > 2 ? idParts.slice(0, -2).join("-") : origId;
+                }
               }
 
               let parsedResp = tryParseJSON(resp);
@@ -236,7 +301,9 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
               toolParts.push({
                 functionResponse: {
-                  id: fid,
+                  // Matches the functionCall id emitted above, so a response
+                  // never points at an id the call does not carry. #4532
+                  id: emitId,
                   name: sanitizeGeminiFunctionName(name),
                   response: sanitizeFunctionResponseValue(parsedResp)
                 }
