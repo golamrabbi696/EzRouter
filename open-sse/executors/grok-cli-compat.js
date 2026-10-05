@@ -439,10 +439,14 @@ function normalizeTools(source, diagnostics, preferredFunctionName = "") {
     const custom = type === "custom";
     const functionLike = type === "function" || custom || (!type && (tool.name || tool.function));
     if (type && !functionLike) {
-      throw new GrokCliCompatibilityError(
-        `Unsupported Grok CLI tool type: ${type}`,
-        `tools[${index}].type`,
-      );
+      if (type === "file_search" || type === "code_interpreter" || type === "computer") {
+        throw new GrokCliCompatibilityError(
+          `Unsupported Grok CLI tool type: ${type}`,
+          `tools[${index}].type`,
+        );
+      }
+      diagnostics.droppedToolTypes.push(type);
+      continue;
     }
     if (!functionLike) {
       diagnostics.droppedToolTypes.push(type || "<missing>");

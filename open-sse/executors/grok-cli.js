@@ -141,6 +141,101 @@ async function resolveGrokCliAgentId(credentials) {
   }
 }
 
+/**
+ * Flatten Chat Completions tool shape → Responses flat format.
+ * Keep hosted tools (web_search / x_search) passthrough.
+ */
+function normalizeGrokCliTools(body) {
+  if (!Array.isArray(body.tools) || body.tools.length === 0) {
+    delete body.tools;
+    delete body.tool_choice;
+    delete body.parallel_tool_calls;
+    return;
+  }
+  const validNames = new Set();
+  const hostedTypes = new Set();
+  body.tools = body.tools.filter((tool) => {
+    if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
+    const type = typeof tool.type === "string" ? tool.type : "";
+
+    if (type !== "function") {
+      // Hosted tools: { type: "web_search" } / { type: "x_search" }
+      if (HOSTED_TOOL_TYPES.has(type)) {
+        hostedTypes.add(type);
+        return true;
+      }
+      // Nested function shape without type
+      if (!type && tool.function) {
+        // fall through to function flatten below
+      } else if (!type || typeof tool.name === "string") {
+        // treat as bare function if name present
+      } else {
+        return false;
+      }
+    }
+
+    const isFunction =
+      type === "function" || type === "" || tool.function || typeof tool.name === "string";
+    if (!isFunction || HOSTED_TOOL_TYPES.has(type)) {
+      return HOSTED_TOOL_TYPES.has(type);
+    }
+
+    const fn =
+      tool.function && typeof tool.function === "object" && !Array.isArray(tool.function)
+        ? tool.function
+        : null;
+    const rawName =
+      typeof tool.name === "string" ? tool.name : typeof fn?.name === "string" ? fn.name : "";
+    const name = rawName.trim();
+    if (!name) return false;
+
+    const description =
+      typeof tool.description === "string"
+        ? tool.description
+        : typeof fn?.description === "string"
+          ? fn.description
+          : "";
+    const parameters = type === "custom"
+      ? GROK_CLI_FREEFORM_TOOL_PARAMETERS
+      : tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters)
+        ? tool.parameters
+        : fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters)
+          ? fn.parameters
+          : { type: "object", properties: {} };
+
+    for (const k of Object.keys(tool)) delete tool[k];
+    tool.type = "function";
+    tool.name = name.slice(0, 128);
+    if (description) tool.description = description;
+    tool.parameters = parameters;
+    validNames.add(tool.name);
+    return true;
+  });
+
+  if (body.tools.length === 0) {
+    delete body.tools;
+    delete body.tool_choice;
+    delete body.parallel_tool_calls;
+    return;
+  }
+
+  // Grok CLI may batch function calls even when the client describes a
+  // sequential shell workflow. One call per turn keeps side effects ordered.
+  body.parallel_tool_calls = false;
+
+  if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
+    const choiceType = typeof body.tool_choice.type === "string" ? body.tool_choice.type : "";
+    if (choiceType === "function" || choiceType === "custom") {
+      const rawName = body.tool_choice.name ?? body.tool_choice.function?.name;
+      const name = typeof rawName === "string" ? rawName.trim().slice(0, 128) : "";
+      if (!name || !validNames.has(name)) delete body.tool_choice;
+      else body.tool_choice = { type: "function", name };
+    } else if (!hostedTypes.has(choiceType)) {
+      delete body.tool_choice;
+    }
+  }
+}
+
 function resolveEffortFromModel(modelId) {
   if (!modelId || typeof modelId !== "string") return null;
   for (const level of EFFORT_LEVELS) {
@@ -280,6 +375,11 @@ export class GrokCliExecutor extends BaseExecutor {
       model: resolvedModel,
       supportsReasoningEffort: supportsGrokCliReasoningEffort(resolvedModel),
     });
+    if (providerBody.tools && providerBody.tools.length > 0) {
+      providerBody.parallel_tool_calls = false;
+    } else {
+      delete providerBody.parallel_tool_calls;
+    }
     dbg("GROK_COMPAT", JSON.stringify(diagnostics));
 
     this._currentTurnIdx = resolveGrokCliTurnIdx(
