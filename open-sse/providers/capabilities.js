@@ -353,7 +353,12 @@ export const PROVIDER_CAPABILITIES = {
     "glm-5.3":            { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
     "glm-5.3-flash":      { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
     "kimi-k3-1":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 1048576 },
-    "kimi-k2.8-preview":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
+    // contextWindow is the server's contextWindow.defaultLength (300000), NOT
+    // maxInputTokens — k2.8 publishes supportedLengths [300000, 1000000] and the
+    // gateway only gives 1M when the request opts in (this executor never does).
+    // Using 1000000 here would let the capacity adapter budget history for a
+    // window the model doesn't actually have.
+    "kimi-k2.8-preview":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 300000, maxOutput: 131072 },
     "deepseek-v4-pro":    { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 393216 },
     // deepseek-v4.1-flash replaced v4-flash on the server list. The 2026-09-30
     // snapshot raised maxOutput to 393216 (matching v4-pro) and changed the
