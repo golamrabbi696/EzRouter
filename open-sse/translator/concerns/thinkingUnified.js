@@ -309,7 +309,7 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined)
       if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
       else delete body.thinking;
       const level = toLevel(eff);
-      // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
+      // Claude effort has no "minimal" (always-on models clamp "none" to it).
       const effort = (level === "auto" || !level)
         ? "high"
         : level === "minimal"
