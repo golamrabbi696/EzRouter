@@ -61,8 +61,10 @@ describe("Antigravity Claude 5.5 models (#4555, #4548)", () => {
       output: 10.0,
     });
     expect(getPricingForModel("ag", "claude-opus-5-5")).toMatchObject({
-      input: 5.0,
-      output: 25.0,
+      input: 4.0,
+      output: 20.0,
+      cached: 0.2,
+      cache_creation: 5.0,
     });
   });
 
