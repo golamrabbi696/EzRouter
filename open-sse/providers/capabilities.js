@@ -130,6 +130,13 @@ export const MODEL_CAPABILITIES = {
   // Grok Build subscription limits differ from the generic Grok family.
   "grok-build":        { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 64000 },
 
+  // Agnes AI (apihub.agnes-ai.com). Both models take text AND image URLs, so
+  // without these the router silently strips images from every Agnes request —
+  // they fell through to DEFAULT_CAPABILITIES (vision:false, 200k).
+  // Limits from the vendor's per-model docs pages.
+  "agnes-3.0-pro":      { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000, maxOutput: 65536 },
+  "agnes-3.0-flash":    { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000, maxOutput: 65536 },
+
   // GLM vision variants (text GLM has no vision) — 5.3-Flash and 5V-Turbo are
   // natively multimodal per z.ai, and 5.3-Flash carries the full 1M window.
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 131072 },

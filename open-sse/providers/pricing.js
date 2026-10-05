@@ -95,6 +95,11 @@ export const MODEL_PRICING = {
   "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 },
   "o1-mini":                      { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
 
+  // === Agnes AI ===
+  // From the vendor's agnes-30-pro doc page: cache read is 10% of regular input.
+  // Announced 2026-10-05, status "Coming soon" — seeded ahead of availability.
+  "agnes-3.0-pro":                   { input: 0.45,  output: 0.90,  cached: 0.045 },
+
   // === Gemini ===
   // Gemini 4 "Argon" (2026-09-30). Input/output confirmed via Artificial
   // Analysis. cached / reasoning / cache_creation are not published yet, so
