@@ -52,15 +52,20 @@ async function normalizeProxyPoolId(proxyPoolId) {
   return { proxyPoolId: normalizedId };
 }
 
-// GET /api/providers - List connections (optionally filtered by ?provider=)
+// GET /api/providers - List all connections (paginated when ?page/&pageSize/&provider/&q present)
 export async function GET(request) {
   if (!(await requireAuth(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const { searchParams } = new URL(request.url);
-    const provider = searchParams.get("provider");
-    const connections = await getProviderConnections(provider ? { provider } : {});
+    const url = new URL(request.url);
+    const providerFilter = url.searchParams.get("provider") || "";
+    const q = (url.searchParams.get("q") || "").toLowerCase().trim();
+    const hasPaging = url.searchParams.has("page") || url.searchParams.has("pageSize");
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(url.searchParams.get("pageSize") || "100", 10) || 100));
+
+    const connections = await getProviderConnections();
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -87,7 +92,26 @@ export async function GET(request) {
       };
     });
 
-    return NextResponse.json({ connections: safeConnections });
+    let filtered = safeConnections;
+    if (providerFilter) {
+      filtered = filtered.filter((c) => c.provider === providerFilter);
+    }
+    if (q) {
+      filtered = filtered.filter((c) =>
+        [c.email, c.name, c.displayName, c.id]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q))
+      );
+    }
+    const total = filtered.length;
+    const paged = hasPaging ? filtered.slice((page - 1) * pageSize, page * pageSize) : filtered;
+
+    return NextResponse.json({
+      connections: paged,
+      total,
+      page: hasPaging ? page : 1,
+      pageSize: hasPaging ? pageSize : total,
+    });
   } catch (error) {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
