@@ -82,28 +82,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const isMuseOnOpenCode = (provider === "opencode" || alias === "oc") && /muse/i.test(model);
   const explicitTarget = isMuseOnOpenCode ? FORMATS.OPENAI_RESPONSES : null;
   const modelTargetFormat = explicitTarget || getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
-  // Per-model guard: only use the transport when the model declares support for that
-  // sourceFormat — opencode-go models differ in endpoint support (kimi/glm only do
-  // /chat/completions), so without this guard a claude-format request would wrongly
-  // route kimi to /messages.
+  // Multi-endpoint providers: prefer a source-matching transport when supported;
+  // otherwise use the model's target-format transport (including its URL).
   const modelSupportedFormats = getModelSupportedFormats(alias, model);
-  const runtimeTransport = resolveTransport(provider, sourceFormat);
-  // Per-model guard: when a model declares supportedFormats, only use the
-  // sourceFormat-matched transport if that format is declared (opencode-go models
-  // differ — kimi/glm only do /chat/completions). Undeclared models keep the
-  // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
-  // A source-format-matched endpoint keeps the request lossless. Prefer it
-  // over a model-level targetFormat, which is only the fallback for clients
-  // whose wire format has no supported transport (for example MiniMax-M3:
-  // OpenAI clients should stay on /chat/completions; other clients can fall
-  // back to its declared Claude target).
-  const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
-  // When the model guard rejects the source-matched transport, translation
-  // must dispatch to the transport matching its target wire format.
-  const effectiveTransport = useTransport || resolveTransport(provider, targetFormat);
-  if (effectiveTransport && credentials) credentials.runtimeTransport = effectiveTransport;
+  const runtimeTransport = resolveTransport(provider, sourceFormat, modelTargetFormat, modelSupportedFormats);
+  // A source-format-matched endpoint keeps the request lossless when the model
+  // supports it; otherwise translate to its declared target format.
+  const targetFormat = runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
+  if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 

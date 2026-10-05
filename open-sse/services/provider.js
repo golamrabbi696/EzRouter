@@ -145,11 +145,20 @@ export function getTargetFormat(provider, credentials = null) {
 // Resolve which transport to use for a provider given the client sourceFormat.
 // Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
 // to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+export function resolveTransport(provider, sourceFormat, modelTargetFormat = null, modelSupportedFormats = null) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  if (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) {
+    const sourceTransport = transports.find(t => t.format === sourceFormat);
+    if (sourceTransport) return sourceTransport;
+  }
+  // A model pinned to a different wire format needs that format's URL too.
+  // Without this, Muse's Responses body is posted to /chat/completions.
+  if (modelTargetFormat && (!modelSupportedFormats || modelSupportedFormats.includes(modelTargetFormat))) {
+    return transports.find(t => t.format === modelTargetFormat) || null;
+  }
+  return null;
 }
 
 // Per-model target format resolved at request time from the model NAME.
