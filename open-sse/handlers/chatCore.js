@@ -34,6 +34,7 @@ import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { pruneToolHistory, formatPrunerLog } from "../services/toolHistoryPruner.js";
 import { getCapabilitiesForModel, withDeclaredCapabilities } from "../providers/capabilities.js";
 import { getDeclaredModelCaps } from "../providers/declaredCaps.js";
+import { getCustomModelCaps } from "@/lib/customModelCaps.js";
 import { stripUnsupportedModalities, hasMediaBlocks } from "../translator/concerns/modality.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -174,7 +175,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // layered on top — otherwise this strip silently drops their image blocks and
   // the upstream model answers as if no image was sent.
   if (!passthrough) {
-    const declared = await getDeclaredModelCaps(provider, model);
+    const declared = (await getCustomModelCaps([alias, provider], model)) || (await getDeclaredModelCaps(provider, model));
     const caps = withDeclaredCapabilities(getCapabilitiesForModel(provider, model), declared);
     if (stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
