@@ -239,24 +239,9 @@ export function parseGrokCliBilling(billing, user = null, plainBilling = null) {
       total: onDemandCap,
       resetAt: periodEnd,
     });
-  } else if (
-    // Unified percent-based or paid accounts keep onDemandCap=0 while access remains active.
-    !hasPercentQuota &&
-    !subscriptionAccess &&
-    Number.isFinite(onDemandCap) &&
-    onDemandCap === 0 &&
-    Number.isFinite(onDemandUsed)
-  ) {
-    // Cap 0 is the exhausted free/promo state (chat returns 402 spending-limit).
-    // UI treats total===0 as unlimited, so use a synthetic 1/1 depleted row.
-    quotas["On-demand"] = {
-      used: 1,
-      total: 1,
-      remainingPercentage: 0,
-      resetAt: periodEnd,
-      unlimited: false,
-    };
   }
+  // A zero spending cap does not establish remaining promo credits or exhaustion.
+  // Omit this unknown allocation rather than inventing a depleted or unlimited row.
 
   // ── 3. Prepaid top-up balance (remaining pot; no allotment known) ────────
   const prepaid = unwrapVal(config.prepaidBalance ?? root.prepaidBalance, NaN);
