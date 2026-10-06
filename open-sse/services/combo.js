@@ -637,39 +637,23 @@ export async function handleComboChat({ body, models, members, policy, handleSin
 
       // Check if should fallback to next model (policy-aware: member > combo > global)
       const currentMember = rotatedMembers ? rotatedMembers[i] : null;
-      // Honor per-member timeoutMs as cooldown hint for transient fallbacks
-      const { shouldFallback, cooldownMs: rawCooldownMs } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
-      let cooldownMs = rawCooldownMs;
-      if (policy?.perHopCooldownMs && Number.isFinite(policy.perHopCooldownMs)) {
-        cooldownMs = Math.min(cooldownMs, policy.perHopCooldownMs);
-      }
       // Enforce maxHops if configured
       if (policy?.maxHops && i + 1 >= policy.maxHops) {
         log.warn("COMBO", `Model ${modelStr} failed - maxHops ${policy.maxHops} reached`, { status: result.status });
         return result;
       }
 
-      if (!shouldFallback) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
+      if (policy || currentMember) {
+        const { shouldFallback } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
+        if (!shouldFallback) {
+          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+          return result;
+        }
       }
 
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model. Status and message are recorded together: the
-      // status used to keep the FIRST failure while the message kept the LAST,
-      // so a combo that ran out of models answered with one model's status and
-      // another model's text -- e.g. 403 from a Console model carrying a 429
-      // body from the model tried after it. That reads as a single provider
-      // returning a nonsensical pair, which is why #3729 looked like fallback
-      // had not run at all.
+      // Fallback to next model immediately with zero artificial delay.
+      // In a combo, different models belong to different providers, so transient
+      // failures or model-specific errors (400, 429, 500, etc.) must not block or abort fallback.
       lastError = errorText || String(result.status);
       lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
