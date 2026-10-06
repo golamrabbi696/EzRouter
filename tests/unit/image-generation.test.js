@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 import { getExecutor } from "../../open-sse/executors/index.js";
 import { PROVIDER_MODELS } from "../../open-sse/providers/index.js";
+import { CODEX_CLI_VERSION } from "../../open-sse/config/codexConstants.js";
 
 const originalFetch = global.fetch;
 
@@ -326,12 +327,16 @@ describe("handleImageGenerationCore", () => {
           "event: response.output_item.done",
           'data: {"item":{"type":"image_generation_call","result":"base64codeximage"}}',
           "",
+          "event: response.completed",
+          'data: {"response":{"usage":{"input_tokens":123,"output_tokens":456,"total_tokens":579,"input_tokens_details":{"cached_tokens":12}}}}',
+          "",
           "",
         ].join("\n"),
         { status: 200, headers: { "Content-Type": "text/event-stream" } }
       )
     );
 
+    const onUsage = vi.fn();
     const result = await handleImageGenerationCore({
       body: {
         prompt: "A green square",
@@ -345,6 +350,7 @@ describe("handleImageGenerationCore", () => {
         providerSpecificData: { workspaceId: "workspace-123", chatgptAccountId: "account-123" },
       },
       log: null,
+      onUsage,
     });
 
     expect(result.success).toBe(true);
@@ -355,7 +361,7 @@ describe("handleImageGenerationCore", () => {
         headers: expect.objectContaining({
           authorization: "Bearer codex-token",
           "chatgpt-account-id": "workspace-123",
-          version: "0.154.0",
+          version: CODEX_CLI_VERSION,
         }),
       })
     );
@@ -373,6 +379,12 @@ describe("handleImageGenerationCore", () => {
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
+    expect(onUsage).toHaveBeenCalledWith({
+      prompt_tokens: 123,
+      completion_tokens: 456,
+      total_tokens: 579,
+      cached_tokens: 12,
+    });
   });
 
   it("generates image with Codex gpt-image-2.5 tool model", async () => {

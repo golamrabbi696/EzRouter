@@ -3,6 +3,8 @@ import {
   markAccountUnavailable,
   clearAccountError,
   resolveClientApiKey,
+  extractApiKey,
+  isValidApiKey,
 } from "../services/auth.js";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings } from "@/lib/localDb";
@@ -15,6 +17,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getExecutor } from "open-sse/executors/index.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
@@ -41,6 +44,26 @@ function withConnectionMetadata(response, credentials) {
   });
 }
 
+function recordImageRequestUsage({ provider, model, connectionId, apiKey, endpoint, usage }) {
+  if (!usage || typeof usage !== "object") return;
+  const promptTokens = usage.prompt_tokens;
+  const completionTokens = usage.completion_tokens;
+  if (!Number.isSafeInteger(promptTokens) || promptTokens < 0 ||
+      !Number.isSafeInteger(completionTokens) || completionTokens < 0) {
+    return;
+  }
+
+  saveRequestUsage({
+    provider,
+    model,
+    connectionId: connectionId || undefined,
+    apiKey: apiKey || undefined,
+    endpoint: endpoint || null,
+    tokens: usage,
+    status: "success",
+  }).catch(() => {});
+}
+
 /**
  * Handle image generation request
  * @param {Request} request
@@ -59,7 +82,12 @@ export async function handleImageGeneration(request) {
   const binaryOutput = url.searchParams.get("response_format") === "binary";
   const modelStr = body.model;
 
-  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
+  const extractedKey = typeof extractApiKey === "function" ? extractApiKey(request) : null;
+  const resolvedAuth = typeof resolveClientApiKey === "function"
+    ? await resolveClientApiKey(request)
+    : { apiKey: extractedKey, valid: true };
+  const apiKey = resolvedAuth?.apiKey || extractedKey || null;
+  const apiKeyValid = resolvedAuth?.valid ?? (typeof isValidApiKey === "function" ? await isValidApiKey(apiKey) : true);
   const settings = await getSettings();
   if (settings.requireApiKey) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
@@ -82,7 +110,7 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, request, { wantsStream, binaryOutput, preferredConnectionId }),
+      handleSingleModel: (b, m) => handleSingleModelImage(b, m, request, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -90,10 +118,10 @@ export async function handleImageGeneration(request) {
     });
   }
 
-  return handleSingleModelImage(body, modelStr, request, { wantsStream, binaryOutput, preferredConnectionId });
+  return handleSingleModelImage(body, modelStr, request, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname });
 }
 
-async function handleSingleModelImage(body, modelStr, request, { wantsStream, binaryOutput, preferredConnectionId } = {}) {
+async function handleSingleModelImage(body, modelStr, request, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -147,6 +175,16 @@ async function handleSingleModelImage(body, modelStr, request, { wantsStream, bi
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
           testStatus: "active"
+        });
+      },
+      onUsage: (usage) => {
+        recordImageRequestUsage({
+          provider,
+          model,
+          connectionId: credentials.connectionId,
+          apiKey,
+          endpoint,
+          usage,
         });
       },
       onRequestSuccess: async () => {

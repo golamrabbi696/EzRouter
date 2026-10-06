@@ -28,9 +28,12 @@ export async function authorizeApiKeyRequest(request, { model, body, reserveToke
     return { apiKey: null, body };
   }
 
-  const key = await getApiKeyByValue(apiKey);
+  const key = typeof getApiKeyByValue === "function" ? await getApiKeyByValue(apiKey) : null;
   const expired = key?.expiresAt && new Date(key.expiresAt).getTime() <= Date.now();
-  if (!key?.isActive || expired) return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key") };
+  if (!key?.isActive || expired) {
+    if (!settings.requireApiKey) return { apiKey, body };
+    return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key") };
+  }
   if (Array.isArray(key.allowedModels) && key.allowedModels.length && model) {
     const requestedModel = typeof body?.model === "string" ? body.model : null;
     if (!key.allowedModels.includes(model) && !key.allowedModels.includes(requestedModel)) {

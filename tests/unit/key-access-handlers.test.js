@@ -98,7 +98,7 @@ beforeEach(() => {
       access: {
         restricted: true,
         allow: ["openai/text-embedding-3-small", "openai/dall-e-3", "openai/tts-1", "openai/whisper-1",
-          "xai/grok-imagine-video", "tavily", "openai/gpt-4o", "gemini/gemini-2.5-flash-preview-tts"],
+          "xai/grok-imagine-video", "tavily", "v1m/gpt-4o", "gemini/gemini-2.5-flash-preview-tts"],
       },
     },
   };
@@ -182,7 +182,7 @@ const handlers = [
   ["video", (m, k) => handleVideoCreate(post("/v1/videos/generations", { model: m, prompt: "x" }, k), "generations"), "xai/grok-imagine-video", "xai/grok-imagine-video-pro"],
   ["search", (m, k) => handleSearch(post("/v1/search", { model: m, query: "x" }, k)), "tavily", "exa"],
   ["fetch", (m, k) => handleFetch(post("/v1/web/fetch", { model: m, url: "https://example.com" }, k)), "tavily", "firecrawl"],
-  ["systemone", (m, k) => handleSystemone(post("/v1/systemone", { model: m, state: {}, questions: { q: "?" } }, k)), "openai/gpt-4o", "openai/gpt-4.1"],
+  ["systemone", (m, k) => handleSystemone(post("/v1/systemone", { model: m, state: {}, questions: { q: "?" } }, k)), "v1m/gpt-4o", "v1m/gpt-4.1"],
   ["gemini-native-tts", (m, k) => geminiRoute.POST(
     new Request(`http://localhost/v1beta/models/${m}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", ...auth(k) },
