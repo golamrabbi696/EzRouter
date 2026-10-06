@@ -85,6 +85,8 @@ import providerLocalDevice from "./local-device.js";
 import providerMeta from "./meta.js";
 import providerMimoFree from "./mimo-free.js";
 import providerMinimaxCn from "./minimax-cn.js";
+import providerMinimaxCodeGlobal from "./minimax-code-global.js";
+import providerMinimaxCode from "./minimax-code.js";
 import providerMinimax from "./minimax.js";
 import providerMistral from "./mistral.js";
 import providerMmf from "./mmf.js";
@@ -228,6 +230,8 @@ export default [
   providerMeta,
   providerMimoFree,
   providerMinimaxCn,
+  providerMinimaxCodeGlobal,
+  providerMinimaxCode,
   providerMinimax,
   providerMistral,
   providerMmf,

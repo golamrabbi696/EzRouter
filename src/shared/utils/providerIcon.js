@@ -7,6 +7,9 @@ const ICON_ALIASES = {
   "vercel-ai-gateway": "vercel",
   "opencode-zen": "opencode",
   "ollama-search": "ollama",
+  // MiniMax Code rides the existing MiniMax brand mark
+  "minimax-code": "minimax",
+  "minimax-code-global": "minimax",
 };
 
 // Runtime only — first 404 remembers id for the whole session
