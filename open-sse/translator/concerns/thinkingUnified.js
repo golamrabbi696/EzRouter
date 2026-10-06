@@ -5,7 +5,7 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels, supportsThinkingLevel } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
+import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel, EFFORT_LEVELS } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -204,12 +204,9 @@ function normalizeOpenAILevel(level, provider, model) {
 // Level not accepted by this model → nearest supported level over the shared
 // effort scale (ties round up), so "xhigh" → "max" for a [low, high, max] set.
 function clampToSupportedLevel(level, supportedLevels) {
-  if (supportedLevels?.includes(level)) return level;
-  if (level === "ultra") level = supportedLevels?.includes("max") ? "max" : "xhigh";
-  if (!Array.isArray(supportedLevels) || supportedLevels.length === 0) return level;
-  if (supportedLevels.includes(level)) return level;
-  const order = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
-  const idx = order.indexOf(level);
+  if (!Array.isArray(supportedLevels) || supportedLevels.length === 0 || supportedLevels.includes(level)) return level;
+  const order = ["none", ...EFFORT_LEVELS];
+  const idx = order.indexOf(level === "ultra" ? "max" : level);
   if (idx === -1) return level;
   let best = null;
   for (const candidate of supportedLevels) {
