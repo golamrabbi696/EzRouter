@@ -10,7 +10,7 @@ import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel }
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
   openai: "openai",
-  "openai-responses": "openai",
+  "openai-responses": "openai-responses",
   "openai-response": "openai",
   codex: "openai",
   claude: "claude-budget",
@@ -161,6 +161,12 @@ function resolveFormat(targetFormat, model, provider) {
   const caps = getCapabilitiesForModel(provider, model);
   const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
   if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
+    // Keep the Responses wire distinct from Chat Completions when the capability
+    // format is the generic OpenAI one: Responses nests effort under
+    // reasoning.effort, Chat Completions uses top-level reasoning_effort.
+    if (targetFormat === "openai-responses" && caps.thinkingFormat === "openai") {
+      return "openai-responses";
+    }
     return caps.thinkingFormat;
   }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
@@ -186,6 +192,13 @@ function toLevel(cfg) {
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";
   return null;
+}
+
+function normalizeOpenAILevel(level, provider, model) {
+  if (level !== "max" && level !== "ultra") return level;
+  if (supportsThinkingLevel(provider, model, level)) return level;
+  if (level === "ultra" && supportsThinkingLevel(provider, model, "max")) return "max";
+  return "xhigh";
 }
 
 function toGeminiThinkingLevel(cfg) {
@@ -300,6 +313,22 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined)
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = level;
+      break;
+    }
+    case "openai-responses": {
+      // The Responses API nests effort: reasoning:{effort,summary}. A top-level
+      // reasoning_effort is rejected by strict upstreams (Meta: "unknown
+      // parameter `reasoning_effort`"). "none" is expressed by omitting reasoning.
+      if (none && canDisable) { delete body.reasoning; break; }
+      const level = toLevel(eff);
+      if (level) {
+        const current = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+          ? body.reasoning
+          : {};
+        body.reasoning = { ...current, effort: normalizeOpenAILevel(level, provider, model) };
+        if (!body.reasoning.summary) body.reasoning.summary = "auto";
+      }
+      delete body.reasoning_effort;
       break;
     }
     case "claude-adaptive": {
