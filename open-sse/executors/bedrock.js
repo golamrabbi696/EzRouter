@@ -10,6 +10,29 @@ import { escapeUri, signAwsRequest } from "../utils/awsSigv4.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_HEADERS } from "../utils/sseConstants.js";
 
+const BEDROCK_GROK_SCHEMA_KEYS = new Set(["pattern", "format", "minLength", "maxLength", "patternProperties"]);
+
+function sanitizeBedrockGrokSchema(value) {
+  if (Array.isArray(value)) return value.map(sanitizeBedrockGrokSchema);
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (BEDROCK_GROK_SCHEMA_KEYS.has(key)) continue;
+    out[key] = sanitizeBedrockGrokSchema(child);
+  }
+  return out;
+}
+
+export function sanitizeBedrockGrokTools(body) {
+  if (!Array.isArray(body?.tools)) return body;
+  body.tools = body.tools.map((tool) => {
+    const parameters = tool?.function?.parameters;
+    if (!parameters || typeof parameters !== "object") return tool;
+    return { ...tool, function: { ...tool.function, parameters: sanitizeBedrockGrokSchema(parameters) } };
+  });
+  return body;
+}
+
 /**
  * BedrockExecutor — Amazon Bedrock runtime.
  *
@@ -57,8 +80,11 @@ export class BedrockExecutor extends BaseExecutor {
    */
   transformRequest(model, body, stream, credentials) {
     const { model: _model, stream: _stream, ...rest } = body || {};
-    // anthropic_version goes AFTER the spread on purpose: a claude-format client may carry its
-    // own (e.g. "2023-06-01"), and letting that win earns a Bedrock ValidationException.
+    // Both wires drop `model` and `stream`: Bedrock takes the model from the URL and picks
+    // streaming by endpoint. Only the Anthropic wire wants a version pin, and it goes AFTER the
+    // spread because a claude-format client may carry its own (e.g. "2023-06-01"), and letting
+    // that win earns a ValidationException.
+    if (!this.isClaudeWire) return sanitizeBedrockGrokTools(rest);
     return { ...rest, anthropic_version: BEDROCK.anthropicVersion };
   }
 
