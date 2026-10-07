@@ -722,7 +722,7 @@ export async function handleComboChat({ body, models, members, policy, handleSin
         const inspected = shouldInspect ? await inspectComboPreaction(usableResult, body) : usableResult;
         if (inspected) {
           clearModelCooldown(modelStr);
-          log.info("COMBO", `Model ${modelStr} succeeded`);
+          log.info("COMBO", `Model ${modelStr} succeeded · ATTEMPT ${i + 1}/${rotatedModels.length}`);
           return annotateComboResponse({
             comboName: comboName || body?.model,
             selectedModel: modelStr,
