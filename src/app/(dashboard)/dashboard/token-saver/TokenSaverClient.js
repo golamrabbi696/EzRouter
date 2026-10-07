@@ -47,6 +47,7 @@ export default function TokenSaverClient() {
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [customSystemPromptEnabled, setCustomSystemPromptEnabled] = useState(false);
   const [customSystemPrompt, setCustomSystemPrompt] = useState("");
+  const [toolRankEnabled, setToolRankEnabled] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [toolDisclosureEnabled, setToolDisclosureEnabled] = useState(false);
   const [toolDisclosureFilterEnabled, setToolDisclosureFilterEnabled] = useState(false);
@@ -378,6 +379,11 @@ export default function TokenSaverClient() {
     patchSetting({ customSystemPrompt });
   };
 
+  const handleToolRankEnabled = (value) => {
+    setToolRankEnabled(value);
+    patchSetting({ toolRankEnabled: value });
+  };
+
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
     try {
@@ -476,6 +482,7 @@ export default function TokenSaverClient() {
           setPonytailLevel(data.ponytailLevel || "full");
           setCustomSystemPromptEnabled(!!data.customSystemPromptEnabled);
           setCustomSystemPrompt(data.customSystemPrompt || "");
+          setToolRankEnabled(!!data.toolRankEnabled);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           setToolDisclosureEnabled(!!data.toolDisclosureEnabled);
@@ -819,6 +826,19 @@ export default function TokenSaverClient() {
               />
             </div>
           </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Tool relevance ranking</p>
+            <p className="text-sm text-text-muted">
+              Drop tool definitions that share no word with your recent messages.
+              Only affects requests with many tools; keeps at least half.
+            </p>
+          </div>
+          <Toggle
+            checked={toolRankEnabled}
+            onChange={() => handleToolRankEnabled(!toolRankEnabled)}
+          />
         </div>
         {/* Tool Disclosure (Phase 1+2) */}
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">

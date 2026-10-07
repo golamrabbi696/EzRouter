@@ -63,6 +63,7 @@ const DEFAULT_SETTINGS = {
   ponytailLevel: "full",
   customSystemPromptEnabled: false,
   customSystemPrompt: "",
+  toolRankEnabled: false,
   pxpipeEnabled: false,
   pxpipeAutoInstall: false,
   pxpipeMinChars: 25000,
