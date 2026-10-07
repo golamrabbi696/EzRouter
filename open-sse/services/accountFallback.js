@@ -138,6 +138,21 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
+/**
+ * Check whether an error represents a rate-limit failure.
+ *
+ * Keep this classification derived from ERROR_RULES so proxy-pool cooldowns
+ * and account fallback cannot drift apart as provider error strings evolve.
+ */
+export function isRateLimitError(status, errorText) {
+  if (Number(status) === 429) return true;
+
+  const lowerError = errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    : "";
+
+  return ERROR_RULES.some((rule) => rule.backoff && rule.text && lowerError.includes(rule.text));
+}
 export function isAccountUnavailable(unavailableUntil) {
   if (!unavailableUntil) return false;
   return new Date(unavailableUntil).getTime() > Date.now();

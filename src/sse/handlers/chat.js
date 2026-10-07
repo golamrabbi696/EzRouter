@@ -294,6 +294,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
+  const excludeProxyPoolIds = new Set();
   let lastError = null;
   let lastStatus = null;
   let lastHeaders = null;
@@ -301,7 +302,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const cacheKey = buildCacheAffinityKey(body);
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId: pinnedConnectionId, cacheKey, requestedModel: requestedModel || model });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId: pinnedConnectionId,
+      cacheKey,
+      requestedModel: requestedModel || model,
+      excludeProxyPoolIds,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -399,7 +405,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           });
         },
         onRequestSuccess: async () => {
-          await clearAccountError(credentials.connectionId, credentials, model);
+          await clearAccountError(credentials.connectionId, credentials, model, provider);
           // "Consecutive" strikes: a success clears the breaker for this pair.
           clearAntigravityStrikes(credentials.connectionId, model);
         },
@@ -427,6 +433,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const errorStatus = result?.status || HTTP_STATUS.INTERNAL_SERVER_ERROR;
     const errorMessage = result?.error || "Upstream request failed";
 
+    const proxyPoolId = credentials.connectionId === "noauth"
+      ? credentials.providerSpecificData?.connectionProxyPoolId
+      : null;
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
     let resetsAtMs = result?.resetsAtMs;
@@ -443,11 +452,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Do not persist a modelLock_* for this path.
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
-      : (await markAccountUnavailable(credentials.connectionId, errorStatus, errorMessage, provider, model, resetsAtMs)).shouldFallback;
+      : (await markAccountUnavailable(credentials.connectionId, errorStatus, errorMessage, provider, model, resetsAtMs, proxyPoolId)).shouldFallback;
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${errorStatus}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
+      if (proxyPoolId) excludeProxyPoolIds.add(proxyPoolId);
       lastError = errorMessage;
       lastStatus = errorStatus;
       lastHeaders = upstreamResponseHeaders(result?.response?.headers);

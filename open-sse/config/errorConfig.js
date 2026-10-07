@@ -189,6 +189,7 @@ export const ERROR_RULES = [
   { text: "unrecognized request argument", fallback: false },
   { text: "unexpected field",         fallback: false },
   { text: "unknown field",            fallback: false },
+  { text: "freeusagelimiterror",      backoff: true },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
