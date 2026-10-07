@@ -297,8 +297,8 @@ describe("dashboard guard local-only access", () => {
     async (pathname) => {
       mocks.verifyDashboardAuthToken.mockResolvedValue(true);
       const req = request(pathname, {
-        host: "10.0.0.1:20128",
-        origin: "http://10.0.0.1:20128",
+        host: "10.0.0.1:20126",
+        origin: "http://10.0.0.1:20126",
       });
       req.cookies.get.mockReturnValue({ value: "jwt-token" });
 
@@ -311,7 +311,7 @@ describe("dashboard guard local-only access", () => {
   it("keeps tunnel toggle blocked without same-origin browser headers", async () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(true);
     const req = request("/api/tunnel/disable", {
-      host: "10.0.0.1:20128",
+      host: "10.0.0.1:20126",
     });
     req.cookies.get.mockReturnValue({ value: "jwt-token" });
 
