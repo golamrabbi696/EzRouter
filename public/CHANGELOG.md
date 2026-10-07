@@ -1,3 +1,37 @@
+# v0.6.17 (2026-10-07)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4571 - #4644)
+- **Security Audit & Invariants**:
+  - **REJECTED PR #4629**: Unintended fork downgrade attempt rejected.
+  - **Preserved Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`) across all configs, CLI builds, and test snapshots.
+  - **Dashboard Tunnel Security**: Allowed remote same-origin tunnel enable/disable with JWT verification (`#4582`).
+  - **Proxy Pool Isolation**: Added rate limit isolation and cooldowns for no-auth proxy pools (`#4593`).
+
+- **New Providers, Models & Integrations**:
+  - **MiniMax Code (`mcode` / `minimax-code`)**: Added MiniMax Code credits provider with global/domestic endpoints, OAuth token refresh, and usage tracking (`#4630`).
+  - **Meta Muse**: Added Responses-only model routing (`responses` transport), nested reasoning effort support, and SSE-to-JSON non-streaming conversion (`#4613`, `#4616`).
+  - **Agnes 3.0 Pro**: Added Agnes 3.0 Pro model catalog entries and vision capabilities (`#4576`).
+  - **Copilot**: Routed modern Copilot models directly to the Responses endpoint (`#4607`).
+  - **Netlify Relay**: Added Netlify relay proxy pool with automated deployment API routes (`#4597`).
+  - **Wakeup Schedules & Account Pings**: Added automated wakeup schedules, background account pings, and dashboard wakeup management interface (`#4610`).
+  - **System One Combos**: Added provider combos with fallback, round-robin, and cooldown propagation for System One (`#4641`).
+
+- **Format Translation & Wire Compatibility**:
+  - **Gemini**: Renamed reserved `$ref` keys in `functionResponse` payloads (`#4644`) and uniquified duplicate `tool_call_ids` for Gemini function calls (`#4532`).
+  - **Codex**: Track exact provider-reported input/output token usage in image generation (`#4643`), preserved requested reasoning effort in request summaries (`#4603`), and retained cache/reasoning tokens in Responses usage (`#4571`).
+  - **Anthropic ↔ OpenAI Pivot**: Kept `service_tier` end-to-end through Anthropic-to-OpenAI translation (`#4642`), preserved `tool_choice: "none"` in both directions (`#4573`), retained developer role for OpenAI (`#4598`), preserved strict tool definitions (`#4596`), preserved namespace tool calls (`#4599`), and returned message JSON on non-streaming retries (`#4605`).
+  - **Kimi & CodeBuddy**: Hoisted deferred Claude MCP tools before forwarding (`#4602`) and synchronized context window settings (`#4600`).
+  - **GLM Thinking**: Clamped native effort levels for GLM-5.3 passthrough (`#4636`).
+  - **Responses API**: Mapped `response.incomplete` to `finish_reason: length` (`#4632`) and emitted reasoning effort in native request shape (`#4601`).
+  - **Streaming**: Propagated stream omission decisions from client (`#4634`), forwarded Cline reasoning deltas (`#4577`), and requested `include_usage` on streaming OpenAI-compatible calls (`#4633`).
+
+- **Combos, Pricing & Performance**:
+  - **Combo Health Floating & Resilience**: Added dynamic health floating for locked models with automatic recovery, eliminating transient cooldown delays and continuing fallback on upstream errors (`#4608`, `#4609`). Persisted explicit fallback strategy and normalized model identifiers at API boundary (`#4574`, `#4579`).
+  - **Pricing**: Priced effort-annotated model IDs at base model rates (`#4635`) and cached compiled glob regexes in `matchPattern` (`#4622`).
+  - **Provider Connections**: Added connection pagination and filtering on `/api/providers` (`#4588`).
+  - **Catalog & Model Filtering**: Published validated Codex catalog envelopes on `/v1/models` (`#4604`, `#4606`) and filtered inactive provider seats when computing combo limits (`#4618`).
+  - **CLI TUI**: Preserved model IDs in TUI combo selector (`#4580`).
+
 # v0.6.16 (2026-10-05)
 
 ## Core Stability, Provider Translation & Test Parity
