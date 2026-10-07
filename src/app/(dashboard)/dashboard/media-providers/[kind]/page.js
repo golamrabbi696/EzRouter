@@ -9,8 +9,8 @@ import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared
 
 // Kinds that support combos (currently disabled for image/tts — temporarily hidden).
 // webSearch/webFetch handled by /web page.
-const COMBO_KINDS = new Set([]);
-const COMBO_BASE_NAMES = { image: "image-combo", tts: "tts-combo" };
+const COMBO_KINDS = new Set(["systemone"]);
+const COMBO_BASE_NAMES = { image: "image-combo", tts: "tts-combo", systemone: "systemone-combo" };
 
 // Kinds that support user-defined custom provider nodes (a "+ Add Custom X" flow).
 const CUSTOM_NODE_CONFIG = {
