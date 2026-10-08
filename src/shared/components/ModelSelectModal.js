@@ -8,6 +8,7 @@ import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { selectConnectableProviders, selectNoAuthProviderIds } from "@/shared/utils/modelSelectorProviders";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -17,8 +18,10 @@ const PROVIDER_ORDER = [
   ...Object.keys(APIKEY_PROVIDERS),
 ];
 
-// Providers that need no auth — always show in model selector
-const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
+// Providers that need no auth — always show in model selector.
+// Registry entries marked `hidden` are excluded: they are not offered in the dashboard
+// either, and their upstream catalog can be gone (e.g. `mimo-free`).
+const NO_AUTH_PROVIDER_IDS = selectNoAuthProviderIds(FREE_PROVIDERS);
 
 function getCircularComboNames(combos, comboContext) {
   const targetName = comboContext?.name?.trim();
@@ -116,16 +119,26 @@ export default function ModelSelectModal({
   closeOnSelect = true,
   comboContext = null,
 }) {
-  // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
+  // Only connections the runtime can actually serve. Credentials are resolved with
+  // getProviderConnections({ provider, isActive: true }) (src/sse/services/auth.js) and
+  // /v1/models filters `isActive !== false`, so a provider whose connections are all
+  // disabled answers 404 "No active credentials for provider: <id>" — offering it here
+  // only produced combos that can never serve. Legacy connections without the flag stay
+  // visible; compatible nodes with user-added models are surfaced by compatibleNodeIds below.
+  const connectableProviders = useMemo(
+    () => selectConnectableProviders(activeProviders, AI_PROVIDERS),
+    [activeProviders],
+  );
+
+  // Filter connectableProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
-    return activeProviders.filter((p) => {
-      if (p.isActive === false || AI_PROVIDERS[p.provider]?.hidden) return false;
-      if (!kindFilter) return true;
+    if (!kindFilter) return connectableProviders;
+    return connectableProviders.filter((p) => {
       const info = AI_PROVIDERS[p.provider];
       const kinds = info?.serviceKinds || ["llm"];
       return kinds.includes(kindFilter);
     });
-  }, [activeProviders, kindFilter]);
+  }, [connectableProviders, kindFilter]);
   const { getCaps } = useModelCaps();
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
@@ -136,14 +149,14 @@ export default function ModelSelectModal({
   // kept only as a fallback: it goes stale quickly and entitlements differ per account.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
   // from the memos below; per-provider arrays stay referentially stable unless
-  // filteredActiveProviders itself changes.
+  // connectableProviders itself changes.
   const liveConnectionIdsByProvider = useMemo(() => {
     const map = Object.fromEntries(LIVE_CATALOG_PROVIDERS.map((id) => [id, []]));
-    for (const p of filteredActiveProviders) {
+    for (const p of connectableProviders) {
       if (p?.id && Object.prototype.hasOwnProperty.call(map, p.provider)) map[p.provider].push(p.id);
     }
     return map;
-  }, [filteredActiveProviders]);
+  }, [connectableProviders]);
   const cursorConnectionIds = liveConnectionIdsByProvider.cursor;
   const clineConnectionIds = liveConnectionIdsByProvider.cline;
   const clinepassConnectionIds = liveConnectionIdsByProvider.clinepass;
@@ -261,19 +274,21 @@ export default function ModelSelectModal({
           .map((m) => m.providerAlias)
           .filter((alias) => isOpenAICompatibleProvider(alias) || isAnthropicCompatibleProvider(alias));
 
-    // Only show connected providers (including both standard and custom)
+    // Only show providers with a usable connection (plus no-auth and user-added nodes)
     const providerIdsToShow = new Set([
-      ...activeConnectionIds,  // Only connected providers
+      ...activeConnectionIds,  // Connectable providers only (not explicitly disabled)
       ...noAuthIds,            // No-auth providers (kind-filtered)
       ...compatibleNodeIds,    // Compatible nodes with user-added models
     ]);
 
-    // Sort by PROVIDER_ORDER
-    const sortedProviderIds = [...providerIdsToShow].sort((a, b) => {
-      const indexA = PROVIDER_ORDER.indexOf(a);
-      const indexB = PROVIDER_ORDER.indexOf(b);
-      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-    });
+    // Sort by PROVIDER_ORDER, keeping registry-hidden providers out of every source
+    const sortedProviderIds = [...providerIdsToShow]
+      .filter((id) => !AI_PROVIDERS[id]?.hidden)
+      .sort((a, b) => {
+        const indexA = PROVIDER_ORDER.indexOf(a);
+        const indexB = PROVIDER_ORDER.indexOf(b);
+        return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+      });
 
     sortedProviderIds.forEach((providerId) => {
       if (AI_PROVIDERS[providerId]?.hidden) return;
@@ -353,7 +368,7 @@ export default function ModelSelectModal({
         // Custom (openai/anthropic-compatible) providers are LLM-only — skip for typed media kinds
         if (kindFilter && TYPED_KINDS.has(kindFilter)) return;
         // Find connection object to get prefix synchronously without waiting for providerNodes fetch
-        const connection = filteredActiveProviders.find(p => p.provider === providerId);
+        const connection = connectableProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = matchedNode?.name || connection?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
@@ -471,7 +486,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, cursorModels, clineModels, clinepassModels]);
+  }, [filteredActiveProviders, connectableProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, cursorModels, clineModels, clinepassModels, zedModels]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
