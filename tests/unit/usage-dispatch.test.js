@@ -16,7 +16,7 @@ const SUPPORTED = [
   "github", "gemini-cli", "antigravity", "claude", "codex", "kiro",
   "qoder", "qoder-cn", "iflow", "ollama", "glm", "glm-cn",
   "minimax", "minimax-cn", "vercel-ai-gateway", "grok-cli", "kimi",
-  "deepseek", "opencode-go", "zed",
+  "deepseek", "opencode-go", "zed", "commandcode", "clinepass",
 ];
 
 describe("usage dispatch", () => {

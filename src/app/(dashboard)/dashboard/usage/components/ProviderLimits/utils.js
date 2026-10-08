@@ -733,6 +733,7 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "clinepass":
       case "ollama":
         // Monthly / Session (5h) / Weekly (7d) % plus purchased credits from ollama.com/api/balance.
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).
