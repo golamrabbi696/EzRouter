@@ -32,8 +32,10 @@ export async function handleSearch(request) {
   }
 
   const url = new URL(request.url);
-  // Accept either `provider` or `model` (UI sends `model` since provider IS the model for webSearch)
-  const providerInput = body.provider || body.model;
+  // Accept either `provider` or `model` (UI sends `model` since provider IS the model for webSearch).
+  // Exa-native clients (smart-search exa.py) send neither; fall back to the
+  // DEFAULT_SEARCH_PROVIDER env var so unmodified CLI tools can talk to 9Router directly.
+  const providerInput = body.provider || body.model || process.env.DEFAULT_SEARCH_PROVIDER;
   const query = body.query;
 
   log.request("POST", `${url.pathname} | ${providerInput}`);
@@ -123,17 +125,25 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     log.info("ROUTING", `Provider: ${providerId}`);
   }
 
+  // Map Exa-native request fields (smart-search exa.py) onto the 9Router body:
+  // numResults -> max_results, includeDomains/excludeDomains -> domain_filter.
+  const includeDomains = Array.isArray(body.includeDomains) ? body.includeDomains : [];
+  const excludeDomains = Array.isArray(body.excludeDomains) ? body.excludeDomains : [];
+  const domainFilter = body.domain_filter
+    ? body.domain_filter
+    : [...includeDomains, ...excludeDomains.map((d) => `-${d}`)];
+
   // Sanitized body forwarded to core
   const coreBody = {
     query: query.trim(),
     provider: providerId,
-    max_results: body.max_results,
+    max_results: body.max_results ?? body.numResults,
     search_type: body.search_type,
     country: body.country,
     language: body.language,
     time_range: body.time_range,
     offset: body.offset,
-    domain_filter: body.domain_filter,
+    domain_filter: domainFilter.length ? domainFilter : undefined,
     content_options: body.content_options,
     provider_options: body.provider_options
   };
