@@ -58,13 +58,17 @@ async function fetchClineRawModels(credentials) {
 }
 
 /**
- * Fetch ClinePass live model catalog from Cline's /models endpoint.
- * Returns only models with the cline-pass/ prefix.
+ * Fetch the live ClinePass model list (cline-pass/* ids only).
+ * Source: the recommended-models feed's `clinePass[]` tier. Cline's
+ * /api/v1/models stopped listing cline-pass/* ids, so it is only a fallback.
  *
  * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
  * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
  */
 export async function resolveClinepassModels(credentials) {
+  const feed = (await fetchClineRecommendedTier("clinePass"))?.filter((m) => m.id.startsWith("cline-pass/"));
+  if (feed?.length) return { models: feed };
+
   const rawList = await fetchClineRawModels(credentials);
   if (!rawList) return null;
 
@@ -86,6 +90,11 @@ export async function resolveClinepassModels(credentials) {
  * @returns {Promise<{id: string, name: string}[] | null>}
  */
 async function fetchClineFreeTierModels() {
+  return fetchClineRecommendedTier("free");
+}
+
+/** One tier (`free`, `clinePass`, ...) of the recommended-models feed, or null. */
+async function fetchClineRecommendedTier(tier) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -99,10 +108,10 @@ async function fetchClineFreeTierModels() {
     if (!response.ok) return null;
 
     const json = await response.json();
-    const free = Array.isArray(json?.free) ? json.free : [];
-    if (!free.length) return null;
+    const list = Array.isArray(json?.[tier]) ? json[tier] : [];
+    if (!list.length) return null;
 
-    return free
+    return list
       .filter((m) => typeof m?.id === "string" && m.id.trim() !== "")
       .map((m) => ({ id: m.id, name: m.name || m.id }));
   } catch {
