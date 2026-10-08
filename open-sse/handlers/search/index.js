@@ -106,7 +106,8 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     // administrator-controlled and may intentionally target an internal service.
     // Timer is cleared in finally, after the body is read: a stalled body must hit the timeout too.
     const fetchEndpoint = requiresPublicUrl ? fetchPublic : fetch;
-    const resp = await fetchEndpoint(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    const resp = await fetchEndpoint(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal },
+      { maxRedirects: providerConfig.preventRedirects ? 0 : 5 });
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
       log?.error?.("SEARCH", `${provider.id} ${resp.status}: ${errText.slice(0, 200)}`);
@@ -123,6 +124,11 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
       queries_used: 1,
       search_cost_usd: providerConfig.costPerQuery ?? null,
     };
+    if (providerConfig.costByMode) {
+      const mode = JSON.parse(init.body).mode;
+      usage.search_cost_usd = (providerConfig.costByMode[mode] ?? providerConfig.costPerQuery)
+        + Math.max(0, normalized.results.length - providerConfig.includedResults) * providerConfig.extraResultCost;
+    }
     if (Number.isFinite(providerConfig.creditsPerResult)) {
       usage.provider_credits_used = results.length * providerConfig.creditsPerResult;
     }

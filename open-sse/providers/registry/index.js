@@ -107,6 +107,7 @@ import providerOpencode from "./opencode.js";
 import providerOpenmodel from "./openmodel.js";
 import providerOpenrouter from "./openrouter.js";
 import providerOvh from "./ovh.js";
+import providerParallel from "./parallel.js";
 import providerPerplexityAgent from "./perplexity-agent.js";
 import providerPerplexityWeb from "./perplexity-web.js";
 import providerPerplexity from "./perplexity.js";
@@ -252,6 +253,7 @@ export default [
   providerOpenmodel,
   providerOpenrouter,
   providerOvh,
+  providerParallel,
   providerPerplexityAgent,
   providerPerplexityWeb,
   providerPerplexity,
