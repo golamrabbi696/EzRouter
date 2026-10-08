@@ -293,7 +293,7 @@ export function createSSEStream(options = {}) {
                   model
                 );
                 output = `data: ${JSON.stringify(parsed)}\n`;
-                usage = estimated;
+                usage = mergeUsage(usage, estimated); // never let an estimate replace real usage
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
@@ -486,7 +486,7 @@ export function createSSEStream(options = {}) {
                 provider,
                 model
               );
-              state.usage = estimated;
+              state.usage = mergeUsage(state.usage, estimated); // never let an estimate replace real usage
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
