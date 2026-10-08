@@ -24,44 +24,59 @@ export async function getIflowUsage(accessToken) {
   }
 }
 
-const OLLAMA_LIMIT_WINDOWS = {
+const OLLAMA_LEGACY_WINDOWS = {
   session: "Session (5h)",
   weekly: "Weekly (7d)",
-  monthly: "Monthly",
 };
 
-function addUtcMonths(date, months) {
-  const total = date.getUTCMonth() + months;
-  const year = date.getUTCFullYear() + Math.floor(total / 12);
-  const month = ((total % 12) + 12) % 12;
-  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(
-    year, month, Math.min(date.getUTCDate(), lastDay),
-    date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds(),
-  ));
+// Do NOT set absolute `remaining` — QuotaTable reads remainingPercentage.
+function ollamaPercentQuota(remainingPercent, resetAt = null) {
+  const remaining = Math.round(Math.max(0, Math.min(100, remainingPercent)));
+  return { used: 100 - remaining, total: 100, remainingPercentage: remaining, resetAt, unlimited: false };
 }
 
-// Free plan: "usage resets monthly from the date you signed up" (ollama.com/pricing).
-function nextMonthlyResetFromSignup(createdAt, now = new Date()) {
-  const anchor = new Date(createdAt);
-  if (Number.isNaN(anchor.getTime())) return null;
-  const elapsedMonths = (now.getUTCFullYear() - anchor.getUTCFullYear()) * 12
-    + (now.getUTCMonth() - anchor.getUTCMonth());
-  for (let i = Math.max(0, elapsedMonths); i <= elapsedMonths + 1; i++) {
-    const candidate = addUtcMonths(anchor, i);
-    if (candidate > now) return candidate.toISOString();
+function parseOllamaBalance(data) {
+  const included = data?.included && typeof data.included === "object" ? data.included : {};
+  const quotas = {};
+
+  const allowance = Number(included.allowance_usd);
+  if (allowance > 0) {
+    const balance = Number(included.balance_usd) || 0;
+    quotas.Monthly = ollamaPercentQuota((balance / allowance) * 100, included.period?.until || null);
   }
-  return null;
+
+  for (const [key, label] of Object.entries(OLLAMA_LEGACY_WINDOWS)) {
+    const raw = included[key]?.remaining_percent;
+    if (raw === undefined || raw === null) continue;
+    const remaining = Number(raw);
+    if (Number.isNaN(remaining)) continue;
+    quotas[label] = ollamaPercentQuota(remaining, included[key].resets_at || null);
+  }
+
+  const purchased = Number(data?.purchased?.balance_usd);
+  if (purchased > 0) {
+    quotas["Purchased (USD)"] = {
+      used: 0,
+      total: purchased,
+      resetAt: null,
+      unlimited: false,
+      isCreditBalance: true,
+      currency: "USD",
+    };
+  }
+
+  return quotas;
 }
 
 /**
  * Ollama Cloud Usage
- * GET https://ollama.com/api/usage — `limits.<window>.usage` is a 0..1 ratio
- *   (1.0 = limit reached). Paid plans report session (5h) + weekly (7d); the
- *   free plan reports a single monthly window. No reset timestamp exposed;
- *   the free monthly reset is derived from the account's signup date.
- * POST https://ollama.com/api/me — plan label + CreatedAt (fail-open).
+ * GET https://ollama.com/api/balance — included allowance + purchased credits.
+ *   Monthly plans: `included.balance_usd` of `included.allowance_usd`, resetting
+ *   at `included.period.until`. Legacy plans: `included.session` / `included.weekly`
+ *   with `remaining_percent` (0..100) and `resets_at`.
+ * POST https://ollama.com/api/me — plan label (fail-open).
  * Auth: Authorization: Bearer <apiKey>
+ * Docs: https://docs.ollama.com/api/balance
  */
 export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions = null) {
   if (!apiKey) {
@@ -69,7 +84,7 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
   }
 
   try {
-    const response = await proxyAwareFetch("https://ollama.com/api/usage", {
+    const response = await proxyAwareFetch("https://ollama.com/api/balance", {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
@@ -106,28 +121,7 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
       ? planRaw.charAt(0).toUpperCase() + planRaw.slice(1).toLowerCase()
       : "Ollama Cloud";
 
-    const limits = data?.limits && typeof data.limits === "object" ? data.limits : {};
-
-    // Ollama `usage` is a 0..1 ratio (1.0 = limit reached). Convert to a 0..100
-    // bar. Do NOT set absolute `remaining` — QuotaTable reads remainingPercentage.
-    function ratioQuota(usageRatio, resetAt = null) {
-      const ratio = Math.max(0, Math.min(1, Number(usageRatio) || 0));
-      const usedPct = Math.round(ratio * 100);
-      return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
-    }
-
-    const monthlyResetAt = planRaw.toLowerCase() === "free" && me?.CreatedAt
-      ? nextMonthlyResetFromSignup(me.CreatedAt)
-      : null;
-
-    const quotas = {};
-    for (const [key, label] of Object.entries(OLLAMA_LIMIT_WINDOWS)) {
-      const raw = limits[key]?.usage;
-      if (raw === undefined || raw === null) continue;
-      const ratio = Number(raw);
-      if (Number.isNaN(ratio)) continue;
-      quotas[label] = ratioQuota(ratio, key === "monthly" ? monthlyResetAt : null);
-    }
+    const quotas = parseOllamaBalance(data);
 
     if (Object.keys(quotas).length === 0) {
       return {

@@ -734,7 +734,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "ollama":
-        // Session (5h) / Weekly (7d) / Monthly usage % from ollama.com/api/usage.
+        // Monthly / Session (5h) / Weekly (7d) % plus purchased credits from ollama.com/api/balance.
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
@@ -744,6 +744,8 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+              isCreditBalance: quota.isCreditBalance,
+              currency: quota.currency,
             });
           });
         }
