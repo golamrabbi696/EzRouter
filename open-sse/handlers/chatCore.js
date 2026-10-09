@@ -291,7 +291,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools, { clientTool, model });
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
-      log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
+      log?.info?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
     }
   }
 
@@ -300,7 +300,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const ranked = rankTools(translatedBody.tools, { messages: translatedBody.messages });
     if (ranked.stripped.length > 0) {
       translatedBody.tools = ranked.tools;
-      log?.debug?.("TOOLRANK", `dropped ${ranked.stripped.length}: ${ranked.stripped.slice(0, 3).join(", ")}${ranked.stripped.length > 3 ? "..." : ""}`);
+      log?.info?.("TOOLRANK", `dropped ${ranked.stripped.length}: ${ranked.stripped.slice(0, 3).join(", ")}${ranked.stripped.length > 3 ? "..." : ""}`);
     }
   }
 
