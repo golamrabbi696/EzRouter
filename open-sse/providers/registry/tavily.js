@@ -26,7 +26,8 @@ export default {
     freeMonthlyQuota: 1000,
     searchTypes: [
       "web",
-      "news"
+      "news",
+      "finance"
     ],
     defaultMaxResults: 5,
     maxMaxResults: 20,

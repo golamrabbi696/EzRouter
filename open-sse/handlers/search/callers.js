@@ -64,6 +64,64 @@ export function getProviderSetting(params, key) {
 }
 
 /**
+ * Read the provider-namespaced passthrough bag from providerOptions.
+ *
+ * The generic contract only covers the intersection of all providers, so
+ * provider-specific request fields reach their builder through
+ * `provider_options.<id>`. `getProviderSetting` covers string settings; this
+ * covers arbitrary nested values (objects, arrays, booleans, numbers).
+ *
+ * @param {SearchRequestParams} params
+ * @param {string} providerId
+ * @returns {Record<string, unknown>}
+ */
+export function getProviderOptions(params, providerId) {
+  const bag = params.providerOptions?.[providerId];
+  return bag && typeof bag === "object" && !Array.isArray(bag) ? bag : {};
+}
+
+/**
+ * Copy allow-listed keys from `source` into `target`, skipping `undefined`.
+ *
+ * Used to forward provider-specific request fields without exposing the whole
+ * client body to the upstream. Keys that fail `accept` are dropped so a client
+ * cannot smuggle unsupported values into the request.
+ *
+ * @param {object}   target
+ * @param {object}   source
+ * @param {string[]} keys
+ * @param {(value: unknown) => boolean} [accept]
+ */
+export function mergeFields(target, source, keys, accept) {
+  if (!source) return target;
+  for (const key of keys) {
+    const value = source[key];
+    if (value === undefined) continue;
+    if (accept && !accept(value)) continue;
+    target[key] = value;
+  }
+  return target;
+}
+
+/**
+ * Map the generic `time_range` onto a provider's own date filter.
+ *
+ * Only two providers consumed `time_range` before this helper existed; the rest
+ * silently dropped it even though their APIs support the equivalent filter.
+ *
+ * @param {string|undefined} timeRange  One of day|week|month|year.
+ * @param {(from: Date) => (Record<string, unknown>|undefined)} toFilter
+ * @returns {Record<string, unknown>}
+ */
+export function applyTimeRange(timeRange, toFilter) {
+  if (!timeRange || timeRange === "any") return {};
+  const days = { day: 1, week: 7, month: 31, year: 365 }[timeRange];
+  if (!days) return {};
+  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return toFilter(from) || {};
+}
+
+/**
  * Resolve base URL with optional override from providerOptions.baseUrl.
  *
  * The override is client-controlled and therefore SSRF-hardened: only public
@@ -152,16 +210,40 @@ function buildPerplexityRequest(config, params) {
 
 function buildExaRequest(config, params) {
   const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  const exa = getProviderOptions(params, "exa");
+
+  // `text` and `highlights` belong under `contents` in the current Exa schema;
+  // they were previously sent at the top level.
   const body = {
     query: params.query,
     numResults: params.maxResults,
-    type: "auto",
-    text: true,
-    highlights: true,
+    type: typeof exa.type === "string" ? exa.type : "auto",
+    contents: { text: true, highlights: true },
   };
+  mergeFields(body.contents, exa.contents, [
+    "text", "highlights", "summary", "extras", "subpages", "subpageTarget",
+    "livecrawlTimeout", "maxAgeHours",
+  ]);
   if (includes.length) body.includeDomains = includes;
   if (excludes.length) body.excludeDomains = excludes;
   if (params.searchType === "news") body.category = "news";
+
+  // time_range was never forwarded to Exa; its equivalent is the published-date
+  // window. Explicit startPublishedDate/endPublishedDate from the client win.
+  Object.assign(body, applyTimeRange(params.timeRange, (from) => ({
+    startPublishedDate: from.toISOString(),
+  })));
+
+  // Exa has ~25 documented fields; the generic contract only expresses a
+  // handful, so provider_options.exa carries the rest. `stream` and
+  // `outputSchema` are deliberately excluded: both turn the response into
+  // server-sent synthesized output, which the JSON search contract cannot carry.
+  mergeFields(body, exa, [
+    "type", "category", "userLocation", "moderation",
+    "additionalQueries", "objective", "systemPrompt", "compliance",
+    "startPublishedDate", "endPublishedDate",
+  ]);
+
   return {
     url: resolveBaseUrl(config, params),
     init: {
@@ -268,14 +350,36 @@ function buildParallelRequest(config, params) {
 
 function buildTavilyRequest(config, params) {
   const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  const tavily = getProviderOptions(params, "tavily");
+
   const body = {
     query: params.query,
     max_results: params.maxResults,
-    topic: params.searchType === "news" ? "news" : "general",
+    topic: typeof tavily.topic === "string" ? tavily.topic : params.searchType,
   };
   if (includes.length) body.include_domains = includes;
   if (excludes.length) body.exclude_domains = excludes;
   if (params.country) body.country = params.country;
+
+  // `search_depth` (advanced|basic|fast|ultra-fast) has no equivalent in the
+  // generic contract, and `time_range` was never forwarded to Tavily.
+  Object.assign(body, applyTimeRange(params.timeRange, (from) => ({
+    start_date: from.toISOString().slice(0, 10),
+  })));
+
+  // provider_options.tavily carries the rest of the ~22 documented fields.
+  // `include_domains` / `exclude_domains` / `country` / `topic` / `max_results`
+  // are omitted: they come from the generic contract above and must win.
+  mergeFields(body, tavily, [
+    "search_depth", "chunks_per_source", "time_range",
+    "start_date", "end_date",
+    "include_published_date", "filter_by_published_date",
+    "include_answer", "include_raw_content",
+    "include_images", "include_image_descriptions", "include_favicon",
+    "include_domains_mode", "language", "filter_by_language",
+    "auto_parameters", "exact_match", "include_usage", "safe_search",
+  ]);
+
   return {
     url: resolveBaseUrl(config, params),
     init: {
