@@ -12,8 +12,8 @@ const STRIP_RULES = [
   // telemetry field gated behind a beta this provider does not advertise, so
   // Anthropic 400s with `diagnostics: Extra inputs are not permitted`.
   { match: /claude/i, drop: ["diagnostics"] },
-  // GitHub Copilot gpt-5.4: temperature unsupported.
-  { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
+  // GitHub Copilot GPT-5.4+ and GPT-6.x: temperature unsupported.
+  { provider: "github", match: /^gpt-(?:5\.(?:[4-9]|[1-9]\d+)|6\.\d+)(?:-|$)/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
   // xAI Grok Composer: rejects reasoningEffort entirely (including "none") — omit param upstream.
