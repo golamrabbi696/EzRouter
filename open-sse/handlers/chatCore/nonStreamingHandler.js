@@ -10,6 +10,7 @@ import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse, parseGeminiSSEToOpenAIResponse, pickAssistantMessageForChatCompletion } from "./sseToJsonHandler.js";
+import { parseClaudeSSEToMessage } from "./claudeSSEToMessage.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
@@ -321,6 +322,7 @@ export async function handleNonStreamingResponse({
         };
       } else {
         const sseText = await providerResponse.text();
+        const isClaudeSse = targetFormat === FORMATS.CLAUDE;
         const isGeminiSse = [
           FORMATS.ANTIGRAVITY,
           FORMATS.GEMINI,
@@ -333,7 +335,9 @@ export async function handleNonStreamingResponse({
           FORMATS.VERTEX,
         ].includes(PROVIDERS[provider]?.format);
 
-        const parsed = (isGeminiSse && !sseText.includes('"chat.completion'))
+        const parsed = isClaudeSse
+          ? parseClaudeSSEToMessage(sseText, model)
+          : (isGeminiSse && !sseText.includes('"chat.completion'))
           ? parseGeminiSSEToOpenAIResponse(sseText, model)
           : parseSSEToOpenAIResponse(sseText, model);
 
@@ -348,7 +352,9 @@ export async function handleNonStreamingResponse({
           return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
         }
         responseBody = parsed;
-        targetFormat = FORMATS.OPENAI;
+        if (!isClaudeSse) {
+          targetFormat = FORMATS.OPENAI;
+        }
       }
     } else {
       try {
