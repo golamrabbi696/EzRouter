@@ -85,6 +85,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const initialFormData = () => ({
     name: "",
     prefix: "",
+    providerIdSuffix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
     baseUrl: config.defaultBaseUrl,
     clientIdentityProfile: "default",
@@ -97,6 +98,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [submitError, setSubmitError] = useState("");
 
   // openai: reset baseUrl when apiType changes; anthropic: reset checks when opened
   useEffect(() => {
@@ -120,6 +122,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    setSubmitError("");
     const customHeaders = formData.clientIdentityProfile === "custom"
       ? parseCustomIdentityHeaders(formData.clientIdentityHeadersText)
       : { headers: {} };
@@ -135,6 +138,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         body: JSON.stringify({
           name: formData.name,
           prefix: formData.prefix,
+          providerIdSuffix: formData.providerIdSuffix,
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
@@ -146,9 +150,12 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
       if (res.ok) {
         onCreated(data.node);
         handleClose();
+      } else {
+        setSubmitError(data.error || "Failed to create provider");
       }
     } catch (error) {
       console.log(`Error creating ${config.errorLabel} node:`, error);
+      setSubmitError("Network error while creating provider");
     } finally {
       setSubmitting(false);
     }
@@ -223,6 +230,16 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           placeholder={config.prefixPlaceholder}
           hint="Required. Used as the provider prefix for model IDs."
         />
+        <Input
+          label="Provider ID suffix"
+          aria-label="Provider ID suffix"
+          value={formData.providerIdSuffix}
+          onChange={(e) => {
+            setFormData({ ...formData, providerIdSuffix: e.target.value });
+            setSubmitError("");
+          }}
+          hint="Optional. Leave blank to use a random ID."
+        />
         {config.hasApiType && (
           <Select
             label="API Type"
@@ -282,6 +299,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           </Button>
           {renderValidationResult()}
         </div>
+        {submitError && <p role="alert" className="text-sm text-red-500">{submitError}</p>}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             onClick={handleSubmit}
