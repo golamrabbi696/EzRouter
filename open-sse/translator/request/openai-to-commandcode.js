@@ -199,6 +199,10 @@ function convertTools(tools) {
 
 export function openaiToCommandCodeRequest(model, body, stream /* , credentials */) {
   const { messages, system } = convertMessages(body.messages);
+  const rawMaxTokens = body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS;
+  const max_tokens = typeof rawMaxTokens === "number" && rawMaxTokens > 0
+    ? Math.min(rawMaxTokens, 200000)
+    : 200000;
   const params = {
     // Upstream reads params.model and rejects unknown ids — never leak the
     // client thinking suffix "model(level)" (chatCore strips only the top-level
@@ -206,10 +210,9 @@ export function openaiToCommandCodeRequest(model, body, stream /* , credentials 
     model: stripThinkingSuffix(model),
     messages,
     stream: stream !== false,
-    max_tokens: body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS,
+    max_tokens,
     temperature: body.temperature ?? 0.3,
   };
-
   if (system) params.system = system;
 
   const tools = convertTools(body.tools);

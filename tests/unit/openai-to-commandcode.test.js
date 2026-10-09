@@ -212,7 +212,9 @@ describe("openaiToCommandCodeRequest — tools schema conversion", () => {
     expect(blocks).toContainEqual({ type: "text", text: "look" });
     expect(blocks).toContainEqual({
       type: "image",
-      source: { type: "base64", media_type: "image/png", data: "BBBB" },
+      image: "data:image/png;base64,BBBB",
+      mediaType: "image/png",
+      mimeType: "image/png",
     });
   });
 
@@ -221,5 +223,31 @@ describe("openaiToCommandCodeRequest — tools schema conversion", () => {
       messages: [{ role: "user", content: "hi" }],
     }, true);
     expect(out.params.tools).toBeUndefined();
+  });
+});
+
+describe("openaiToCommandCodeRequest — token limits", () => {
+  it("clamps max_tokens to 200000 when client requests oversized max_output_tokens", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      max_output_tokens: 384000,
+    }, true);
+    expect(out.params.max_tokens).toBe(200000);
+  });
+
+  it("clamps max_tokens to 200000 when client requests oversized max_tokens", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1000000,
+    }, true);
+    expect(out.params.max_tokens).toBe(200000);
+  });
+
+  it("preserves max_tokens within upstream 200000 limit", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 8192,
+    }, true);
+    expect(out.params.max_tokens).toBe(8192);
   });
 });
