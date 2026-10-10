@@ -238,15 +238,23 @@ export class AntigravityExecutor extends BaseExecutor {
       // Strip model name suffixes for the actual API model name
       const cleanModel = model.replace(/-(\d+)x(\d+)$/, "");
 
-      // Keep prompt text and reference-image parts; discard unsupported generation parts.
+      // Build contents — preserve text, fileData, and inline image data for image generation/editing
       const contents = [];
       const srcContents = body.request?.contents || body.contents || [];
       for (const c of srcContents) {
-        const parts = (c.parts || []).filter((part) => (
-          part?.text !== undefined ||
-          (part?.inlineData?.data && part?.inlineData?.mimeType) ||
-          (part?.fileData?.fileUri && part?.fileData?.mimeType)
-        ));
+        const parts = (c.parts || [])
+          .filter((p) => (
+            p?.text !== undefined ||
+            p?.inlineData !== undefined ||
+            p?.inline_data !== undefined ||
+            (p?.fileData?.fileUri && p?.fileData?.mimeType)
+          ))
+          .map((p) => {
+            const inline = p.inlineData || p.inline_data;
+            if (inline) return { inlineData: inline };
+            if (p.fileData) return { fileData: p.fileData };
+            return { text: p.text };
+          });
         if (parts.length > 0) {
           contents.push({ role: c.role || "user", parts });
         }
