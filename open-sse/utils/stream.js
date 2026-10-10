@@ -68,6 +68,30 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
+  // ---- Output coalescing (PERF) ----
+  // Emitting every SSE frame straight downstream costs one controller.enqueue +
+  // one downstream stream hop + one socket write per frame. Buffering frames for
+  // a very short window and flushing them as ONE write removes most of that
+  // per-frame cost. Terminal frames (finish/[DONE]) flush immediately.
+  // SSE_COALESCE_MS=0 disables batching (legacy behavior).
+  const COALESCE_MS = (() => { const v = Number(process.env.SSE_COALESCE_MS); return Number.isFinite(v) && v >= 0 ? v : 2; })();
+  let pendingOutput = [];
+  let coalesceTimer = null;
+  let outCtrl = null;
+  const flushOutput = () => {
+    if (coalesceTimer) { clearTimeout(coalesceTimer); coalesceTimer = null; }
+    if (!outCtrl || pendingOutput.length === 0) return;
+    const merged = pendingOutput.length === 1 ? pendingOutput[0] : pendingOutput.join("");
+    pendingOutput.length = 0;
+    try { outCtrl.enqueue(sharedEncoder.encode(merged)); } catch { /* controller closed */ }
+  };
+  const emit = (controller, output, immediate = false) => {
+    outCtrl = controller;
+    pendingOutput.push(output);
+    if (immediate || COALESCE_MS <= 0) { flushOutput(); return; }
+    if (!coalesceTimer) { coalesceTimer = setTimeout(flushOutput, COALESCE_MS); coalesceTimer.unref?.(); }
+  };
+
   const state = mode === STREAM_MODE.TRANSLATE
     ? { ...initState(sourceFormat), provider, toolNameMap, namespaceToolMap, customToolNames: new Set(customToolNames || []), model, responseModel, body, sessionId: credentials?._clientSessionId || null,
         // Which upstream format this stream came from. A response translator can be
@@ -99,6 +123,7 @@ export function createSSEStream(options = {}) {
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = (meta = {}) => {
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
+    flushOutput();
     if (finalized) return;
     finalized = true;
 
@@ -156,7 +181,7 @@ export function createSSEStream(options = {}) {
       if (item === null || item === undefined) continue;
       const output = formatSSE(item, sourceFormat);
       reqLogger?.appendConvertedChunk?.(output);
-      controller.enqueue(sharedEncoder.encode(output));
+      emit(controller, output);
       sseEmittedCount++;
     }
     finalizeStream();
@@ -325,7 +350,7 @@ export function createSSEStream(options = {}) {
           }
 
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          emit(controller, output);
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
           if (responsesTerminal) finalizeStream();
           continue;
@@ -372,7 +397,7 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
             const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
             reqLogger?.appendConvertedChunk?.(failedOutput);
-            controller.enqueue(sharedEncoder.encode(failedOutput));
+            emit(controller, failedOutput, true);
             openAIResponsesTerminalSeen = true;
             sseEmittedCount++;
           }
@@ -380,7 +405,7 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat && !streamDoneSent) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+            emit(controller, doneOutput, true);
           }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
@@ -443,7 +468,7 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          emit(controller, output);
           currentOpenAIResponsesEvent = null;
           sseEmittedCount++;
           // Responses clients (codex) close on response.completed instead of [DONE]
@@ -505,7 +530,7 @@ export function createSSEStream(options = {}) {
             controllerRef.current = controller;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            emit(controller, output);
             sseEmittedCount++;
           }
         }
@@ -548,7 +573,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            emit(controller, output);
           }
 
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -560,7 +585,7 @@ export function createSSEStream(options = {}) {
           if (!streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+            emit(controller, doneOutput, true);
           }
 
           finalizeStream();
@@ -597,7 +622,7 @@ export function createSSEStream(options = {}) {
                 if (item === null || item === undefined) continue;
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
+                emit(controller, output);
               }
             }
           }
@@ -617,7 +642,7 @@ export function createSSEStream(options = {}) {
             if (item === null || item === undefined) continue;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            emit(controller, output);
           }
         }
 
@@ -626,7 +651,7 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
           const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
-          controller.enqueue(sharedEncoder.encode(failedOutput));
+          emit(controller, failedOutput, true);
           openAIResponsesTerminalSeen = true;
         }
 
@@ -634,7 +659,7 @@ export function createSSEStream(options = {}) {
         if (needsOpenAIDone && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          emit(controller, doneOutput, true);
           openAIResponsesDoneSent = true;
           streamDoneSent = true;
         }

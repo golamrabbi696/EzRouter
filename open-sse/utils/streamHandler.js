@@ -257,7 +257,6 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   let abortMessage = "upstream connection lost";
   const t0 = Date.now();
   const tag = "STREAM";
-
   let keepaliveMs = SSE_KEEPALIVE_MS;
   let ttftTimeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS;
   let pingBytes = null;
@@ -290,25 +289,28 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     }, ttftTimeoutMs);
   };
 
+  // PERF: the old code did clearTimeout()+setTimeout() on EVERY upstream chunk,
+  // which is thousands of timer-heap ops/sec under high chunk throughput. Any
+  // chunk now just stamps lastChunkAt; one low-frequency watchdog checks it.
   const clearStall = () => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    if (stallTimer) { clearInterval(stallTimer); stallTimer = null; }
   };
   const clearKeepalive = () => {
     if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
   };
-  const armStall = () => {
+  const watchdogMs = Math.max(10, Math.min(5000, Math.floor(stallTimeoutMs / 4)));
+  stallTimer = setInterval(() => {
+    if (Date.now() - lastChunkAt < stallTimeoutMs) return;
+    abortMessage = "stream stall timeout";
+    dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
     clearStall();
-    stallTimer = setTimeout(() => {
-      stallTimer = null;
-      clearKeepalive();
-      abortMessage = "stream stall timeout";
-      dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
-      streamController.abort?.();
-    }, stallTimeoutMs);
-  };
+    clearKeepalive();
+    streamController.handleError?.(new Error("stream stall timeout"));
+    streamController.abort?.();
+  }, watchdogMs);
+  stallTimer.unref?.();
 
-  // Wrap controller so every termination path clears both timers.
+  // Wrap controller so every termination path clears all timers.
   // Without this, abort/cancel/downstream-error paths leave the timers armed
   // and a stale abort could fire after the request has already ended.
   const wrappedController = {
@@ -322,7 +324,6 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   };
 
   armFirstChunk();
-  armStall();
   dbg(tag, `pipe start | ttftTimeout=${ttftTimeoutMs}ms | stallTimeout=${stallTimeoutMs}ms | keepalive=${keepaliveMs}ms`);
 
   const encoder = new TextEncoder();
@@ -356,7 +357,6 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
         dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
       }
       clearFirstChunk(); // first byte received — TTFT watchdog satisfied
-      armStall();
       controller.enqueue(chunk);
     },
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); clearKeepalive(); }
