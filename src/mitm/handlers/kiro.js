@@ -1,6 +1,6 @@
 const { err, log } = require("../logger");
 const { IS_DEV } = require("../config");
-const { fetchRouter, pipeTransformedEventStream } = require("./base");
+const { fetchRouter, pipeSSE, pipeTransformedEventStream } = require("./base");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -690,8 +690,22 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       throw new Error(`Binary EventStream format detected (${bodyBuffer.length}B) - request should use passthrough instead of intercept`);
     }
 
+    const isResponsesApi = (req.url && req.url.includes("/responses")) ||
+      String(req.headers?.["x-amz-target"] || "").includes("CreateResponse");
+
+    if (isResponsesApi) {
+      const body = JSON.parse(bodyBuffer.toString());
+      if (mappedModel) {
+        body.model = mappedModel;
+      }
+      dbg(`[Kiro MITM] /responses forwarded to router with model ${body.model}`);
+      const routerRes = await fetchRouter(body, "/v1/responses", req.headers);
+      await pipeSSE(routerRes, res);
+      return;
+    }
+
     // Defensive duplicate-request guard (toggleable). Drop a near-duplicate
-    // resend before it reaches 9router and return a clean empty EventStream.
+    // resend before it reaches EzRouter and return a clean empty EventStream.
     if (dedupEnabled()) {
       const dupCheck = isDuplicateRequest(bodyBuffer);
       fp = dupCheck.fp;
