@@ -87,6 +87,31 @@ User request → cc/claude-opus-4-5
 
 ---
 
+## Account Pinning per Request
+
+When a provider has multiple connected accounts (e.g. several Antigravity or Codex accounts), EzRouter normally picks one automatically (fill-first or round-robin, see [Configuration Options](#configuration-options)). Chat requests can opt into **pinning** a specific account with the `x-connection-id` header — the same opt-in already supported by the image and video endpoints:
+
+```bash
+curl https://your-ezrouter/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-connection-id: <providerConnection id>" \
+  -d '{
+    "model": "antigravity/gemini-3.8-flash-medium",
+    "messages": [{"role": "user", "content": "hi"}]
+  }'
+```
+
+How pinning behaves:
+
+- **Priority, not exclusivity.** The pinned account is tried first. If it is unavailable — rate-limited, out of quota, or erroring — the request automatically falls back to the other accounts of the same provider, exactly like unpinned traffic.
+- **Where to find the id.** Connection ids are returned by `GET /api/providers` (each entry's connections) on your EzRouter server.
+- **Safe by default.** Omit the header and nothing changes. An unknown, inactive, or already-exhausted id is ignored and routing proceeds normally.
+- **Works across chat paths.** Single-model requests, combos, fusion, and capacity-adapter fallbacks all honor the header, because pinning is applied at the account-selection layer — orthogonal to per-API-key access control, which gates models, not accounts.
+
+**Multi-agent teams:** give each agent its own `x-connection-id` so it burns its "own" account first and only borrows the shared pool when that account is exhausted.
+
+---
+
 ## Model Selection Logic
 
 9Router selects the best model based on:
