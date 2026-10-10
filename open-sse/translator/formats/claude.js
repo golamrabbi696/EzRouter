@@ -600,6 +600,16 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.output_config;
   }
 
+  // Claude Code puts a `context_management` block (context-editing strategy) in
+  // every request; only Anthropic accepts it — gateways fronting other engines
+  // answer 400 "context_management: Extra inputs are not permitted". Same-format
+  // claude→claude requests skip body rebuilding in the translator, so the field
+  // rides through to every non-Anthropic provider on the Claude transport.
+  const isAnthropicServing = provider === "claude" || provider?.startsWith?.("anthropic-compatible-");
+  if (!isAnthropicServing) {
+    delete body.context_management;
+  }
+
   // Models whose API rejects thinking "disabled" and forced tool use with a 400
   // (Sonnet 5.5). Runs on every Claude-bound body, so OpenAI clients, native
   // passthrough and the provider-level "off" override are all covered.
