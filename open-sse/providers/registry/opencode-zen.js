@@ -20,7 +20,9 @@ export default {
   category: "apikey",
   transport: {
     baseUrl: "https://opencode.ai/zen/v1/chat/completions",
-    headers: {},
+    headers: {
+      "x-opencode-client": "desktop",
+    },
     usage: {
       url: "https://opencode.ai/zen/v1/usage",
     },
