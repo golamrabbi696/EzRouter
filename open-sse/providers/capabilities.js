@@ -284,6 +284,21 @@ export const PROVIDER_CAPABILITIES = {
     "minimaxai/minimax-m3": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 131072 },
     "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
     "deepseek-ai/deepseek-v4-flash-0731": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+    "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+    "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+  },
+  // glm-5.3-flash on OpenCode Go is served by a backend that rejects the z.ai
+  // `thinking` object (400: unknown field "thinking") and wants reasoning_effort.
+  // Overrides the global entry, whose z.ai shape is correct for z.ai itself.
+  "opencode-go": {
+    "glm-5.3-flash": { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
+    // OpenCode Go's claude-haiku-5-5 rejects `thinking.type.enabled` — the shape the
+    // global *claude*haiku* → claude-budget pattern sends — with 400: `"thinking.type.enabled"
+    // is not supported for this model. Use "thinking.type.adaptive" and "output_config.effort"`.
+    // claude-adaptive emits exactly that (adaptive switch + output_config.effort), so override
+    // the global haiku pattern for this provider only. contextWindow follows the model, not the
+    // pattern: the upstream catalog reports context_length 1000000 for this id.
+    "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000 },
   },
   // OpenAI reasoning models reject `reasoning_effort: "none"` outright
   // ("Unsupported value: 'reasoning_effort' does not support 'none'"), so they
