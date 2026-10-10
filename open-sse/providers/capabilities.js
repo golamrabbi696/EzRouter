@@ -296,9 +296,19 @@ export const PROVIDER_CAPABILITIES = {
     // global *claude*haiku* → claude-budget pattern sends — with 400: `"thinking.type.enabled"
     // is not supported for this model. Use "thinking.type.adaptive" and "output_config.effort"`.
     // claude-adaptive emits exactly that (adaptive switch + output_config.effort), so override
-    // the global haiku pattern for this provider only. contextWindow follows the model, not the
-    // pattern: the upstream catalog reports context_length 1000000 for this id.
-    "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000 },
+    // the global haiku pattern for this provider only. Limits follow the model, not the
+    // pattern: the upstream catalog reports context_length 1000000 and the synced catalog
+    // maxOutput 128000 for this id (the provider override short-circuits before the
+    // catalog overlay, so maxOutput must be stated here too).
+    "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  },
+  "commandcode": {
+    // The generic commandcode fallback (1M/384k for every unlisted model) happened
+    // to give haiku-5-5 the right context by accident. Pin it to the catalog values:
+    // GET https://api.commandcode.ai/provider/v1/models reports context_length 1000000
+    // for this id (claude-haiku-4-5-20251001 is 200000, so the 1M is per-model, not
+    // gateway-wide) — and the synced catalog carries maxOutput 128000.
+    "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "commandcode", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 128000 },
   },
   // OpenAI reasoning models reject `reasoning_effort: "none"` outright
   // ("Unsupported value: 'reasoning_effort' does not support 'none'"), so they
