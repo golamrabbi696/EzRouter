@@ -56,6 +56,8 @@ describe("GET /v1/models dual-envelope for Codex", () => {
       expect(Array.isArray(prefixed.supported_reasoning_levels)).toBe(true);
       expect(prefixed.truncation_policy).toEqual({ mode: "tokens", limit: 10000 });
       expect(Array.isArray(prefixed.experimental_supported_tools)).toBe(true);
+      expect(prefixed.multi_agent_version).toBe("v1");
+      expect(prefixed.experimental_supported_tools).toContain("multi_agent_v1");
       expect(typeof prefixed.base_instructions).toBe("string");
       expect(prefixed.base_instructions.length).toBeGreaterThan(0);
       expect(prefixed.model_messages?.instructions_template).toBe("You are Codex, a coding agent.");

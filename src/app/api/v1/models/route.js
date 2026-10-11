@@ -1004,7 +1004,6 @@ export async function GET(request) {
       await getKeyAccessContext(request),
       scoped
     );
-
     // Format models array for Codex CLI / Desktop model catalog parser
     const codexModels = [];
     const seenSlugs = new Set();
@@ -1035,7 +1034,7 @@ export async function GET(request) {
         truncation_policy: { mode: "tokens", limit: 10000 },
         supports_parallel_tool_calls: true,
         tool_mode: "code_mode_only",
-        multi_agent_version: "v2",
+        multi_agent_version: "v1",
         multi_agent_reasoning_effort: "xhigh",
         use_responses_lite: true,
         supports_reasoning_effort_updates: true,
@@ -1052,7 +1051,7 @@ export async function GET(request) {
           { effort: "xhigh", description: "Extra high reasoning depth for complex problems" },
           { effort: "max", description: "Maximum reasoning depth for the hardest problems" },
         ],
-        experimental_supported_tools: ["send_user_message_async", "clock"],
+        experimental_supported_tools: ["multi_agent_v1", "send_user_message_async", "clock"],
         base_instructions: "You are Codex, a coding agent.",
         model_messages: {
           instructions_template: "You are Codex, a coding agent.",
