@@ -10,8 +10,9 @@ import {
   listProfiles,
 } from "../../src/app/api/cli-tools/hermes-settings/hermesProfiles.js";
 
-const BASE = "http://127.0.0.1:20128/v1";
-const NINE_ROUTER_MODEL = `model:\n  default: "anthropic/claude-sonnet-4-6"\n  provider: "custom"\n  base_url: "${BASE}"\n  api_key: \${OPENAI_API_KEY}\n`;
+const BASE = "http://127.0.0.1:20126/v1";
+const EZ_ROUTER_MODEL = `model:\n  default: "anthropic/claude-sonnet-4-6"\n  provider: "custom"\n  base_url: "${BASE}"\n  api_key: \${OPENAI_API_KEY}\n`;
+const NINE_ROUTER_MODEL = EZ_ROUTER_MODEL;
 
 let tmpRoot;
 

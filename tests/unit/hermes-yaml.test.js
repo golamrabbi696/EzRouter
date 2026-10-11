@@ -18,7 +18,7 @@ import {
   isCustomBlock,
 } from "../../src/app/api/cli-tools/hermes-settings/hermesYaml.js";
 
-const BASE = "http://127.0.0.1:20128/v1";
+const BASE = "http://127.0.0.1:20126/v1";
 
 // Every top-level `model:` key in the document (mapping head OR scalar line).
 const modelKeys = (yaml) => yaml.match(/^model:/gm) || [];
@@ -141,10 +141,10 @@ describe("hermes config.yaml helpers", () => {
     });
   });
 
-  describe("9router detection", () => {
-    it("recognises a local 9router endpoint", () => {
-      expect(has9RouterConfig({ provider: "custom", base_url: "http://127.0.0.1:20128/v1" })).toBe(true);
-      expect(has9RouterConfig({ provider: "custom", base_url: "http://localhost:20128/v1" })).toBe(true);
+  describe("ezrouter/9router detection", () => {
+    it("recognises a local endpoint", () => {
+      expect(has9RouterConfig({ provider: "custom", base_url: "http://127.0.0.1:20126/v1" })).toBe(true);
+      expect(has9RouterConfig({ provider: "custom", base_url: "http://localhost:20126/v1" })).toBe(true);
     });
 
     it("rejects other providers or endpoints", () => {
