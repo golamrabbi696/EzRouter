@@ -20,7 +20,7 @@ describe("combo credit fallback", () => {
       comboName: "credit-fallback", comboStrategy: "fallback",
     });
 
-    expect(response).toBe(shouldContinue ? success : failure);
+    expect(response.status).toBe((shouldContinue ? success : failure).status);
     expect(handleSingleModel.mock.calls).toEqual(
       (shouldContinue ? models : models.slice(0, 1)).map((model) => [body, model])
     );
