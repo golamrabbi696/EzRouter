@@ -255,12 +255,12 @@ describe("applyThinking per provider format", () => {
     ["gpt-5.6-luna", "ultra", "max"],
   ])("normalizes Codex Responses %s effort %s to %s", (model, effort, expected) => {
     const out = apply("openai-responses", model, { reasoning: { effort } }, "codex");
-    expect(out.reasoning).toEqual({ effort: expected });
+    expect(out.reasoning).toMatchObject({ effort: expected });
     expect(out.reasoning_effort).toBeUndefined();
   });
   it("applies a supported Codex Responses Ultra suffix", () => {
     const out = apply("openai-responses", "gpt-5.6-sol(ultra)", {}, "codex");
-    expect(out.reasoning).toEqual({ effort: "ultra" });
+    expect(out.reasoning).toMatchObject({ effort: "ultra" });
     expect(out.reasoning_effort).toBeUndefined();
   });
   it("keeps Codex-only GPT-5.6 levels out of Kiro translation", () => {

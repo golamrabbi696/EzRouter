@@ -23,6 +23,10 @@ const STRIP_RULES = [
   // OpenCode Muse models: upstream rejects /chat/completions (500) and max_tokens (400),
   // requires Responses API endpoint and no max_tokens / max_completion_tokens.
   { provider: "opencode", match: /muse/i, drop: ["max_tokens", "max_completion_tokens"] },
+  // Custom OpenAI-compatible providers (Codex App, etc.) reject reasoning_effort /
+  // reasoning — they speak plain OpenAI chat completions without thinking support.
+  // Drop them to avoid HTTP 400 "Unsupported parameter: reasoning_effort". #3008
+  { provider: /openai-compatible|custom/i, drop: ["reasoning_effort", "reasoning"] },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),

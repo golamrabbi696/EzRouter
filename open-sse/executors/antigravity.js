@@ -190,31 +190,6 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  // cloudcode-pa reports exactly when an exhausted quota returns — a real 429 carries
-  // `quotaResetTimeStamp` up to ~150h out. Surface it as resetsAtMs so the model lock
-  // lasts that long instead of expiring on the blind backoff ladder and failing again.
-  // Quotas are per model here, so only the model that ran dry gets locked.
-  parseError(response, bodyText) {
-    if (response.status === 429 && bodyText) {
-      const { resetsAtMs } = parseGoogleQuotaReset(bodyText);
-      let message = bodyText;
-      try {
-        message = JSON.parse(bodyText)?.error?.message || bodyText;
-      } catch { /* keep raw body */ }
-
-      let finalResetMs = resetsAtMs;
-      if (!finalResetMs) {
-        const retryMs = this.parseRetryFromErrorMessage(message);
-        if (retryMs) finalResetMs = Date.now() + retryMs;
-      }
-
-      if (finalResetMs) {
-        return { status: 429, message, resetsAtMs: finalResetMs };
-      }
-    }
-    return super.parseError(response, bodyText);
-  }
-
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
   // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
   buildHeaders(credentials, stream = true, sessionId = null) {

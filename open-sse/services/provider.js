@@ -157,6 +157,10 @@ export function resolveTransport(provider, sourceFormat, modelTargetFormat = nul
   if (modelTargetFormat && (!modelSupportedFormats || modelSupportedFormats.includes(modelTargetFormat))) {
     return transports.find(t => t.format === modelTargetFormat) || null;
   }
+  if (Array.isArray(modelSupportedFormats) && modelSupportedFormats.length) {
+    const supported = transports.find(t => modelSupportedFormats.includes(t.format));
+    if (supported) return supported;
+  }
   return null;
 }
 

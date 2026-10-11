@@ -1,4 +1,4 @@
-# v0.6.17 (2026-10-12)
+# v0.6.18 (2026-10-12)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4644 - #4740)
 - **Security Audit & Invariants**:
@@ -44,6 +44,8 @@
   - **Dashboard Enhancements**: Filtered out shadow custom models colliding with real routed models (`#4727`), mapped combo seat aliases before capability lookup (`#4727`), shipped modality flags to model picker (`#4697`), and hid providers without connectable credentials (`#4679`).
   - **Tool Relevance**: Added flag-gated tool-schema relevance ranking (`#4651`).
   - **Usage & Estimates**: Ensured real provider usage is never overwritten by estimates (`#4665`).
+
+# v0.6.17 (2026-10-07)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4571 - #4644)
 - **Security Audit & Invariants**:

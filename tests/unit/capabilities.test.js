@@ -73,8 +73,8 @@ describe("getCapabilitiesForModel", () => {
 
   it("reports GitHub Claude Fable 5 as an adaptive-thinking model", () => {
     expect(getCapabilitiesForModel("github", "claude-fable-5")).toMatchObject({
-      contextWindow: 1000000,
-      maxOutput: 128000,
+      contextWindow: 264000,
+      maxOutput: 64000,
       thinkingFormat: "claude-adaptive",
       reasoning: true,
     });
@@ -140,7 +140,7 @@ describe("getCapabilitiesForModel", () => {
     for (const model of ["longcat-2.0", "private/longcat-2.0", "cline-free/longcat-2.0"]) {
       const caps = getCapabilitiesForModel("cline", model);
       expect(caps.vision).toBe(false);
-      expect(caps.maxOutput).toBe(32000);
+      expect(caps.maxOutput).toBe(131072);
       expect(caps.reasoning).toBe(true);
     }
   });

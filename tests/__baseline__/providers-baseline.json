@@ -234,6 +234,9 @@
   },
   "clinepass": {
     "baseUrl": "https://api.cline.bot/api/v1/chat/completions",
+    "usage": {
+      "url": "https://api.cline.bot/api/v1/users/me/plan/usage-limits"
+    },
     "headers": {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline"
@@ -832,6 +835,46 @@
       }
     ]
   },
+  "minimax-code-global": {
+    "baseUrl": "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
+    "format": "claude",
+    "thinkingFormat": "claude-adaptive",
+    "headers": {
+      "User-Agent": "MiniMaxAgent",
+      "X-Mavis-Agent-Id": "main"
+    },
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer",
+      "anthropicVersion": true,
+      "hooks": [
+        "minimaxHeaders"
+      ]
+    },
+    "clientId": "mcode-public",
+    "tokenUrl": "https://account.minimax.io/oauth2/token"
+  },
+  "minimax-code": {
+    "baseUrl": "https://agent.minimax.cn/mavis/api/v1/llm/v1/messages",
+    "format": "claude",
+    "thinkingFormat": "claude-adaptive",
+    "headers": {
+      "User-Agent": "MiniMaxAgent",
+      "X-Mavis-Agent-Id": "main"
+    },
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer",
+      "anthropicVersion": true,
+      "hooks": [
+        "minimaxHeaders"
+      ]
+    },
+    "clientId": "mcode-public",
+    "tokenUrl": "https://account.minimax.cn/oauth2/token"
+  },
   "minimax": {
     "baseUrl": "https://api.minimax.io/anthropic/v1/messages",
     "format": "claude",
@@ -1025,7 +1068,9 @@
   },
   "opencode-zen": {
     "baseUrl": "https://opencode.ai/zen/v1/chat/completions",
-    "headers": {},
+    "headers": {
+      "x-opencode-client": "desktop"
+    },
     "usage": {
       "url": "https://opencode.ai/zen/v1/usage"
     },
@@ -1091,6 +1136,11 @@
   "ovh": {
     "baseUrl": "https://ai.endpoints.ovh.com/v1/chat/completions",
     "validateUrl": "https://ai.endpoints.ovh.com/v1/models",
+    "format": "openai"
+  },
+  "paraloncloud": {
+    "baseUrl": "https://paraloncloud.com/v1/chat/completions",
+    "validateUrl": "https://paraloncloud.com/v1/models",
     "format": "openai"
   },
   "perplexity-agent": {
