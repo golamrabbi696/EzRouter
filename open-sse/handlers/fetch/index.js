@@ -79,7 +79,7 @@ async function tryFetch(url, init, timeoutMs) {
     }
     const dispatcher = createPinnedAgent(pinnedIps);
     // redirect: "manual" prevents a public URL redirecting to a private one (SSRF bypass)
-    const res = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: ctrl.signal, redirect: "manual", dispatcher });
+    const res = await fetch(url, { redirect: "manual", ...init, headers: sanitizeHeaders(init.headers), signal: ctrl.signal, dispatcher });
     return { ok: true, res };
   } catch (err) {
     const isAbort = err?.name === "AbortError";
