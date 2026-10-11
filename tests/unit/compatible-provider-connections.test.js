@@ -47,7 +47,7 @@ async function setupTestContext(nodeData) {
 }
 
 function makeNodeRequest(data) {
-  return new Request("https://9router.local/api/provider-nodes", {
+  return new Request("https://ezrouter.local/api/provider-nodes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -55,7 +55,7 @@ function makeNodeRequest(data) {
 }
 
 function makeRequest(provider, name = "Test Connection") {
-  return new Request("https://9router.local/api/providers", {
+  return new Request("https://ezrouter.local/api/providers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

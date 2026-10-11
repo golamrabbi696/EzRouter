@@ -1,6 +1,6 @@
 ---
 name: 9router-web-search
-description: Web and X search via 9Router /v1/search using Tavily / Exa / Parallel / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity / Xquik. Use when the user wants to search the web, find articles, or search public X posts.
+description: Web and X search via EzRouter /v1/search using Tavily / Exa / Parallel / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity / Xquik. Use when the user wants to search the web, find articles, or search public X posts.
 ---
 
 # 9Router — Web Search

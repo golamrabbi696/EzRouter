@@ -1,6 +1,6 @@
 ---
 name: 9router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents / Parallel Extract. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+description: Fetch URL → markdown / text / HTML via EzRouter /v1/web/fetch using Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents / Parallel Extract. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
 ---
 
 # 9Router — Web Fetch
