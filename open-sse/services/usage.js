@@ -24,7 +24,6 @@ import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
-import { getCommandCodeUsage } from "./usage/commandcode.js";
 import { getClinepassUsage } from "./usage/clinepass.js";
 import {
   getIflowUsage,
