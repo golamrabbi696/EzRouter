@@ -1,4 +1,49 @@
-# v0.6.17 (2026-10-07)
+# v0.6.17 (2026-10-12)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4644 - #4740)
+- **Security Audit & Invariants**:
+  - **REJECTED PR #4644**: Unvetted fork rebrand ("67Router") and arbitrary binary blob injection strictly rejected ($ref fix preserved).
+  - **REJECTED PR #4668**: Third-party spam fork ("DurinDoor") rejected.
+  - **REJECTED PR #4680**: package-lock.json corruption rejected.
+  - **REJECTED PR #4699**: Critical security hazard rejected — disallowed local shell execution (`/bin/sh -c`) and arbitrary filesystem write/delete primitives in upstream executor.
+  - **SKIPPED PR #4652**: Clashed with EzRouter's noAuth model contract.
+  - **SKIPPED PR #4667**: Conflicting unmerged 1.6k-line Gemini rewrite.
+  - **SKIPPED PR #4678**: Docker doc changes unnecessary for core.
+  - **SKIPPED PR #4704**: Unmerged experimental scraping of artificialanalysis.ai with 20MB HTML parser.
+  - **SKIPPED PR #4709**: Conflicting migration and breaking repo schema.
+  - **SKIPPED PR #4719**: Unmerged massive conflicting rewrite superseded by modular PRs.
+  - **SKIPPED PR #4725**: Already implemented in EzRouter in an enhanced form supporting both `ezrouter` and `9router`.
+  - **Preserved Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `ezrouter`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`) across all configurations, CLI builds, and tests.
+
+- **New Providers, Models & Integrations**:
+  - **ParalonCloud**: Added ParalonCloud as an API-key provider with OpenAI-compatible chat and multilingual embedding (`#4740`).
+  - **Parallel Search & Fetch**: Added Parallel web provider supporting web search and extract with native request fields (`#4676`, `#4685`).
+  - **OpenCode Go & Zen**: Routed `claude-haiku-5-5` to `/messages` with adaptive thinking (`#4727`), added missing OpenCode Free reasoning entries (`space-bunny`, `big-pickle`, `exo-free`, etc.) (`#4737`), completed upstream header fingerprinting (`#4723`), and floored `max_output_tokens` at Console minimum of 16 (`#4646`).
+  - **Grok 4.6 & 4.7**: Added Grok 4.6/4.7 models and stream safety timer (`#4666`).
+  - **Ollama Cloud Quotas**: Read Ollama Cloud quota directly from `/api/balance` (`#4669`).
+  - **ClinePass**: Read live catalog from recommended-models feed and surfaced plan quota on the Usage page (`#4674`, `#4675`).
+  - **Antigravity IDE**: Bumped IDE version fingerprint to 2.22.0 (`#4729`), preserved inlineData and snake_case `inline_data` in image_gen requests for multimodal editing (`#4724`), and refreshed model catalog (`#4654`).
+  - **Exa & Tavily**: Supported full request fields and native request compatibility (`#4685`).
+  - **CommandCode**: Clamped `max_tokens` to 200k upstream schema limit (`#4691`) and pinned `claude-haiku-5-5` limits (`#4727`).
+  - **Hermes**: Added per-profile configuration across API, Dashboard, and CLI (`#4660`).
+
+- **Format Translation & Wire Protocols**:
+  - **Responses API Continuations**: Repaired orphan tool messages for Responses continuations by synthesizing assistant tool_calls pairs (`#4711`).
+  - **Claude Thinking & Formatting**: Dropped empty and whitespace-only thinking blocks across both passthrough and translated request paths (`#4727`), stripped `context_management` for non-Anthropic providers (`#4727`), and parsed Anthropic SSE with Claude parser on non-streaming path (`#4695`).
+  - **Cursor**: Recovered long sessions from empty AgentService turns, held `strictProxy` on h2 path, resolved Auto to default agent model, locked KV ack echo, and added conversation lineage helpers (`#4690`, `#4692`, `#4694`, `#4696`, `#4698`).
+  - **Codex**: Declared hosted web_search when history contains `web_search_call` (`#4702`), and advertised Codex v1 multi-agent tools (`#4654`).
+  - **Bedrock & Grok**: Stripped Grok tool schema keywords for Bedrock compatibility (`#4653`).
+  - **GitHub Responses**: Stripped unsupported temperature on Responses requests (`#4706`).
+  - **Kiro MITM**: Supported Kiro `/responses` endpoint via OpenAI Responses API (`#4717`).
+
+- **Performance, Routing & Dashboard**:
+  - **Stream Performance**: Coalesced SSE frames to minimize socket writes, replaced per-chunk timers with low-frequency watchdog interval, and preserved TTFT and empty stream guards (`#4721`, `#4658`).
+  - **Account Pinning**: Added `x-connection-id` and `x-ez-connection-id` account pinning across chat, combos, and fusion, with copyable connection ID chips in dashboard (`#4718`).
+  - **Model Combos**: Advanced to next combo model when account runs out of credits (`#4715`), and allowed saving combo edits without changing name (`#4716`).
+  - **Compatible Provider ID Suffixes**: Supported custom provider ID suffixes on OpenAI and Anthropic compatible nodes (`#4710`).
+  - **Dashboard Enhancements**: Filtered out shadow custom models colliding with real routed models (`#4727`), mapped combo seat aliases before capability lookup (`#4727`), shipped modality flags to model picker (`#4697`), and hid providers without connectable credentials (`#4679`).
+  - **Tool Relevance**: Added flag-gated tool-schema relevance ranking (`#4651`).
+  - **Usage & Estimates**: Ensured real provider usage is never overwritten by estimates (`#4665`).
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4571 - #4644)
 - **Security Audit & Invariants**:
