@@ -82,6 +82,11 @@ export const TABLES = {
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
+      expiresAt: "TEXT",
+      tokenLimit: "INTEGER",
+      tokensUsed: "INTEGER DEFAULT 0",
+      tokensReserved: "INTEGER DEFAULT 0",
+      allowedModels: "TEXT",
       createdAt: "TEXT NOT NULL",
       // Nullable JSON scope ({ providers, models }). NULL (the default for every
       // pre-existing key) means fully unrestricted — no code path checks this
