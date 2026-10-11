@@ -10,7 +10,7 @@ export const GROK_CLI_PAGER_USER_AGENT = `grok-pager/${GROK_CLI_VERSION} grok-sh
 // Grok CLI models that accept `reasoning.effort`. Kept as an explicit allowlist:
 // capabilities.js reports `reasoning: true` for every grok-* model, including
 // grok-build and grok-composer-2.5-fast, which reject the field (#2538, #2539).
-const GROK_CLI_REASONING_EFFORT_MODELS = /^grok-4\.[56](?:$|-)/;
+const GROK_CLI_REASONING_EFFORT_MODELS = /^grok-4\.[567](?:$|-)/;
 
 export function supportsGrokCliReasoningEffort(model) {
   // ponytail: unknown models omit effort until live metadata reaches dispatch.
