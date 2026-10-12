@@ -15,14 +15,19 @@ const DEFAULT_CONFIG = {
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
-const APP_NAME = "9router";
+const APP_NAME = "ezrouter";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
-  }
-  return path.join(os.homedir(), `.${APP_NAME}`);
+  const ezDir = process.platform === "win32"
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "ezrouter")
+    : path.join(os.homedir(), ".ezrouter");
+  if (fs.existsSync(ezDir)) return ezDir;
+  const legacyDir = process.platform === "win32"
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
+    : path.join(os.homedir(), ".9router");
+  if (fs.existsSync(legacyDir)) return legacyDir;
+  return ezDir;
 }
 
 const MACHINE_ID_FILE = path.join(getDataDir(), "machine-id");

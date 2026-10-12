@@ -44,6 +44,10 @@
   - **Dashboard Enhancements**: Filtered out shadow custom models colliding with real routed models (`#4727`), mapped combo seat aliases before capability lookup (`#4727`), shipped modality flags to model picker (`#4697`), and hid providers without connectable credentials (`#4679`).
   - **Tool Relevance**: Added flag-gated tool-schema relevance ranking (`#4651`).
   - **Usage & Estimates**: Ensured real provider usage is never overwritten by estimates (`#4665`).
+  - **CLI Background & macOS Autostart**:
+    - Fixed macOS terminal close issue: selecting "Hide to Tray" now cleanly spawns a detached background process and terminates the foreground terminal session, allowing the terminal window to be closed without process-termination dialogs or terminating EzRouter.
+    - Fixed macOS startup on boot: corrected LaunchAgent label (`com.ezrouter.autostart`), user data directory (`~/.ezrouter`), stable Node path resolution, and LaunchAgent registration so EzRouter starts automatically with macOS.
+    - Updated CLI client and codex bridge tokens to read from `~/.ezrouter` with fallback to legacy `~/.9router`.
 
 # v0.6.17 (2026-10-07)
 

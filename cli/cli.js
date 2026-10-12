@@ -877,10 +877,10 @@ function startServer(updatePromise) {
     waitServerReady(port).then(() => {
       initTrayIcon();
       if (homebrewManaged) {
-        console.log("\n💡 Router is running without a terminal interface.");
+        console.log("\n💡 EzRouter is running without a terminal interface.");
         console.log("   Homebrew installations do not enable the unsigned x86-only tray helper.\n");
       } else {
-        console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
+        console.log("\n💡 EzRouter is now running in system tray. Close this terminal if you want.");
         console.log("   Right-click tray icon to open dashboard or quit.\n");
       }
     });
@@ -925,29 +925,20 @@ function startServer(updatePromise) {
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
 
-          // Enable auto startup on OS boot, but only the first time. Doing it
-          // on every hide undid both ways of turning it off (#3628).
+          // Enable auto startup on OS boot
           try {
             const { ensureAutoStart } = require("./src/cli/tray/autostart");
             ensureAutoStart(__filename);
           } catch (e) { }
 
-          if (process.platform === "darwin") {
-            // macOS: keep current process alive — spawning a detached child puts
-            // it outside the login session so NSStatusItem silently fails.
-            process.removeAllListeners("SIGHUP");
-            process.on("SIGHUP", () => {});
+          // Kill foreground tray and wait for Go binary to fully exit before spawning
+          // background process (ensures NSStatusItem is released on macOS)
+          try {
+            const { killTray } = require("./src/cli/tray/tray");
+            await killTray();
+          } catch (e) { }
+          await new Promise((r) => setTimeout(r, 200));
 
-            console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
-            console.log(`   Server: http://${displayHost}:${port}`);
-            console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
-
-            // Tray already init'd at startup — just keep event loop alive.
-            return;
-          }
-
-          // Windows/Linux: spawn detached bgProcess (systray works fine in child)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
           const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {

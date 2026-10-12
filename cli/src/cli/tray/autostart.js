@@ -3,8 +3,8 @@ const path = require("path");
 const os = require("os");
 const { execSync } = require("child_process");
 
-const APP_NAME = "9router";
-const APP_LABEL = "com.9router.autostart";
+const APP_NAME = "ezrouter";
+const APP_LABEL = "com.ezrouter.autostart";
 
 /** Same data directory the CLI's api/client.js uses. */
 function getDataDir() {
@@ -16,33 +16,36 @@ function getDataDir() {
 }
 
 /**
- * Marks that the automatic first-run enable has already happened.
+ * Marks whether autostart was enabled or explicitly disabled.
  *
  * Without it, switching to tray mode re-enabled autostart on every launch, so
  * neither way of turning it off survived: the tray's "Disable" was undone by
  * the next hide, and deleting the startup entry by hand was undone too (#3628).
- * Once this file exists the automatic path never writes again; only an explicit
- * enable does.
+ * We store "enabled" or "disabled" in this file.
  */
 function autostartDecidedFile() {
   return path.join(getDataDir(), "autostart-decided");
 }
 
-function hasDecidedAutoStart() {
+function getAutoStartDecision() {
   try {
-    return fs.existsSync(autostartDecidedFile());
+    const file = autostartDecidedFile();
+    if (!fs.existsSync(file)) return null;
+    return fs.readFileSync(file, "utf8").trim();
   } catch (err) {
-    // Unreadable data dir: treat as decided rather than write an entry the
-    // user has no recorded way of refusing.
-    return true;
+    return "decided";
   }
 }
 
-function rememberAutoStartDecision() {
+function hasDecidedAutoStart() {
+  return getAutoStartDecision() !== null;
+}
+
+function rememberAutoStartDecision(state = "enabled") {
   try {
     const file = autostartDecidedFile();
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, new Date().toISOString());
+    fs.writeFileSync(file, state);
   } catch (err) {
     // Best-effort: a data dir we cannot write is not a reason to fail the
     // enable/disable the user actually asked for.
@@ -98,7 +101,7 @@ function enableAutoStart(cliPath) {
     if (platform === "darwin") ok = enableMacOS(cliPath);
     if (platform === "win32") ok = enableWindows(cliPath);
     if (platform === "linux") ok = enableLinux(cliPath);
-    if (ok) rememberAutoStartDecision();
+    if (ok) rememberAutoStartDecision("enabled");
     return ok;
   } catch (err) {
     // Silent fail — autostart is optional
@@ -107,14 +110,14 @@ function enableAutoStart(cliPath) {
 }
 
 /**
- * Enable autostart the first time only, for callers that are not the user
- * asking — switching to tray mode, for instance. Once the choice has been
- * made, by this function or by an explicit enable/disable, it is left alone.
+ * Enable autostart on hide/tray startup if not already enabled, unless the
+ * user explicitly disabled it.
  *
  * @returns {boolean} whether an entry was written on this call
  */
 function ensureAutoStart(cliPath) {
-  if (hasDecidedAutoStart()) return false;
+  if (isAutoStartEnabled()) return false;
+  if (getAutoStartDecision() === "disabled") return false;
   return enableAutoStart(cliPath);
 }
 
@@ -124,9 +127,8 @@ function ensureAutoStart(cliPath) {
  */
 function disableAutoStart() {
   const platform = process.platform;
-  // Record the choice first: even if removing the entry throws, the automatic
-  // path must not treat the next launch as a fresh install and put it back.
-  rememberAutoStartDecision();
+  // Record explicit disable choice first
+  rememberAutoStartDecision("disabled");
   try {
     if (platform === "darwin") return disableMacOS();
     if (platform === "win32") return disableWindows();
@@ -207,18 +209,29 @@ function enableMacOS(cliPath) {
     fs.mkdirSync(launchAgentsDir, { recursive: true });
   }
 
-  const nodePath = process.execPath;
+  // Clean up legacy 9router LaunchAgent if present
+  const legacyPlist = path.join(launchAgentsDir, "com.9router.autostart.plist");
+  if (fs.existsSync(legacyPlist)) {
+    try { execSync(`launchctl unload "${legacyPlist}"`, { stdio: "ignore" }); } catch (e) {}
+    try { fs.unlinkSync(legacyPlist); } catch (e) {}
+  }
+
+  let nodePath = process.execPath;
+  if (process.platform === "darwin") {
+    // Prefer stable symlink over Cellar versioned path to survive brew upgrade
+    if (nodePath.includes("/Cellar/node") && fs.existsSync("/opt/homebrew/bin/node")) {
+      nodePath = "/opt/homebrew/bin/node";
+    } else if (nodePath.includes("/Cellar/node") && fs.existsSync("/usr/local/bin/node")) {
+      nodePath = "/usr/local/bin/node";
+    }
+  }
+
   const routerScript = getCliJsPath(cliPath);
   // Don't write a broken plist that references a non-existent script.
   if (!routerScript) return false;
 
-  // Invoke node + cli.js directly with absolute paths — no shell wrapper.
-  // The previous design ran `zsh -l -c "..."` so a login shell would source
-  // nvm/.zshrc and set PATH; that's fragile (nvm.sh sourcing varies by user,
-  // some setups don't put node on PATH from a non-interactive login shell).
-  // EnvironmentVariables.PATH explicitly includes node's bin dir so child
-  // processes spawned by cli.js (npm install at runtime, etc.) resolve.
-  const launchPath = `${path.dirname(nodePath)}:/usr/local/bin:/usr/bin:/bin`;
+  // Include node bin dir and homebrew/usr paths in launch PATH
+  const launchPath = `${path.dirname(nodePath)}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
 
   const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -243,9 +256,9 @@ function enableMacOS(cliPath) {
     <key>KeepAlive</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/tmp/9router.log</string>
+    <string>/tmp/ezrouter.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/9router.error.log</string>
+    <string>/tmp/ezrouter.error.log</string>
 </dict>
 </plist>`;
 
@@ -277,6 +290,7 @@ function enableMacOS(cliPath) {
 
 function disableMacOS() {
   const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", `${APP_LABEL}.plist`);
+  const legacyPlist = path.join(os.homedir(), "Library", "LaunchAgents", "com.9router.autostart.plist");
 
   // Don't kill ourselves: when the current process is the running agent,
   // `launchctl unload` would send SIGTERM and the user clicking
@@ -287,10 +301,18 @@ function disableMacOS() {
     try {
       execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
     } catch (e) {}
+    if (fs.existsSync(legacyPlist)) {
+      try {
+        execSync(`launchctl unload "${legacyPlist}"`, { stdio: "ignore" });
+      } catch (e) {}
+    }
   }
 
   if (fs.existsSync(plistPath)) {
     fs.unlinkSync(plistPath);
+  }
+  if (fs.existsSync(legacyPlist)) {
+    try { fs.unlinkSync(legacyPlist); } catch (e) {}
   }
   return true;
 }
@@ -308,7 +330,7 @@ function enableWindows(cliPath) {
   if (!routerScript) return false;
 
   // Run node + cli.js directly, hidden window. Avoids the fragile
-  // `9router.cmd` lookup that depended on the npm prefix path.
+  // `ezrouter.cmd` lookup that depended on the npm prefix path.
   const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
 WshShell.Run """${nodePath}"" ""${routerScript}"" --tray --skip-update", 0, False
 `;
@@ -341,8 +363,8 @@ function enableLinux(cliPath) {
 
   const desktopContent = `[Desktop Entry]
 Type=Application
-Name=9Router
-Comment=9Router API Proxy
+Name=EzRouter
+Comment=EzRouter API Proxy
 Exec=${nodePath} ${routerScript} --tray --skip-update
 Hidden=false
 NoDisplay=false
