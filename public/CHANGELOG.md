@@ -1,3 +1,15 @@
+# v0.6.21 (2026-10-12)
+
+## Top Header Menu Tray Persistence & Terminal Backgrounding
+- **macOS Top Menu Bar Tray Icon Preservation**:
+  - Fixed issue where selecting "Hide to Tray (Background)" caused the EzRouter icon to be removed from the macOS top header menu bar.
+  - Eliminated premature `killTray()` and foreground server termination: the active `NSStatusItem` in the macOS menu bar and server on port `20126` remain running continuously without port restart delays or race conditions.
+- **Terminal Decoupling & Background Mode**:
+  - Switched "Hide to Tray" to keep the terminal decoupled: ignored `SIGHUP` and detached stdio error handlers so the terminal can either stay open displaying a clean status box or be closed at any time without terminating EzRouter or the top header menu icon.
+  - In `--tray` mode, initialized tray icon immediately on startup for instant availability in the macOS menu bar.
+- **Orphan Process Cleanup**:
+  - Enhanced `killAllAppProcesses` to clean up orphaned `tray_darwin_release`, `tray_linux_release`, and `tray_windows` helpers from previous killed sessions to prevent ghost items.
+
 # v0.6.20 (2026-10-12)
 
 ## Background Process Port Handoff & LaunchAgent Lifecycle Fixes

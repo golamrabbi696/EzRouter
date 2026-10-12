@@ -361,7 +361,10 @@ function killAllAppProcesses(appPort) {
               } catch {}
             }
 
-            if (isCliProcess || isNextServer) {
+            const isTrayProcess =
+              cmd.includes("tray_darwin_release") || cmd.includes("tray_linux_release");
+
+            if (isCliProcess || isNextServer || isTrayProcess) {
               pids.push(pid);
             }
           });
@@ -867,15 +870,25 @@ function startServer(updatePromise) {
 
   // Tray-only mode: no TUI, just tray icon
   if (trayMode) {
-    // Ignore SIGHUP so macOS terminal close doesn't kill the background tray process
+    // Ignore SIGHUP and protect stdio so closing the terminal does not kill the background tray process
     process.removeAllListeners("SIGHUP");
     process.on("SIGHUP", () => {});
+    if (process.stdout && process.stdout.on) process.stdout.on("error", () => {});
+    if (process.stderr && process.stderr.on) process.stderr.on("error", () => {});
+    try {
+      if (process.stdin) {
+        if (process.stdin.pause) process.stdin.pause();
+        if (process.stdin.unref) process.stdin.unref();
+      }
+    } catch (e) { }
 
     console.log(`\n🚀 ${pkg.name} v${pkg.version}`);
     console.log(`Server: http://${displayHost}:${port}`);
 
+    // Initialize tray immediately
+    initTrayIcon();
+
     waitServerReady(port).then(() => {
-      initTrayIcon();
       if (homebrewManaged) {
         console.log("\n💡 EzRouter is running without a terminal interface.");
         console.log("   Homebrew installations do not enable the unsigned x86-only tray helper.\n");
@@ -931,36 +944,29 @@ function startServer(updatePromise) {
             ensureAutoStart(__filename);
           } catch (e) { }
 
-          // Kill foreground tray and wait for Go binary to fully exit before spawning
-          // background process (ensures NSStatusItem is released on macOS)
+          // Protect stdio and ignore SIGHUP so terminal remains decoupled without killing tray or server
+          process.removeAllListeners("SIGHUP");
+          process.on("SIGHUP", () => {});
+          if (process.stdout && process.stdout.on) process.stdout.on("error", () => {});
+          if (process.stderr && process.stderr.on) process.stderr.on("error", () => {});
           try {
-            const { killTray } = require("./src/cli/tray/tray");
-            await killTray();
+            if (process.stdin) {
+              if (process.stdin.pause) process.stdin.pause();
+              if (process.stdin.unref) process.stdin.unref();
+            }
           } catch (e) { }
 
-          // Kill foreground server cleanly to free port before bgProcess starts
-          if (server && server.pid) {
-            try { process.kill(server.pid, "SIGKILL"); } catch (e) { }
-            try { process.kill(-server.pid, "SIGKILL"); } catch (e) { }
-          }
-          await new Promise((r) => setTimeout(r, 300));
+          console.log(`\n======================================================`);
+          console.log(`  🔔 EzRouter is running in Background / Tray mode`);
+          console.log(`======================================================\n`);
+          console.log(`  🚀 Server:    http://${displayHost}:${port}`);
+          console.log(`  🌐 Dashboard: http://${displayHost}:${port}/dashboard`);
+          console.log(`  🔔 Status:    Active in top header menu bar (PID: ${process.pid})\n`);
+          console.log(`💡 EzRouter icon is active in your top header menu bar.`);
+          console.log(`   Terminal will remain in background mode. You can close this terminal at any time.`);
+          console.log(`   Right-click the top header icon to open dashboard or quit.\n`);
 
-          console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
-
-          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-            env: { ...process.env }
-          });
-          bgProcess.unref();
-
-          console.log(`🔔 EzRouter is now running in background (PID: ${bgProcess.pid})`);
-          console.log(`   Server: http://${displayHost}:${port}`);
-          console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
-
-          isShuttingDown = true;
-          process.exit(0);
+          return;
         } else if (choice === "exit") {
           isShuttingDown = true;
           console.log("\nExiting...");
