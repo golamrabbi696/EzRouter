@@ -150,16 +150,7 @@ function isAutoStartEnabled() {
   try {
     if (platform === "darwin") {
       const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", `${APP_LABEL}.plist`);
-      if (!fs.existsSync(plistPath)) return false;
-      try {
-        execSync(`launchctl list ${APP_LABEL}`, {
-          stdio: ["ignore", "ignore", "ignore"],
-          timeout: 3000
-        });
-        return true;
-      } catch (e) {
-        return false;
-      }
+      return fs.existsSync(plistPath);
     } else if (platform === "win32") {
       const startupPath = path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${APP_NAME}.vbs`);
       return fs.existsSync(startupPath);
@@ -263,28 +254,6 @@ function enableMacOS(cliPath) {
 </plist>`;
 
   fs.writeFileSync(plistPath, plistContent);
-
-  // If we're the running agent already, launchctl unload/load would send
-  // ourselves SIGTERM. Skip it — the plist file is updated on disk and
-  // launchd will pick it up at next login. isAutoStartEnabled() will still
-  // return true because launchctl already has the agent loaded.
-  if (isAgentSelfMacOS()) {
-    return true;
-  }
-
-  // Register with launchd in the current session. Without this, the agent
-  // only takes effect on the next user login and the user has no signal that
-  // anything actually happened. `unload` first defends against re-enable
-  // replacing an existing plist.
-  try {
-    execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
-  } catch (e) {}
-  try {
-    execSync(`launchctl load -w "${plistPath}"`, { stdio: "ignore" });
-  } catch (e) {
-    // Even if load fails, the plist is on disk and will be picked up at next
-    // login; report success based on the file write.
-  }
   return true;
 }
 

@@ -1,3 +1,15 @@
+# v0.6.20 (2026-10-12)
+
+## Background Process Port Handoff & LaunchAgent Lifecycle Fixes
+- **Port Conflict & Process Handoff Fix**:
+  - In "Hide to Tray", explicitly terminate foreground server process (`server.pid` and `-server.pid`) and wait 300ms before spawning background daemon, preventing port `20126` collision/binding conflicts during background handoff.
+  - Eliminated premature `cleanup()` call in parent process during hide to preserve tunnel and proxy state for the background daemon.
+- **LaunchAgent Load Isolation**:
+  - Removed immediate `launchctl load` execution during `enableMacOS` to prevent launchd from launching a duplicate foreground-competing instance via `<RunAtLoad>`, ensuring LaunchAgent only launches upon login/boot.
+  - Simplified `isAutoStartEnabled()` on macOS to file presence check (`~/Library/LaunchAgents/com.ezrouter.autostart.plist`), matching Windows `.vbs` and Linux `.desktop` behavior.
+- **Production Packaging & Release**:
+  - Re-verified complete offline CLI packaging, Homebrew test suite, and baseline provider snapshot parity.
+
 # v0.6.19 (2026-10-12)
 
 ## macOS Backgrounding, LaunchAgent Autostart & CLI Hardening

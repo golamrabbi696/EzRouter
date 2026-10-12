@@ -937,7 +937,13 @@ function startServer(updatePromise) {
             const { killTray } = require("./src/cli/tray/tray");
             await killTray();
           } catch (e) { }
-          await new Promise((r) => setTimeout(r, 200));
+
+          // Kill foreground server cleanly to free port before bgProcess starts
+          if (server && server.pid) {
+            try { process.kill(server.pid, "SIGKILL"); } catch (e) { }
+            try { process.kill(-server.pid, "SIGKILL"); } catch (e) { }
+          }
+          await new Promise((r) => setTimeout(r, 300));
 
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
@@ -953,8 +959,7 @@ function startServer(updatePromise) {
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
-          // cleanup() kills server so bgProcess can claim the port fresh
-          cleanup();
+          isShuttingDown = true;
           process.exit(0);
         } else if (choice === "exit") {
           isShuttingDown = true;
