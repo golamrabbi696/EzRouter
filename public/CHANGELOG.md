@@ -1,3 +1,19 @@
+# v0.6.19 (2026-10-12)
+
+## macOS Backgrounding, LaunchAgent Autostart & CLI Hardening
+- **Terminal Backgrounding & Detached Spawn (macOS)**:
+  - Fixed terminal close termination issue: selecting "Hide to Tray" now cleanly terminates the foreground terminal session and spawns a fully detached background process with `systray2`, allowing the terminal window to be closed without process-termination dialogs or terminating EzRouter.
+  - Gracefully released menu bar `NSStatusItem` via IPC before background launch to eliminate race conditions and duplicated tray icons.
+- **macOS Startup on Boot (LaunchAgent)**:
+  - Fixed auto-start on macOS login/boot by setting correct app label (`com.ezrouter.autostart`), user data directory (`~/.ezrouter`), stable Node path resolution (`/opt/homebrew/bin/node` symlink to survive `brew upgrade`), and `launchctl` registration.
+  - Automatically cleaned up legacy `com.9router.autostart.plist` to prevent orphan agent collisions.
+- **Persistent Decision State & Path Resolution**:
+  - Upgraded `autostart-decided` tracking to store explicit states (`enabled` / `disabled`) so manual disable in tray menu is preserved while unconfigured installations automatically self-heal.
+  - Updated CLI client (`cli/src/cli/api/client.js`) and Codex bridge tokens (`cli/src/cli/commands/codexAuthToken.js`) to prioritize `~/.ezrouter` with resilient fallback to legacy `~/.9router`.
+- **Branding & Logging**:
+  - Rebranded remaining terminal logs and startup notices from 9Router to EzRouter.
+  - Redirected macOS LaunchAgent standard out and error logs to `/tmp/ezrouter.log` and `/tmp/ezrouter.error.log`.
+
 # v0.6.18 (2026-10-12)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4644 - #4740)
@@ -44,10 +60,6 @@
   - **Dashboard Enhancements**: Filtered out shadow custom models colliding with real routed models (`#4727`), mapped combo seat aliases before capability lookup (`#4727`), shipped modality flags to model picker (`#4697`), and hid providers without connectable credentials (`#4679`).
   - **Tool Relevance**: Added flag-gated tool-schema relevance ranking (`#4651`).
   - **Usage & Estimates**: Ensured real provider usage is never overwritten by estimates (`#4665`).
-  - **CLI Background & macOS Autostart**:
-    - Fixed macOS terminal close issue: selecting "Hide to Tray" now cleanly spawns a detached background process and terminates the foreground terminal session, allowing the terminal window to be closed without process-termination dialogs or terminating EzRouter.
-    - Fixed macOS startup on boot: corrected LaunchAgent label (`com.ezrouter.autostart`), user data directory (`~/.ezrouter`), stable Node path resolution, and LaunchAgent registration so EzRouter starts automatically with macOS.
-    - Updated CLI client and codex bridge tokens to read from `~/.ezrouter` with fallback to legacy `~/.9router`.
 
 # v0.6.17 (2026-10-07)
 
