@@ -333,7 +333,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined) {
+function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined, targetFormat = undefined) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -408,7 +408,9 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined)
     case "zai": {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
-      body.thinking = { type: "enabled" };
+      // Always-on models already reason without an enable marker. An incomplete
+      // marker is rejected by Anthropic-wire upstreams that require budget_tokens.
+      if (canDisable || targetFormat !== "claude") body.thinking = { type: "enabled" };
       // reasoning_effort is only read by z.ai from GLM-5.2 onward — older GLM ignores it
       // (see thinkingEffortSupported in capabilities.js). Skip on unsupported models so we
       // don't send a field the API doesn't recognize.
@@ -538,6 +540,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, provider, cleanModel, display);
+  applyFormat(fmt, body, cfg, caps, provider, cleanModel, display, targetFormat);
   return body;
 }

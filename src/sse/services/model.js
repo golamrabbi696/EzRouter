@@ -79,6 +79,18 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
+  // Check if any compatible provider node advertises this model without prefix
+  const allNodes = await getProviderNodes();
+  if (Array.isArray(allNodes)) {
+    const matchedNode = allNodes.find((node) => {
+      if (!Array.isArray(node.models)) return false;
+      return node.models.some((m) => (typeof m === "string" ? m : m.id) === parsed.model);
+    });
+    if (matchedNode) {
+      return { provider: matchedNode.id, model: parsed.model };
+    }
+  }
+
   // Bare (provider-less) model name: resolve to whichever provider actually
   // serves it (custom registry → static catalog → opencode free catalog),
   // before the generic prefix-inference fallback can blind-route it to the
