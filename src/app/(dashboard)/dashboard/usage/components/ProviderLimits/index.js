@@ -12,6 +12,7 @@ import {
   calculatePercentage,
   filterQuotasByVisibility,
   getHiddenQuotaRows,
+  setQuotaHidden,
   getQuotaVisibilityKey,
   getConnectionLabel,
   getCodexPlan,
@@ -601,8 +602,9 @@ export default function ProviderLimits() {
 
     try {
       const visibleConnections = await fetchConnections(page);
+      const toFetch = visibleConnections.filter(shouldFetch);
 
-      setLoading(buildLoadingState(visibleConnections));
+      setLoading(buildLoadingState(toFetch));
       setErrors((prev) =>
         filterQuotaStateByConnections(prev, visibleConnections),
       );
@@ -611,9 +613,7 @@ export default function ProviderLimits() {
       );
 
       await Promise.all(
-        visibleConnections
-          .filter(shouldFetch)
-          .map((conn) => fetchQuota(conn.id, conn.provider)),
+        toFetch.map((conn) => fetchQuota(conn.id, conn.provider)),
       );
 
       setLastUpdated(new Date());
@@ -749,62 +749,12 @@ export default function ProviderLimits() {
     }
   }, []);
 
-  const handleHideQuota = useCallback((provider, quota) => {
-    const key = getQuotaVisibilityKey(quota);
-    if (!provider || !key) return;
-
-    const previous = quotaVisibility;
-    const providerVisibility = previous[provider] || {};
-    const hidden = new Set(providerVisibility.hidden || []);
-    hidden.add(key);
-    if (provider === "antigravity") {
-      if (key === "gemini") {
-        for (const k of hidden) {
-          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
-        }
-      } else if (key === "claude") {
-        for (const k of hidden) {
-          if (k.startsWith("claude-")) hidden.delete(k);
-        }
-      }
-    }
-    const next = {
-      ...previous,
-      [provider]: {
-        ...providerVisibility,
-        hidden: [...hidden],
-      },
-    };
-    updateQuotaVisibility(next, previous);
+  const handleHideQuota = useCallback((provider, connectionId, quota) => {
+    updateQuotaVisibility(setQuotaHidden(provider, connectionId, quota, quotaVisibility, true), quotaVisibility);
   }, [quotaVisibility, updateQuotaVisibility]);
 
-  const handleShowQuota = useCallback((provider, quota) => {
-    const key = getQuotaVisibilityKey(quota);
-    if (!provider || !key) return;
-
-    const previous = quotaVisibility;
-    const providerVisibility = previous[provider] || {};
-    const hidden = new Set(providerVisibility.hidden || []);
-    hidden.delete(key);
-    if (provider === "antigravity") {
-      if (key === "gemini") {
-        for (const k of hidden) {
-          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
-        }
-      } else if (key === "claude") {
-        for (const k of hidden) {
-          if (k.startsWith("claude-")) hidden.delete(k);
-        }
-      }
-    }
-    const next = {
-      ...previous,
-      [provider]: {
-        ...providerVisibility,
-        hidden: [...hidden],
-      },
-    };
-    updateQuotaVisibility(next, previous);
+  const handleShowQuota = useCallback((provider, connectionId, quota) => {
+    updateQuotaVisibility(setQuotaHidden(provider, connectionId, quota, quotaVisibility, false), quotaVisibility);
   }, [quotaVisibility, updateQuotaVisibility]);
 
   // One owner for both intervals. `refreshAll` is read through a ref so a new
@@ -1209,8 +1159,8 @@ export default function ProviderLimits() {
           const isUpdatingFastMode = fastModeUpdatingId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit || isUpdatingFastMode;
           const rawQuotas = quota?.quotas || [];
-          const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
-          const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
+          const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility, conn.id);
+          const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility, conn.id);
           const quotaPauseInfo = getQuotaPauseInfo(conn);
 
           return (
@@ -1503,7 +1453,7 @@ export default function ProviderLimits() {
                       showSortLabel={
                         conn.provider === "codex" && quotaSortMode !== "default"
                       }
-                      onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
+                      onHideQuota={(quotaRow) => handleHideQuota(conn.provider, conn.id, quotaRow)}
                     />
                     {conn.lastQuotaSnapshot?.windows?.length > 0 && (
                       <div className="mt-2 border-t border-black/5 pt-2 dark:border-white/5">
@@ -1576,7 +1526,7 @@ export default function ProviderLimits() {
                         <button
                           key={getQuotaVisibilityKey(quotaRow)}
                           type="button"
-                          onClick={() => handleShowQuota(conn.provider, quotaRow)}
+                          onClick={() => handleShowQuota(conn.provider, conn.id, quotaRow)}
                           className="shrink-0 rounded-md border border-black/10 px-1.5 py-0.5 transition-colors hover:bg-black/5 hover:text-text-primary dark:border-white/10 dark:hover:bg-white/5"
                           title="Show this quota row"
                         >

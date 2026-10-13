@@ -143,13 +143,36 @@ export default function QuotaTable({
               const colors = isCreditBalance
                 ? { text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500", bgLight: "bg-blue-500/10", emoji: "💰" }
                 : getColorClasses(quota.remaining);
-              const countdown = formatResetTime(quota.resetAt);
-              const resetDisplay = formatResetTimeDisplay(quota.resetAt);
+              const countdown = quota.neverExpires ? "-" : formatResetTime(quota.resetAt);
+              const seeDetails = !quota.neverExpires && !quota.resetAt && Boolean(quota.detailUrl);
+              const resetDisplay = quota.neverExpires
+                ? "Never expires"
+                : seeDetails
+                  ? "See details"
+                  : formatResetTimeDisplay(quota.resetAt);
+              const resetSecondaryText = seeDetails && quota.detailUrl ? quota.detailUrl : resetDisplay;
               // recurring defaults true: a missing flag means the quota
               // refreshes at resetAt. Bonus/one-shot packs set recurring:false
               // and their resetAt is a hard expiry, so word it as "expires".
               const recurring = quota.recurring !== false;
               const countdownLabel = recurring ? `in ${countdown}` : `expires in ${countdown}`;
+
+              const renderResetCell = (className) =>
+                seeDetails ? (
+                  <a
+                    href={quota.detailUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${className} inline-flex items-center gap-0.5 hover:text-text-primary hover:underline`}
+                    title={`Open usage details: ${resetSecondaryText}`}
+                    aria-label={`Open usage details for ${quota.name}`}
+                  >
+                    {resetDisplay}
+                    <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                  </a>
+                ) : (
+                  resetDisplay
+                );
 
               return (
                 <tr
@@ -209,7 +232,7 @@ export default function QuotaTable({
                               count unavailable
                             </span>
                           ) : (
-                            <>{quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}</>
+                            <>{quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}{quota.unit ? ` ${quota.unit}` : ""}</>
                           )}
                         </span>
                         <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text}`}>
@@ -224,9 +247,9 @@ export default function QuotaTable({
                       compact ? (
                         <div
                           className={`${resetPrimary} text-text-primary font-medium truncate`}
-                          title={resetDisplay || ""}
+                          title={resetSecondaryText || ""}
                         >
-                          {countdown !== "-" ? countdownLabel : resetDisplay}
+                          {countdown !== "-" ? countdownLabel : renderResetCell(resetPrimary)}
                         </div>
                       ) : (
                         <div className="space-y-0.5">
@@ -237,7 +260,7 @@ export default function QuotaTable({
                           )}
                           {resetDisplay && (
                             <div className={`${resetSecondary} text-text-muted`}>
-                              {resetDisplay}
+                              {renderResetCell(resetSecondary)}
                             </div>
                           )}
                         </div>

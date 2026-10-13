@@ -343,21 +343,72 @@ export function getQuotaVisibilityKey(quota) {
   return String(quota.modelKey || quota.name || "").trim();
 }
 
-function getProviderHiddenQuotaSet(provider, quotaVisibility) {
-  const hidden = quotaVisibility?.[provider]?.hidden;
-  return new Set(Array.isArray(hidden) ? hidden.map(String) : []);
+/**
+ * Trim hidden quota keys to only those matching currently valid quotas.
+ * Stale or obsolete model keys are dropped.
+ */
+export function trimHiddenQuotaKeys(hidden = [], quotas = []) {
+  if (!Array.isArray(hidden) || hidden.length === 0) return [];
+  const validKeys = new Set(quotas.map(getQuotaVisibilityKey).filter(Boolean));
+  return [...new Set(hidden.map((k) => String(k).trim()).filter((k) => validKeys.has(k)))];
 }
 
-export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}) {
+function getQuotaVisibility(provider, connectionId, quotaVisibility) {
+  const providerVisibility = quotaVisibility?.[provider] || {};
+  // Keep legacy provider preferences as defaults until an account overrides them.
+  return providerVisibility.connections?.[connectionId] || providerVisibility;
+}
+
+export function setQuotaHidden(provider, connectionId, quota, quotaVisibility = {}, hide = true) {
+  const key = getQuotaVisibilityKey(quota);
+  if (!provider || !connectionId || !key) return quotaVisibility;
+
+  const providerVisibility = quotaVisibility[provider] || {};
+  const current = getQuotaVisibility(provider, connectionId, quotaVisibility);
+  const hidden = new Set(Array.isArray(current.hidden)
+    ? current.hidden.map((k) => String(k).trim()).filter(Boolean) : []);
+  if (hide) hidden.add(key);
+  else hidden.delete(key);
+
+  if (provider === "antigravity") {
+    for (const k of hidden) {
+      if ((key === "gemini" && k.startsWith("gemini-") && !k.includes("image"))
+        || (key === "claude" && k.startsWith("claude-"))) hidden.delete(k);
+    }
+  }
+
+  return {
+    ...quotaVisibility,
+    [provider]: {
+      ...providerVisibility,
+      connections: {
+        ...providerVisibility.connections,
+        [connectionId]: {
+          ...providerVisibility.connections?.[connectionId],
+          hidden: [...hidden],
+        },
+      },
+    },
+  };
+}
+
+function getProviderHiddenQuotaSet(provider, quotaVisibility, quotas = [], connectionId) {
+  const hidden = getQuotaVisibility(provider, connectionId, quotaVisibility).hidden;
+  if (!Array.isArray(hidden) || hidden.length === 0) return new Set();
+  const trimmed = quotas.length > 0 ? trimHiddenQuotaKeys(hidden, quotas) : hidden;
+  return new Set(trimmed.map(String));
+}
+
+export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}, connectionId) {
   if (!Array.isArray(quotas) || quotas.length === 0) return [];
-  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas, connectionId);
   if (hidden.size === 0) return quotas;
   return quotas.filter((quota) => !hidden.has(getQuotaVisibilityKey(quota)));
 }
 
-export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) {
+export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}, connectionId) {
   if (!Array.isArray(quotas) || quotas.length === 0) return [];
-  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas, connectionId);
   if (hidden.size === 0) return [];
   return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
 }
@@ -567,30 +618,26 @@ export function parseQuotaData(provider, data) {
 
       case "qoder":
       case "qoder-cn":
-        // Qoder ships a `user` quota and (optionally) an `organization`
-        // quota, both with same shape: {total, used, remaining, unit, resetAt}.
-        // Skip only the empty organization placeholder synthesized for
-        // personal accounts; a zero total can still carry meaningful usage.
-        // Don't forward Qoder's `remaining` field: it's an absolute credit
-        // count, but getRemainingPercentage / QuotaTable interpret
-        // `remaining` as a 0-100 percentage and would render 348 credits
-        // as "348%". The percentage is computed from used/total instead.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
-            if (
-              quotaType === "organization"
-              && (!quota || [quota.total, quota.used, quota.remaining]
-                .every((value) => (Number(value) || 0) === 0))
-            ) {
+            if (!quota || (Number(quota.total) || 0) === 0) {
               return;
             }
             normalizedQuotas.push({
-              name: quotaType === "user" ? "Personal" : quotaType === "organization" ? "Organization" : quotaType,
+              name:
+                quotaType === "user"
+                  ? "Personal"
+                  : quotaType === "organization"
+                    ? "Organization"
+                    : quotaType === "addOn"
+                      ? "Add-on"
+                      : quotaType,
               used: quota.used || 0,
-              total: Math.max(0, Number(quota.total) || 0)
-                || ((Number(quota.used) || 0) + (Number(quota.remaining) || 0)),
+              total: quota.total || 0,
               unit: quota.unit,
               resetAt: quota.resetAt || null,
+              neverExpires: quota.neverExpires === true,
+              detailUrl: quota.detailUrl || null,
             });
           });
         }
