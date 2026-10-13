@@ -130,6 +130,7 @@ import providerSelfhostedTts from "./selfhosted-tts.js";
 import providerSerper from "./serper.js";
 import providerSiliconflow from "./siliconflow.js";
 import providerStabilityAi from "./stability-ai.js";
+import providerSubq from "./subq.js";
 import providerTavily from "./tavily.js";
 import providerTencent from "./tencent.js";
 import providerTinyfish from "./tinyfish.js";
@@ -277,6 +278,7 @@ export default [
   providerSerper,
   providerSiliconflow,
   providerStabilityAi,
+  providerSubq,
   providerTavily,
   providerTencent,
   providerTinyfish,
