@@ -156,6 +156,11 @@ const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-bu
 
 function resolveFormat(targetFormat, model, provider) {
   if (typeof provider === "string" && provider.startsWith("openai-compatible-")) return "openai";
+  if (targetFormat === "commandcode") return "commandcode";
+  // Command Code's provider surface (the registry default) takes
+  // reasoning_effort top-level, the same as any OpenAI body; only the CLI
+  // envelope nests it under params (see openai-to-commandcode.js).
+  if (provider === "commandcode" || provider === "cmc") return "openai";
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);

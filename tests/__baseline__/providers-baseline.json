@@ -345,12 +345,12 @@
     "format": "openai"
   },
   "commandcode": {
-    "baseUrl": "https://api.commandcode.ai/alpha/generate",
-    "format": "commandcode",
+    "baseUrl": "https://api.commandcode.ai/provider/v1/chat/completions",
+    "cliUrl": "https://api.commandcode.ai/alpha/generate",
+    "format": "openai",
     "forceStream": true,
     "headers": {
-      "x-command-code-version": "0.25.7",
-      "x-cli-environment": "cli"
+      "x-command-code-version": "1.81.0"
     }
   },
   "cursor": {

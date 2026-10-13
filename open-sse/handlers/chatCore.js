@@ -6,6 +6,7 @@ import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/for
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
+import { modelLevelError } from "../services/accountFallback.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
@@ -664,10 +665,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${statisticsModel} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    // Client sees the normalised class (4xx stop / 5xx retry, unknown model as
-    // 404 rather than the provider's 401); internal classification keeps the
-    // real upstream status.
-    return createErrorResult(statusCode, errMsg, resetsAtMs, clientStatusForUpstream(statusCode, message), null, upstreamResponseHeaders(providerResponse?.headers));
+    // A serving restriction is a verdict about the model, not a quota or rate-limit
+    // state: report it as one, and drop the upstream's wait hint with it. A client
+    // that reads `insufficient_quota` here parks the credential for a whole usage
+    // window — or aborts the turn when the hint exceeds its own delay cap — over a
+    // model this caller will never be served.
+    const modelLevel = modelLevelError(statusCode, message, provider);
+    return createErrorResult(
+      statusCode,
+      errMsg,
+      resetsAtMs,
+      clientStatusForUpstream(statusCode, message),
+      modelLevel,
+      modelLevel ? null : upstreamResponseHeaders(providerResponse?.headers)
+    );
   }
 
   const pricingMultiplier = credentials?.providerSpecificData?.fastMode === true

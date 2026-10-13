@@ -144,18 +144,23 @@ export function isPermanentModelError(errorText) {
 
 /**
  * Unified error classification rules.
- * Checked top-to-bottom: text rules first (by order), then status rules.
- * Each rule: { text?, status?, cooldownMs?, backoff?, fallback? }
+ * Each rule: { text?, status?, cooldownMs?, backoff?, fallback?, noFallback?, modelLevel? }
  *   - text: substring match (case-insensitive) on error message
  *   - status: HTTP status code match
  *   - cooldownMs: fixed cooldown duration
  *   - backoff: true = use exponential backoff (rate limit)
- *   - fallback: false = request-scoped error (#3875): the failing body is
- *     deterministic, so it would fail identically on every account — no
- *     cooldown is warranted. Callers decide how to consume it: the account
- *     loop stops and surfaces the upstream error to the client; combos may
- *     still try the next model (translators differ per model).
+ *   - fallback: false / noFallback: true = account-scoped statuses skip rotation for this failure
+ *     (a model-level verdict the credential cannot fix)
+ *   - modelLevel: true = serving restriction on the model itself. The client-facing
+ *     error is MODEL_LEVEL_ERROR and the upstream's retry hint is dropped with it.
  */
+
+// Client-facing error for a serving restriction (`modelLevel` rules below). Not
+// quota/rate-limit vocabulary on purpose: a client that reads `insufficient_quota`
+// here parks the credential for a whole usage window — or aborts the turn outright —
+// over a model this caller will never be served.
+export const MODEL_LEVEL_ERROR = { type: "permission_error", code: "model_not_available" };
+
 export const ERROR_RULES = [
   // Account+model scoped permanent errors: the credential cannot serve this model.
   // These arrive as HTTP 400 or 410 from Codex / OpenAI-compatible providers but are
@@ -196,6 +201,12 @@ export const ERROR_RULES = [
   { text: "insufficient credit",      backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
+  // Model-level serving restriction (e.g. Meta's Geographic Use Policy): the key
+  // and account are fine, this model is not served to this caller here. Locking
+  // the connection for a cooldown turns a real answer into a bogus 503
+  // "reset after 2m", and retrying cannot change a geographic verdict.
+  { text: "geographic use policy",     noFallback: true, modelLevel: true },
+  { text: "not available in your region", noFallback: true, modelLevel: true },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },

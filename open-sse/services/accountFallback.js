@@ -1,4 +1,11 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS, REQUEST_SCOPED_STATUSES } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS, REQUEST_SCOPED_STATUSES, MODEL_LEVEL_ERROR } from "../config/errorConfig.js";
+
+/** Rule text match is case-insensitive, and errorText is not always a string. */
+function toLowerError(errorText) {
+  return errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    : "";
+}
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -65,9 +72,7 @@ export function resolveCooldownMs(newLevel, errorText) {
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0, provider = null) {
-  const lowerError = errorText
-    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
-    : "";
+  const lowerError = toLowerError(errorText);
 
   const invalidEncryptedContent = lowerError.includes("invalid_encrypted_content") ||
     (lowerError.includes("encrypted content") &&
@@ -96,7 +101,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
 
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
-      if (rule.permanent || rule.fallback === false) return { shouldFallback: false, cooldownMs: 0 };
+      if (rule.permanent || rule.fallback === false || rule.noFallback) return { shouldFallback: false, cooldownMs: 0 };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: resolveCooldownMs(newLevel, errorText), newBackoffLevel: newLevel };
@@ -136,6 +141,28 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
 
   // Default fallback for unhandled errors (30s transient cooldown)
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+}
+
+/**
+ * Client-facing error info when the failure is a verdict about the model itself
+ * (a `modelLevel` rule: serving restriction by geography or policy), else null.
+ * chatCore reports those as MODEL_LEVEL_ERROR so a client does not read a
+ * "this model is not served here" answer as an exhausted quota or a rate limit,
+ * and drops the upstream retry hint that would park it for a whole usage window.
+ * @param {number} status - HTTP status code
+ * @param {string} errorText - Error message text
+ * @param {string|null} provider - Provider id, for provider-scoped rules
+ * @returns {{type: string, code: string}|null}
+ */
+export function modelLevelError(status, errorText, provider = null) {
+  const lowerError = toLowerError(errorText);
+  for (const rule of ERROR_RULES) {
+    if (!rule.modelLevel) continue;
+    if (rule.provider && rule.provider !== provider) continue;
+    if (rule.text && lowerError.includes(rule.text)) return MODEL_LEVEL_ERROR;
+    if (rule.status && rule.status === status) return MODEL_LEVEL_ERROR;
+  }
+  return null;
 }
 
 /**

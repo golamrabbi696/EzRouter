@@ -65,15 +65,14 @@ const USAGE_EXTRACTORS = {
   },
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
-    // inputTokens is a cache-INCLUSIVE full prompt (OpenAI semantics), NOT the
-    // cache-miss remainder: with an identical request body the raw NDJSON holds
-    // inputTokens constant across a cold hit and a warm hit, and
-    // inputTokenDetails.noCacheTokens + cacheReadTokens === inputTokens.
-    // So the cache split must NOT be folded back into prompt_tokens — doing so
-    // doubles the prompt, inflates cost, and halves pi/Wren's CH denominator.
-    const cacheRead = n(raw.inputTokenDetails?.cacheReadTokens);
-    const cacheCreate = n(raw.inputTokenDetails?.cacheWriteTokens);
-    return { promptTokens: input, completionTokens: output, totalTokens: input + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate };
+    const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
+    // inputTokens already counts the cached prefix (verified live: cacheRead(N)
+    // ≈ inputTokens(N-1)), which is exactly inclusive convention —
+    // the cache counters ride along as subsets, not as extra prompt tokens.
+    const details = raw.inputTokenDetails;
+    const cachedTokens = details && typeof details.cacheReadTokens === "number" ? details.cacheReadTokens : 0;
+    const cacheCreationTokens = details && typeof details.cacheWriteTokens === "number" ? details.cacheWriteTokens : 0;
+    return { promptTokens: input, completionTokens: output, totalTokens: total, cachedTokens, cacheCreationTokens };
   },
 };
 

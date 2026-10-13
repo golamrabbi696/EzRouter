@@ -45,6 +45,20 @@ export const FILTERS = {
       .sort((a, b) => (b.contextLength || 0) - (a.contextLength || 0));
   },
 
+  // Command Code public catalog: {object:"list", data:[{id,name,context_length,supported_endpoints}]}.
+  // This provider lane speaks the OpenAI chat body, so /messages-only ids
+  // (Claude on the Provider API) are not offered: they need the Anthropic
+  // surface, which this executor does not implement.
+  commandcode: (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => typeof m?.id === "string" && m.id.trim() !== "")
+      .filter((m) => {
+        const endpoints = Array.isArray(m.supported_endpoints) ? m.supported_endpoints : null;
+        return !endpoints || endpoints.some((e) => e !== "/messages");
+      })
+      .map((m) => ({ id: m.id, name: m.name || m.id, contextLength: Number(m.context_length) || undefined }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
+
   "airforce-free": (models) =>
     (Array.isArray(models) ? models : [])
       .filter((m) => (m.tier === "free" || m.id?.endsWith(":free")) && m.supports_chat === true && (!m.media_type || m.media_type === "chat" || m.media_type === "text"))

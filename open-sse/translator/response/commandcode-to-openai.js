@@ -33,6 +33,7 @@ function ensureState(state, model) {
   state.toolIndexById ??= new Map();
   state.openTools ??= new Set();
   state.openText ??= false;
+  state.reasoningText ??= "";
   state.finishReason ??= null;
   state.usage ??= null;
 }
@@ -88,6 +89,7 @@ export function commandCodeToOpenAIResponse(chunk, state) {
     case "reasoning-delta": {
       const text = event.text || "";
       if (!text) break;
+      state.reasoningText += text;
       // Map reasoning to OpenAI "reasoning_content" field (used by deepseek-reasoner-style clients).
       const delta = reasoningDelta(text, state.chunkIndex === 0);
       state.chunkIndex++;
@@ -155,6 +157,17 @@ export function commandCodeToOpenAIResponse(chunk, state) {
     }
     case "finish": {
       const finishReason = state.finishReason || mapFinishReason(event.finishReason || "stop");
+      // Command Code can spend the whole budget inside hidden reasoning and
+      // finish with zero visible content. Surface what the model did emit
+      // instead of handing the client an empty turn.
+      if (!state.openText && state.reasoningText && state.toolIndex === 0) {
+        const delta = state.chunkIndex === 0
+          ? { role: ROLE.ASSISTANT, content: state.reasoningText }
+          : { content: state.reasoningText };
+        state.chunkIndex++;
+        state.openText = true;
+        out.push(makeChunk(state, delta));
+      }
       const finalChunk = makeChunk(state, {}, finishReason);
       const totalUsage = event.totalUsage || state.usage;
       const usage = toOpenAIUsage(totalUsage, "commandcode");

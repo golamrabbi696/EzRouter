@@ -197,7 +197,7 @@ function convertTools(tools) {
   return result.length ? result : undefined;
 }
 
-export function openaiToCommandCodeRequest(model, body, stream /* , credentials */) {
+export function openaiToCommandCodeRequest(model, body, stream, credentials = null) {
   const { messages, system } = convertMessages(body.messages);
   const rawMaxTokens = body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS;
   const max_tokens = typeof rawMaxTokens === "number" && rawMaxTokens > 0
@@ -219,15 +219,24 @@ export function openaiToCommandCodeRequest(model, body, stream /* , credentials 
   if (tools) params.tools = tools;
   if (body.top_p != null) params.top_p = body.top_p;
 
+  // The provider surface keeps reasoning top-level; the CLI envelope nests it
+  // under params (this builder runs for that surface).
+  for (const field of ["reasoning_effort", "reasoning", "thinking"]) {
+    if (body[field] !== undefined && body[field] !== null) params[field] = body[field];
+  }
+
   const today = new Date().toISOString().slice(0, 10);
+  // Upstream validates threadId as a UUID, so it comes from the executor's
+  // normalized session id; a bare call gets a fresh UUID.
+  const threadId = credentials?._ccSessionId || randomUUID();
 
   return {
-    threadId: randomUUID(),
+    threadId,
     memory: "",
     config: {
       workingDir: process.cwd(),
       date: today,
-      environment: process.platform,
+      environment: "external",
       structure: [],
       isGitRepo: false,
       currentBranch: "",

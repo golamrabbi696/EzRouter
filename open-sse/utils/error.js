@@ -54,18 +54,28 @@ export function buildErrorBody(statusCode, message, overrides = null) {
  * Create error Response object (for non-streaming)
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
- * @param {string|object} [overrides] - Upstream error code or { type, code } overrides
+ * @param {string|object} [arg3] - Overrides or extraHeaders
+ * @param {object} [arg4] - Additional headers or overrides
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, overrides = null, extraHeaders = null) {
+export function errorResponse(statusCode, message, arg3 = null, arg4 = null) {
   let effectiveOverrides = null;
   let effectiveHeaders = null;
-  if (overrides && typeof overrides === "object" && !("type" in overrides) && !("code" in overrides)) {
-    effectiveHeaders = overrides;
-  } else {
-    effectiveOverrides = overrides;
-    effectiveHeaders = extraHeaders;
+
+  const isHeaders = (v) => v && typeof v === "object" && !("type" in v) && !("code" in v);
+  const isErrorInfo = (v) => typeof v === "string" || (v && typeof v === "object" && ("type" in v || "code" in v));
+
+  if (isHeaders(arg3)) {
+    effectiveHeaders = arg3;
+    if (isErrorInfo(arg4)) effectiveOverrides = arg4;
+  } else if (isErrorInfo(arg3)) {
+    effectiveOverrides = arg3;
+    if (isHeaders(arg4)) effectiveHeaders = arg4;
+  } else if (arg3 == null) {
+    if (isHeaders(arg4)) effectiveHeaders = arg4;
+    else if (isErrorInfo(arg4)) effectiveOverrides = arg4;
   }
+
   return new Response(JSON.stringify(buildErrorBody(statusCode, message, effectiveOverrides)), {
     status: statusCode,
     headers: {
@@ -158,28 +168,35 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @param {number|string|object} [clientStatusOrCode] - Optional client-facing HTTP status code or error code
- * @param {string|object} [code] - Upstream error code
+ * @param {number|string|object} [arg4] - Optional client-facing HTTP status code, errorInfo, or headers
+ * @param {string|object} [arg5] - Optional errorInfo or headers
+ * @param {object} [arg6] - Optional headers
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, clientStatusOrHeaders = null, codeOrHeaders = null, extraHeaders = null) {
-  let effectiveClientStatus = null;
-  let effectiveCode = null;
+export function createErrorResult(statusCode, message, resetsAtMs, arg4 = null, arg5 = null, arg6 = null) {
+  let clientStatus = null;
+  let errorInfo = null;
   let headers = null;
 
-  if (typeof clientStatusOrHeaders === "number") {
-    effectiveClientStatus = clientStatusOrHeaders;
-    if (typeof codeOrHeaders === "string" || (typeof codeOrHeaders === "object" && codeOrHeaders && ("type" in codeOrHeaders || "code" in codeOrHeaders))) {
-      effectiveCode = codeOrHeaders;
-      headers = extraHeaders;
-    } else if (codeOrHeaders && typeof codeOrHeaders === "object") {
-      headers = codeOrHeaders;
-    }
-  } else if (typeof clientStatusOrHeaders === "string" || (clientStatusOrHeaders && typeof clientStatusOrHeaders === "object" && ("type" in clientStatusOrHeaders || "code" in clientStatusOrHeaders))) {
-    effectiveCode = clientStatusOrHeaders;
-    headers = typeof codeOrHeaders === "object" ? codeOrHeaders : extraHeaders;
-  } else if (clientStatusOrHeaders && typeof clientStatusOrHeaders === "object") {
-    headers = clientStatusOrHeaders;
+  const isHeaders = (v) => v && typeof v === "object" && !("type" in v) && !("code" in v);
+  const isErrorInfo = (v) => typeof v === "string" || (v && typeof v === "object" && ("type" in v || "code" in v));
+
+  if (typeof arg4 === "number") {
+    clientStatus = arg4;
+    if (isErrorInfo(arg5)) errorInfo = arg5;
+    else if (isHeaders(arg5)) headers = arg5;
+
+    if (isHeaders(arg6)) headers = arg6;
+    else if (isErrorInfo(arg6)) errorInfo = arg6;
+  } else {
+    if (isErrorInfo(arg4)) errorInfo = arg4;
+    else if (isHeaders(arg4)) headers = arg4;
+
+    if (isErrorInfo(arg5)) errorInfo = arg5;
+    else if (isHeaders(arg5)) headers = arg5;
+
+    if (isErrorInfo(arg6)) errorInfo = arg6;
+    else if (isHeaders(arg6)) headers = arg6;
   }
 
   return {
@@ -191,7 +208,7 @@ export function createErrorResult(statusCode, message, resetsAtMs, clientStatusO
     resetsAtMs,
     // What the CLIENT sees, which may be normalised — e.g. an unknown model
     // reported as 401 becomes 404, so callers do not read it as an auth failure.
-    response: errorResponse(effectiveClientStatus ?? statusCode, message, effectiveCode, headers)
+    response: errorResponse(clientStatus ?? statusCode, message, errorInfo, headers)
   };
 }
 

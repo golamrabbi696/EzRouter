@@ -19,12 +19,20 @@ export default {
   },
   category: "apikey",
   transport: {
-    baseUrl: "https://api.commandcode.ai/alpha/generate",
-    format: "commandcode",
+    // Provider surface first. /alpha/generate is the CLI-only endpoint: it is
+    // version-gated and region-gated for external callers, so a Meta model that
+    // the account may use still 403s "not available in your region" there.
+    // /provider/v1/chat/completions is the same gateway on the documented
+    // Provider API surface; the executor falls back to alpha on 403/404.
+    baseUrl: "https://api.commandcode.ai/provider/v1/chat/completions",
+    cliUrl: "https://api.commandcode.ai/alpha/generate",
+    // Body/response shape stays NDJSON (AI SDK v5) on both surfaces — the
+    // executor pins responseFormat to "commandcode" so the SSE translator runs.
+    format: "openai",
     forceStream: true,
     headers: {
-      "x-command-code-version": "0.25.7",
-      "x-cli-environment": "cli",
+      // Latest published CLI build (registry.npmjs.org/command-code/latest).
+      "x-command-code-version": "1.81.0",
     },
   },
   models: [
@@ -52,7 +60,15 @@ export default {
     { id: "stepfun/Step-3.7-Flash", name: "Step 3.7 Flash" },
     { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash" },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", name: "Nemotron 3 Ultra" },
+    { id: "meta/muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor" },
+    { id: "meta/muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor" },
+    { id: "meta/muse-spark-1.3", name: "Muse Spark 1.3" },
+    { id: "meta/muse-spark-1.2", name: "Muse Spark 1.2" },
   ],
+  // The live catalog is public and rotates; the list above is the offline seed
+  // and any id the account actually has is allowed through.
+  modelsFetcher: { url: "https://api.commandcode.ai/provider/v1/models", type: "commandcode" },
+  passthroughModels: true,
   features: {
     usage: true,
     // API-key connections must be able to hit /api/usage/<id> (like ocg does).
