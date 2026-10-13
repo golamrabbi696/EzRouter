@@ -1,3 +1,36 @@
+# v0.6.22 (2026-10-14)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4740 - #4800)
+- **Security Audit & Invariants**:
+  - **Preserved Default Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`) across all configurations, CLI bundles, and tests.
+  - **REJECTED PR #4742**: External binary dependency (`sing-box`) download/execution rejected due to security risk and expanded attack surface.
+  - **REJECTED PR #4776**: Forced `strict: false` tool flag override rejected; preserved core maintainer `chatStrictFrom(tool)` which properly honors explicit schema strictness.
+- **Deterministic Auto Router & Combo Engine**:
+  - **Auto Router Strategy (`#4759`)**: Added task-aware deterministic Auto Router combo strategy (`auto`) evaluating structural complexity, tooling signals, and domain actions to route to appropriate tiers with capacity adapter fallback. Ordinary combos can delegate to an Auto Router while preventing recursive Auto Router cycles.
+  - **Deterministic Combo Ordering (`#4774`)**: Combo member execution order is strictly deterministic.
+  - **Empty Response Failover (`#4750`)**: Combos automatically fail over to the next provider upon receiving empty HTTP 200 responses.
+- **Provider Enhancements & Format Translation**:
+  - **SubQ Decisions API (`#4800`)**: Added SubQ provider integration (`subq.ai`) supporting high-performance model routing and reasoning.
+  - **GitHub Copilot Embeddings Route (`#4793`)**: Routed Copilot embeddings directly to `api.githubcopilot.com`.
+  - **Gemini Array Schema Sanitization (`#4798`)**: Fixed schema validation by sanitizing nested array schemas and empty array items.
+  - **CommandCode Serving Honesty (`#4775`)**: Classifies geographic restriction HTTP 403 errors honestly and skips infinite replay.
+  - **OpenCode Zen Free-Tier Fixes (`#4784`, `#4786`)**: Fixed 403 FreeTierError in OpenCode 1.19.0+ with monotonic inverted timestamp generation and cache.
+  - **Non-Streaming SSE-to-JSON Enforcement (`#4753`, `#4789`)**: Enforces JSON response conversion for non-streaming clients when upstream returns SSE frames.
+  - **Anthropic API-Key Clean Beta Headers (`#4752`)**: Stopped attaching `claude-code` beta flag to standard API key requests to prevent spurious insufficient credit errors.
+  - **Param Support Stripping (`#4779`)**: Drops unsupported `response_format` for OpenCode Go's DeepSeek models to prevent HTTP 400 errors.
+  - **Capability Updates (`#4761`, `#4799`)**: Advertised PDF input for current Claude models and enabled vision/reasoning capabilities for Qoder models.
+- **API Keys, Usage & Quota Tracking**:
+  - **API Key Metrics & Links (`#4755`, `#4764`)**: Surfaced request counts, total token usage, direct usage link on key cards, and added wildcard provider access (`provider/*`).
+  - **Quota Auto-Ping Catch-up (`#4768`)**: Automatically catches up missed quota auto-pings across computer sleep/wake events.
+  - **Qoder Add-on Quota & Usage Visibility (`#4749`, `#4758`, `#4769`)**: Added promo add-on quota support, scoped polling to visible connections, and added per-account usage visibility options.
+  - **Token Saver Accounting (`#4770`, `#4772`)**: Included cached tokens in token saver stats and avoided rewriting `tool_result` messages when no savings occur.
+  - **Hermes CLI Audio Transcription (`#4763`)**: Added audio transcription routing for Hermes via EzRouter `/v1/audio/transcriptions`.
+  - **Provider Node Cleanup (`#4751`)**: Automatically cleans up orphaned custom models when deleting provider nodes.
+- **Internationalization & RTL UI Layout**:
+  - **RTL Layout & Right-Side Sidebar Support (`#4746`)**: Full Right-to-Left (RTL) layout support including mirrored sidebar, notifications, search inputs, and breadcrumb indicators.
+  - **Persian Translation & Fallback Pool Text Node (`#4748`)**: Added missing Persian translations and unified fallback pool text nodes for runtime i18n translation.
+  - **Vazirmatn Font Integration (`#4747`)**: Integrated Vazirmatn font for Persian and RTL locales.
+
 # v0.6.21 (2026-10-12)
 
 ## Top Header Menu Tray Persistence & Terminal Backgrounding
