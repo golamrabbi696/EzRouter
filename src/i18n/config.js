@@ -188,3 +188,9 @@ export function normalizeLocale(locale) {
 export function isSupportedLocale(locale) {
   return LOCALES.includes(locale);
 }
+
+export const RTL_LOCALES = ["ar", "fa", "he", "ur"];
+
+export function isRTL(locale) {
+  return RTL_LOCALES.includes(normalizeLocale(locale));
+}
