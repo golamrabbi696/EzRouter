@@ -69,6 +69,7 @@ export const QUOTA_AUTOPING_CONFIG = {
   pingLeadMs: 5000,                     // fire once reset passes (within tolerance)
   refreshAheadMs: 300000,               // refetch usage when within 5min of reset
   failureCooldownMs: 900000,            // avoid failed ping spam while upstream/auth is unhealthy
+  catchUpWindowMs: 1800000,             // 30min catch-up allows a retry after the 15min failure cooldown
   providers: {
     claude: {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
