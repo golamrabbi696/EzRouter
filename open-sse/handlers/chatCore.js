@@ -688,11 +688,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const appendLog = (extra) => appendRequestLog({ model: statisticsModel, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
-  // Provider forced streaming but client wants JSON. The Responses wire always
-  // streams upstream (openaiToOpenAIResponsesRequest pins stream:true), so a
-  // non-stream OpenAI/native client behind a Responses upstream must also take
+  // Provider forced streaming or returned SSE, but client requested non-streaming JSON.
+  // The Responses wire always streams upstream (openaiToOpenAIResponsesRequest pins stream:true),
+  // so a non-stream OpenAI/native client behind a Responses upstream must also take
   // this path — handleForcedSSEToJson returns null when the body is not SSE.
-  if (!clientRequestedStreaming && (providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES)) {
+  const isUpstreamSSE = providerResponse.headers?.get?.("content-type")?.includes("text/event-stream") || providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES;
+  if (!clientRequestedStreaming && isUpstreamSSE) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, toolNameMap, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
