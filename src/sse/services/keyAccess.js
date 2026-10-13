@@ -30,6 +30,7 @@ import {
   KEY_ACCESS_COMBO_OWNER,
   KEY_ACCESS_PROVIDER_AS_MODEL_KINDS,
   keyAccessDeniedMessage,
+  keyAccessWildcardProvider,
 } from "@/shared/constants/keyAccess.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -81,25 +82,41 @@ export async function getKeyAccessContext(request) {
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
-// and resolved provider ids (for provider-as-model kinds).
+// resolved provider ids (for provider-as-model kinds) and "provider/*" grants.
 async function getAllowSets(ctx) {
   if (ctx._sets) return ctx._sets;
   const comboNames = new Set((await getCombos()).map((c) => lower(c.name)));
   const combos = new Set();
   const models = new Set();
   const providers = new Set();
+  const wholeProviders = new Set();
   for (const entry of ctx.allow) {
     const key = lower(entry);
     if (comboNames.has(key)) {
       combos.add(key);
       continue;
     }
+    const wildcard = keyAccessWildcardProvider(entry);
+    if (wildcard) {
+      // Resolve the prefix the same way a request's "prefix/model" is resolved.
+      const info = await getModelInfo(`${wildcard}/_`);
+      for (const id of [info?.provider, resolveProviderId(wildcard)]) {
+        if (!id) continue;
+        wholeProviders.add(lower(id));
+        providers.add(lower(id));
+      }
+      continue;
+    }
     const info = await getModelInfo(entry);
     if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
     if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
   }
-  ctx._sets = { combos, models, providers };
+  ctx._sets = { combos, models, providers, wholeProviders };
   return ctx._sets;
+}
+
+function isResolvedModelAllowed(sets, provider, model) {
+  return sets.models.has(canonicalModel(provider, model)) || sets.wholeProviders.has(lower(provider));
 }
 
 async function isModelStringAllowed(ctx, requested) {
@@ -107,7 +124,7 @@ async function isModelStringAllowed(ctx, requested) {
   const info = await getModelInfo(requested);
   // provider null ⇔ an existing combo with no members (routes nowhere).
   if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+  return isResolvedModelAllowed(sets, info.provider, info.model);
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -142,7 +159,7 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  return isResolvedModelAllowed(sets, provider, model) ? null : keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -193,7 +210,7 @@ export async function filterModelsListForKey(ctx, list) {
       if (sets.providers.has(lower(info.provider))) out.push(entry);
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    if (isResolvedModelAllowed(sets, info.provider, info.model)) out.push(entry);
   }
   return out;
 }

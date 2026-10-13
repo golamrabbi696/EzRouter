@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
+import Link from "next/link";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
@@ -1249,11 +1250,29 @@ export default function APIPageClient({ machineId }) {
                       </button>
                     </div>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                    {key.expiresAt ? ` · Expires ${new Date(key.expiresAt).toLocaleString()}` : " · No expiry"}
-                    {key.tokenLimit != null ? ` · ${key.tokensUsed}/${key.tokenLimit} tokens` : " · Unlimited tokens"}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-text-muted">
+                    <span>
+                      Created {new Date(key.createdAt).toLocaleDateString()}
+                      {key.expiresAt ? ` · Expires ${new Date(key.expiresAt).toLocaleString()}` : " · No expiry"}
+                      {key.tokenLimit != null ? ` · ${key.tokensUsed}/${key.tokenLimit} tokens` : " · Unlimited tokens"}
+                    </span>
+                    {key.usage?.requests > 0 ? (
+                      <>
+                        <span>•</span>
+                        <span>{key.usage.requests.toLocaleString()} reqs</span>
+                        <span>•</span>
+                        <span>{key.usage.totalTokens.toLocaleString()} tokens</span>
+                        <span>•</span>
+                        <Link
+                          href="/dashboard/usage?view=apiKey"
+                          className="text-primary hover:underline font-medium inline-flex items-center gap-0.5"
+                        >
+                          View usage
+                          <span className="material-symbols-outlined text-[12px] rtl:rotate-180">arrow_forward</span>
+                        </Link>
+                      </>
+                    ) : null}
+                  </div>
                   {key.tokenLimit != null && (
                     <ApiKeyUsageTracker used={key.tokensUsed} limit={key.tokenLimit} />
                   )}

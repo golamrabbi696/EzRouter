@@ -59,7 +59,31 @@ function rowToKey(row) {
 export async function getApiKeys() {
   const db = await getAdapter();
   const rows = db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
-  return rows.map(rowToKey);
+  const usageMap = {};
+  try {
+    const usageRows = db.all(`
+      SELECT apiKey, COUNT(*) as requests, SUM(COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0)) as totalTokens, MAX(timestamp) as lastUsed
+      FROM usageHistory
+      WHERE apiKey IS NOT NULL AND apiKey != ''
+      GROUP BY apiKey
+    `);
+    for (const u of usageRows) {
+      if (u.apiKey) {
+        usageMap[u.apiKey] = {
+          requests: Number(u.requests) || 0,
+          totalTokens: Number(u.totalTokens) || 0,
+          lastUsed: u.lastUsed || null,
+        };
+      }
+    }
+  } catch {
+    // Continue gracefully if usageHistory has no records or query fails
+  }
+  return rows.map((r) => {
+    const keyObj = rowToKey(r);
+    keyObj.usage = usageMap[keyObj.key] || { requests: 0, totalTokens: 0, lastUsed: null };
+    return keyObj;
+  });
 }
 
 export async function getApiKeyById(id) {
@@ -92,9 +116,10 @@ export async function createApiKey(name, machineId, policy = {}) {
     allowedModels: normalizeAllowedModels(policy?.allowedModels),
     createdAt: new Date().toISOString(),
     scope: normalizedScope,
-    access: policy?.access || { restricted: false, allow: [] },
   };
-  const cols = keyAccessToColumns(apiKey.access || KEY_ACCESS_UNRESTRICTED);
+  const rawAccess = (policy && "restricted" in policy) ? policy : (policy?.access || KEY_ACCESS_UNRESTRICTED);
+  const cols = keyAccessToColumns(rawAccess);
+  apiKey.access = keyAccessFromColumns(cols.accessRestricted, cols.accessAllow);
   db.run(
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt, scope, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt, normalizedScope ? JSON.stringify(normalizedScope) : null, cols.accessRestricted, cols.accessAllow]

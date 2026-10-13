@@ -11,7 +11,8 @@ function parsePolicy(body) {
   if (expiresAt && Number.isNaN(new Date(expiresAt).getTime())) throw new Error("Expiration must be a valid date");
   if (body.allowedModels != null && !Array.isArray(body.allowedModels)) throw new Error("Allowed models must be an array");
   const scope = body.scope ?? null;
-  return { expiresAt, tokenLimit, allowedModels: body.allowedModels, scope };
+  const access = body.access ?? null;
+  return { expiresAt, tokenLimit, allowedModels: body.allowedModels, scope, access };
 }
 
 export async function GET() {
@@ -39,6 +40,7 @@ export async function POST(request) {
       id: apiKey.id,
       machineId: apiKey.machineId,
       scope: apiKey.scope ?? null,
+      access: apiKey.access ?? null,
     }, { status: 201 });
   } catch (error) {
     const status = /Token limit|Expiration|Allowed models/.test(error.message) ? 400 : 500;
