@@ -62,7 +62,7 @@ function isPrivateIp(ip) {
   return false;
 }
 
-const OPENCODE_UA = "opencode/1.18.31";
+const OPENCODE_UA = "opencode/1.19.0";
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
@@ -71,6 +71,17 @@ export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+const stableOpencodeSessions = new Map();
+const MAX_STABLE_SESSIONS = 1000;
+const stableSessionCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of stableOpencodeSessions) {
+    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+      stableOpencodeSessions.delete(key);
+    }
+  }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (stableSessionCleanup.unref) stableSessionCleanup.unref();
 
 function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
@@ -128,20 +139,43 @@ export function generateRequestId(timestamp = Date.now()) {
   return `msg_${time}${unstableRandom()}`;
 }
 
-export function translateSessionId(sessionId, clientTool = "") {
+export function translateSessionId(sessionId, clientTool = "", timestamp = Date.now()) {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
+  const cacheKey = `opencode:tr:${clientTool || "generic"}:${sessionId || ""}`;
+  const existing = stableOpencodeSessions.get(cacheKey);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    stableOpencodeSessions.delete(cacheKey);
+    stableOpencodeSessions.set(cacheKey, existing);
+    return existing.sessionId;
+  }
+  if (timestamp !== lastTimestamp) {
+    lastTimestamp = timestamp;
+    counter = 0;
+  }
+  counter++;
+  const value = ~(BigInt(timestamp) * 0x1000n + BigInt(counter));
+  const timeHex = Array.from({ length: 6 }, (_, index) =>
+    Number((value >> BigInt(40 - 8 * index)) & 0xffn)
+      .toString(16)
+      .padStart(2, "0")
+  ).join("");
   const digest = crypto
     .createHash("sha256")
     .update(`opencode\0${clientTool || "generic"}\0${sessionId || ""}`)
     .digest();
-  const timeHex = digest.subarray(0, 6).toString("hex");
   let randomPart = "";
   for (let i = 6; i < 20; i++) {
     randomPart += BASE62_CHARS[digest[i] % 62];
   }
-  return `ses_${timeHex}${randomPart}`;
+  const id = `ses_${timeHex}${randomPart}`;
+  if (stableOpencodeSessions.size >= MAX_STABLE_SESSIONS) {
+    stableOpencodeSessions.delete(stableOpencodeSessions.keys().next().value);
+  }
+  stableOpencodeSessions.set(cacheKey, { sessionId: id, lastUsed: Date.now() });
+  return id;
 }
 
 function normalizeSession(value) {
@@ -161,24 +195,6 @@ function nativeSession(headers) {
   }
   return null;
 }
-
-// Upstream free-tier quota is accounted per session. Minting a fresh
-// x-opencode-session on every request burns through it and surfaces as
-// 429 FreeUsageLimitError with growing reset-after delays, while the real
-// CLI reuses one long-lived canonical session per conversation. Mirror
-// that: one stable canonical session per downstream identity, evicted
-// after MEMORY_CONFIG.sessionTtlMs like the other session stores.
-const stableOpencodeSessions = new Map();
-const MAX_STABLE_SESSIONS = 1000;
-const stableSessionCleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of stableOpencodeSessions) {
-    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
-      stableOpencodeSessions.delete(key);
-    }
-  }
-}, MEMORY_CONFIG.sessionCleanupIntervalMs);
-if (stableSessionCleanup.unref) stableSessionCleanup.unref();
 
 function identityKey(credentials) {
   const connectionId = credentials?.connectionId || credentials?.id;
@@ -241,20 +257,25 @@ function lastUserText(body) {
 // The real CLI sends the current user message id (stable per turn, same on
 // retries) as x-opencode-request. Derive it deterministically from the
 // session plus the last user message so retries share the id.
-export function deriveRequestId(sessionId, body) {
+export function deriveRequestId(sessionId, body, timestamp = Date.now()) {
   const text = lastUserText(body);
-  if (!text) return generateRequestId();
+  if (!text) return generateRequestId(timestamp);
   const digest = crypto
     .createHash("sha256")
     .update(`opencode-req\0${sessionId || ""}\0${text}`)
     .digest();
-  const timeHex = digest.subarray(0, 6).toString("hex");
+  const value = BigInt(timestamp) * 0x1000n + 1n;
+  const timeHex = Array.from({ length: 6 }, (_, index) =>
+    Number((value >> BigInt(40 - 8 * index)) & 0xffn)
+      .toString(16)
+      .padStart(2, "0")
+  ).join("");
   let randomPart = "";
   for (let i = 6; i < 20; i++) {
     randomPart += BASE62_CHARS[digest[i] % 62];
   }
   const id = `msg_${timeHex}${randomPart}`;
-  return OPENCODE_REQUEST_RE.test(id) ? id : generateRequestId();
+  return OPENCODE_REQUEST_RE.test(id) ? id : generateRequestId(timestamp);
 }
 
 function normalizeRequestId(value) {
@@ -310,6 +331,27 @@ function isMessagesModel(model) {
   return MESSAGES_MODELS.has(baseModelId(model));
 }
 
+function headersHasSessionHints(headers) {
+  if (!headers || typeof headers !== "object") return false;
+  for (const k of Object.keys(headers)) {
+    const lk = k.toLowerCase();
+    if (
+      lk === "x-client-request-id" ||
+      lk === "x-session-id" ||
+      lk === "session-id" ||
+      lk === "session_id" ||
+      lk === "x-amp-thread-id" ||
+      lk === "x-claude-code-session-id" ||
+      lk === "x-conversation-id" ||
+      lk === "conversation-id" ||
+      lk.includes("session")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function resolveOpencodeSession(body, credentials, providerSessionId, clientTool) {
   const headers = credentials?.rawHeaders || {};
   const native = nativeSession(headers);
@@ -326,7 +368,7 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
   const hinted = incoming || normalizeSession(providerSessionId);
   if (hinted) return translateSessionId(hinted, clientTool);
 
-  if (credentials?.connectionId || bodyHasSessionHints(body)) {
+  if (credentials?.connectionId || bodyHasSessionHints(body) || headersHasSessionHints(headers)) {
     let viaManager = null;
     try {
       viaManager = resolveSessionId({
@@ -372,7 +414,7 @@ function normalizeResponsesTools(body) {
     if (parameters.type === "object" && !parameters.properties) parameters = { ...parameters, properties: {} };
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
-    tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
+    tool.name = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, MAX_TOOL_NAME_LEN);
     if (description) tool.description = description;
     tool.parameters = parameters;
     validNames.add(tool.name);
@@ -410,7 +452,7 @@ function sanitizeResponsesItems(body) {
     delete item.reasoning_encrypted_content;
     if (item.type === "function_call") {
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") return false;
-      item.name = item.name.trim().slice(0, MAX_TOOL_NAME_LEN);
+      item.name = item.name.trim().replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, MAX_TOOL_NAME_LEN);
       item.call_id = clampResponsesCallId(item.call_id);
       item.arguments = coerceResponsesArguments(item.arguments);
       return true;
@@ -422,6 +464,19 @@ function sanitizeResponsesItems(body) {
     }
     return true;
   });
+  // Pair function_call and function_call_output so compacted/interrupted turns do not 400 upstream
+  const callIds = new Set(body.input.filter((x) => x?.type === "function_call").map((x) => x.call_id));
+  body.input = body.input.filter((x) => x?.type !== "function_call_output" || callIds.has(x.call_id));
+  const outputIds = new Set(body.input.filter((x) => x?.type === "function_call_output").map((x) => x.call_id));
+  const paired = [];
+  for (const item of body.input) {
+    paired.push(item);
+    if (item?.type === "function_call" && !outputIds.has(item.call_id)) {
+      paired.push({ type: "function_call_output", call_id: item.call_id, output: "{}" });
+      outputIds.add(item.call_id);
+    }
+  }
+  body.input = paired;
 }
 
 function normalizeOpencodeReasoning(model, body) {
@@ -464,6 +519,14 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    if (credentials) {
+      if (!credentials[SESSION_FIELD]) {
+        credentials[SESSION_FIELD] = resolveOpencodeSession(body, credentials);
+      }
+      if (!credentials[REQ_FIELD]) {
+        credentials[REQ_FIELD] = resolveOpencodeRequestId(body, credentials, credentials[SESSION_FIELD]);
+      }
+    }
     if (body && typeof body === "object" && model && !body.model) body.model = model;
     // Zen rejects non-streaming requests on free models with 403 FreeTierError;
     // always stream upstream and let the handler layer aggregate for non-stream clients.
@@ -493,6 +556,9 @@ export class OpenCodeExecutor extends BaseExecutor {
       }
       delete body.max_tokens;
       delete body.max_completion_tokens;
+      if (typeof body.max_output_tokens === "number") {
+        body.max_output_tokens = Math.min(Math.max(body.max_output_tokens, 16), 65536);
+      }
       normalizeOpencodeReasoning(model, body);
       body.stream = true;
       body.store = false;
