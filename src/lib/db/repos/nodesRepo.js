@@ -102,6 +102,13 @@ export async function deleteProviderNode(id) {
     const row = db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
     if (!row) return;
     removed = rowToNode(row);
+    // Keep custom models from outliving their provider node. Parse the stored
+    // owner instead of using a prefix match, which could delete another node's models.
+    for (const model of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) {
+      if (parseJson(model.value)?.providerAlias === id) {
+        db.run(`DELETE FROM kv WHERE scope = 'customModels' AND key = ?`, [model.key]);
+      }
+    }
     db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
   });
   return removed;
