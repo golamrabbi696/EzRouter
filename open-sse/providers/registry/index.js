@@ -16,6 +16,7 @@ import providerAnthropic from "./anthropic.js";
 import providerAntigravity from "./antigravity.js";
 import providerApiAirforce from "./api-airforce.js";
 import providerAssemblyai from "./assemblyai.js";
+import providerAtlascloud from "./atlascloud.js";
 import providerAtria from "./atria.js";
 import providerAwsPolly from "./aws-polly.js";
 import providerAzure from "./azure.js";
@@ -164,6 +165,7 @@ export default [
   providerAntigravity,
   providerApiAirforce,
   providerAssemblyai,
+  providerAtlascloud,
   providerAtria,
   providerAwsPolly,
   providerAzure,
