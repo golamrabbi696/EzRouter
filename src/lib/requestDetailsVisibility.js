@@ -1,7 +1,7 @@
 const PAYLOAD_FIELDS = ["request", "providerRequest", "providerResponse", "response"];
 
 export function shouldShowRequestPayloads(env = process.env) {
-  return env.SHOW_REQUEST_PAYLOADS?.toLowerCase() === "true";
+  return env.SHOW_REQUEST_PAYLOADS?.toLowerCase() === "true" || env.ENABLE_PROMPT_LOGGING?.toLowerCase() === "true";
 }
 
 export function prepareRequestDetailsResponse(result, env = process.env) {

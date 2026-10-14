@@ -51,7 +51,7 @@ export async function GET(request) {
 
     // Conversation payloads stay redacted by default. Server operators may
     // explicitly opt in to exposing stored prompts and responses in the
-    // dashboard with SHOW_REQUEST_PAYLOADS=true.
+    // dashboard with SHOW_REQUEST_PAYLOADS=true or ENABLE_PROMPT_LOGGING=true.
     return NextResponse.json(prepareRequestDetailsResponse(result));
   } catch (error) {
     console.error("[API] Failed to get request details:", error);

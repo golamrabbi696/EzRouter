@@ -4,6 +4,15 @@ import {
   shouldShowRequestPayloads,
 } from "../../src/lib/requestDetailsVisibility.js";
 
+// Mirror the redaction logic from src/app/api/usage/request-details/route.js
+// so we can test it in isolation.
+function redactDetails(details, promptLoggingEnabled = false) {
+  return prepareRequestDetailsResponse(
+    { details: details || [] },
+    { ENABLE_PROMPT_LOGGING: String(promptLoggingEnabled) }
+  ).details;
+}
+
 describe("request-details redaction", () => {
   it("removes conversation payloads but keeps metadata by default", () => {
     const details = [{
@@ -69,5 +78,22 @@ describe("request-details redaction", () => {
       ENABLE_REQUEST_LOGS: "true",
       SHOW_REQUEST_PAYLOADS: "false",
     })).toBe(false);
+  });
+
+  // ENABLE_PROMPT_LOGGING=true escape hatch (#4728, #4812)
+  it("returns payloads verbatim when prompt logging is enabled", () => {
+    const details = [{
+      id: "abc",
+      request: { messages: [{ role: "user", content: "secret prompt" }] },
+      providerResponse: { choices: [{ message: { content: "secret answer" } }] },
+    }];
+    const out = redactDetails(details, true)[0];
+    expect(out.request).toEqual({ messages: [{ role: "user", content: "secret prompt" }] });
+    expect(out.providerResponse).toEqual({ choices: [{ message: { content: "secret answer" } }] });
+  });
+
+  it("prompt logging enabled still tolerates empty details", () => {
+    expect(redactDetails([], true)).toEqual([]);
+    expect(redactDetails(null, true)).toEqual([]);
   });
 });
