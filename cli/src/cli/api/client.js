@@ -91,6 +91,12 @@ function configure(options = {}) {
 function makeRequest(method, path, body = null) {
   return new Promise((resolve) => {
     const httpModule = config.protocol === "https:" ? https : http;
+    const onNetworkError = (err) => {
+      resolve({
+        success: false,
+        error: `Network error: ${err.message}`,
+      });
+    };
     
     const options = {
       hostname: config.host,
@@ -111,6 +117,8 @@ function makeRequest(method, path, body = null) {
 
     const req = httpModule.request(options, (res) => {
       let data = "";
+
+      res.on("error", onNetworkError);
 
       res.on("data", (chunk) => {
         data += chunk;
@@ -143,12 +151,7 @@ function makeRequest(method, path, body = null) {
       });
     });
 
-    req.on("error", (err) => {
-      resolve({
-        success: false,
-        error: `Network error: ${err.message}`,
-      });
-    });
+    req.on("error", onNetworkError);
 
     req.on("timeout", () => {
       req.destroy();
