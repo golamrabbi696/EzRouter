@@ -226,6 +226,7 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
         stream: false,
         messages: [{ role: "user", content: promptContent }],
       }),
+      // HIGH-effort models can take more than 15 seconds before returning an answer.
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
