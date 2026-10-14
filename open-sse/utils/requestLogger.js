@@ -1,8 +1,20 @@
+import {
+  REQUEST_LOG_SENSITIVE_HEADER_KEYS,
+  REQUEST_LOG_MASK_PREFIX,
+  REQUEST_LOG_MASK_SUFFIX,
+  REQUEST_LOG_MASK_REDACTED
+} from "../config/runtimeConfig.js";
+
 // Check if running in Node.js environment (has fs module)
 const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
 // Check if logging is enabled via environment variable (default: false)
 const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === 'true';
+
+// Escape hatch for debugging auth problems: REQUEST_LOG_FULL_HEADERS=true writes header
+// values verbatim. A separate switch from ENABLE_REQUEST_LOGS on purpose — turning
+// logging on must never silently turn masking off again.
+const FULL_HEADERS_ENABLED = typeof process !== "undefined" && process.env?.REQUEST_LOG_FULL_HEADERS === 'true';
 
 let fs = null;
 let path = null;
@@ -69,32 +81,30 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Substring match, so `x-goog-api-key`, `proxy-authorization` and a provider's own
-// `*-token` header are all covered without listing each one.
-const SENSITIVE_HEADER_KEYS = ["authorization", "api-key", "cookie", "token", "secret"];
-
-// Mask sensitive data in headers.
-// Enough of the value survives to tell two credentials apart, which is what the log
-// is for. A SHORT value is masked whole: anything 20 characters or under becomes '***',
-// and longer values preserve prefix and suffix.
-function maskSensitiveHeaders(headers) {
-  if (!headers) return {};
-  const entries = typeof headers.entries === "function" ? headers.entries() : Object.entries(headers);
-  const masked = {};
-
-  for (const [name, value] of entries) {
-    const lowerKey = name.toLowerCase();
-    if (SENSITIVE_HEADER_KEYS.some(sk => lowerKey.includes(sk))) {
-      if (value === undefined || value === null) continue;
-      const text = String(value);
-      masked[name] = text.length > 20 ? text.slice(0, 10) + "..." + text.slice(-5) : "***";
-    } else {
-      masked[name] = value;
+// Mask sensitive header values before anything is written to disk. The debug value of a
+// log line comes from seeing WHICH auth header went out and roughly WHICH credential it
+// was — never from the credential itself, so long values keep a small prefix/suffix stub
+// (sk-proj-…abcde) and short ones are fully redacted.
+export function maskSensitiveHeaders(headers) {
+  if (!headers || typeof headers !== "object") return {};
+  const masked = { ...headers };
+  for (const key of Object.keys(masked)) {
+    const lowerKey = key.toLowerCase();
+    if (REQUEST_LOG_SENSITIVE_HEADER_KEYS.some((sensitive) => lowerKey.includes(sensitive))) {
+      const value = masked[key];
+      const str = typeof value === "string" ? value : value == null ? "" : String(value);
+      masked[key] =
+        str.length > REQUEST_LOG_MASK_PREFIX + REQUEST_LOG_MASK_SUFFIX
+          ? str.slice(0, REQUEST_LOG_MASK_PREFIX) + "..." + str.slice(-REQUEST_LOG_MASK_SUFFIX)
+          : REQUEST_LOG_MASK_REDACTED;
     }
   }
-
   return masked;
 }
+
+// What the stage loggers actually persist — masked unless the explicit full-headers
+// opt-in was set before startup.
+const sanitizeHeaders = (headers) => (FULL_HEADERS_ENABLED ? { ...headers } : maskSensitiveHeaders(headers));
 
 // No-op logger when logging is disabled
 function createNoOpLogger() {
@@ -137,7 +147,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "1_req_client.json", {
         timestamp: new Date().toISOString(),
         endpoint,
-        headers: maskSensitiveHeaders(headers),
+        headers: sanitizeHeaders(headers),
         body
       });
     },
@@ -146,7 +156,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logRawRequest(body, headers = {}) {
       writeJsonFile(sessionPath, "2_req_source.json", {
         timestamp: new Date().toISOString(),
-        headers: maskSensitiveHeaders(headers),
+        headers: sanitizeHeaders(headers),
         body
       });
     },
@@ -164,7 +174,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "4_req_target.json", {
         timestamp: new Date().toISOString(),
         url,
-        headers: maskSensitiveHeaders(headers),
+        headers: sanitizeHeaders(headers),
         body
       });
     },
@@ -172,11 +182,13 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     // 5. Log provider response (for non-streaming or error)
     logProviderResponse(status, statusText, headers, body) {
       const filename = "5_res_provider.json";
+      const normalized = headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {};
       writeJsonFile(sessionPath, filename, {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: maskSensitiveHeaders(headers),
+        // Response headers can carry credentials too (set-cookie, www-authenticate…).
+        headers: sanitizeHeaders(normalized),
         body
       });
     },
