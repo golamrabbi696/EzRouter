@@ -35,6 +35,29 @@ describe("UNSUPPORTED_SCHEMA_CONSTRAINTS includes non-standard annotation keywor
 });
 
 describe("cleanJSONSchemaForAntigravity strips errorMessage recursively (#4283)", () => {
+  it("strips Codex encrypted annotations from nested schemas without deleting parameter names", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        encrypted: { type: "string", encrypted: true },
+        readOnly: { type: "string", readOnly: true },
+        "x-token": { type: "string", encrypted: true },
+        nested: {
+          type: "array",
+          items: { type: "object", properties: { token: { type: "string", encrypted: true } } },
+        },
+      },
+      required: ["encrypted", "readOnly", "x-token"],
+    };
+    const result = cleanJSONSchemaForAntigravity(structuredClone(schema));
+    expect(result.properties.encrypted).toEqual({ type: "string" });
+    expect(result.properties.readOnly).toEqual({ type: "string" });
+    expect(result.properties["x-token"]).toEqual({ type: "string" });
+    expect(result.properties.nested.items.properties.token).toEqual({ type: "string" });
+    expect(result.required).toEqual(schema.required);
+    expect(schema.properties.encrypted.encrypted).toBe(true);
+  });
+
   it("strips top-level errorMessage", () => {
     const schema = {
       type: "object",
