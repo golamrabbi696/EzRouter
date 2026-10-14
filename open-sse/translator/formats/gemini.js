@@ -175,12 +175,36 @@ export function generateProjectId() {
   return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
 }
 
-// Helper: Remove unsupported keywords recursively from object/array
-// Also strips all vendor extension fields (x- prefixed) not supported by Gemini.
-// Walks only schema nodes: a JSON Schema alternates schema-node → "properties"
-// name-map → schema-node, and the name-map keys are user parameter names, not
-// schema keywords (a param literally named "title"/"format"/"properties" must
-// survive — issue #2884).
+// Visit schemas, never property-name dictionaries or literal annotation/enum data.
+function forEachSubschema(obj, visit) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const schema of obj) visit(schema);
+    return;
+  }
+  for (const key of ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]) {
+    const map = obj[key];
+    if (map && typeof map === "object" && !Array.isArray(map)) {
+      for (const schema of Object.values(map)) visit(schema);
+    }
+  }
+  for (const key of ["items", "additionalItems", "contains", "additionalProperties", "propertyNames", "not", "if", "then", "else", "unevaluatedProperties", "unevaluatedItems", "contentSchema"]) {
+    const schema = obj[key];
+    if (Array.isArray(schema)) {
+      for (const item of schema) visit(item);
+    } else if (schema && typeof schema === "object") {
+      visit(schema);
+    }
+  }
+  for (const key of ["allOf", "anyOf", "oneOf", "prefixItems"]) {
+    if (Array.isArray(obj[key])) {
+      for (const schema of obj[key]) visit(schema);
+    }
+  }
+}
+
+// Helper: Remove unsupported keywords from schema nodes
+// Also strips all vendor extension fields (x- prefixed) not supported by Gemini
 function removeUnsupportedKeywords(obj, keywords) {
   if (!obj || typeof obj !== "object") return;
 
@@ -191,20 +215,12 @@ function removeUnsupportedKeywords(obj, keywords) {
     return;
   }
 
-  // Property name-map: keys are user-defined parameter names. Descend into
-  // each value (which is a schema node) but never delete the key itself.
-  if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
-    for (const propValue of Object.values(obj.properties)) {
-      removeUnsupportedKeywords(propValue, keywords);
-    }
-  }
+  // Strip stray non-schema keys (e.g. `value`) only at real schema nodes —
+  // a node is a schema when it has type/properties/items; inside a property
+  // name-map `value` is a legitimate user parameter name (issue #2902/#2884).
+  const isSchemaNode = obj.type !== undefined || obj.properties !== undefined || obj.items !== undefined;
 
   for (const key of Object.keys(obj)) {
-    if (key === "properties") continue; // handled above
-    // Strip stray non-schema keys (e.g. `value`) only at real schema nodes —
-    // a node is a schema when it has type/properties/items; inside a property
-    // name-map `value` is a legitimate user parameter name (issue #2902/#2884).
-    const isSchemaNode = obj.type !== undefined || obj.properties !== undefined || obj.items !== undefined;
     if (isSchemaNode && STRAY_SCHEMA_KEYS.has(key)) {
       delete obj[key];
       continue;
@@ -213,18 +229,9 @@ function removeUnsupportedKeywords(obj, keywords) {
       delete obj[key];
       continue;
     }
-
-    const value = obj[key];
-    if (value && typeof value === "object") {
-      // A properties map contains parameter names, not schema keywords. Keep
-      // names like encrypted, readOnly or x-token while cleaning their schemas.
-      if (key === "properties") {
-        for (const schema of Object.values(value)) removeUnsupportedKeywords(schema, keywords);
-      } else {
-        removeUnsupportedKeywords(value, keywords);
-      }
-    }
   }
+
+  forEachSubschema(obj, schema => removeUnsupportedKeywords(schema, keywords));
 }
 
 // Convert const to enum
@@ -236,7 +243,7 @@ function convertConstToEnum(obj) {
     delete obj.const;
   }
 
-  forEachChildSchema(obj, convertConstToEnum);
+  forEachSubschema(obj, convertConstToEnum);
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
@@ -251,7 +258,7 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  forEachChildSchema(obj, convertEnumValuesToStrings);
+  forEachSubschema(obj, convertEnumValuesToStrings);
 }
 
 // Merge allOf schemas
@@ -281,7 +288,7 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  forEachChildSchema(obj, mergeAllOf);
+  forEachSubschema(obj, mergeAllOf);
 }
 
 // Select best schema from anyOf/oneOf
@@ -335,7 +342,7 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  forEachChildSchema(obj, flattenAnyOfOneOf);
+  forEachSubschema(obj, flattenAnyOfOneOf);
 }
 
 // Flatten type arrays
@@ -347,26 +354,7 @@ function flattenTypeArrays(obj) {
     obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
   }
 
-  forEachChildSchema(obj, flattenTypeArrays);
-}
-
-// Keys whose value is a MAP of schemas (name -> schema), not a schema itself.
-// A tool may legitimately declare a property named "properties" or "items", so a
-// blind `Object.values()` walk would treat the map as a schema node and mutate it.
-const SCHEMA_MAPS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"];
-
-// Visit child schemas without ever mistaking a schema map for a schema.
-function forEachChildSchema(obj, fn) {
-  for (const [key, value] of Object.entries(obj)) {
-    if (!value || typeof value !== "object") continue;
-    if (SCHEMA_MAPS.includes(key)) {
-      for (const sub of Object.values(value)) if (sub && typeof sub === "object") fn(sub);
-    } else if (Array.isArray(value)) {
-      for (const item of value) if (item && typeof item === "object") fn(item);
-    } else {
-      fn(value);
-    }
-  }
+  forEachSubschema(obj, flattenTypeArrays);
 }
 
 // Infer missing type=object when properties exist (Gemini requires explicit type).
@@ -376,7 +364,7 @@ function forEachChildSchema(obj, fn) {
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  forEachChildSchema(obj, ensureObjectType);
+  forEachSubschema(obj, ensureObjectType);
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -406,7 +394,7 @@ function convertPrefixItems(obj) {
     }
   }
 
-  forEachChildSchema(obj, convertPrefixItems);
+  forEachSubschema(obj, convertPrefixItems);
 }
 
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
@@ -454,7 +442,7 @@ function ensureArrayItems(obj) {
     }
   }
 
-  forEachChildSchema(obj, ensureArrayItems);
+  forEachSubschema(obj, ensureArrayItems);
 }
 
 // JSON Schema primitive type names Gemini's Schema proto understands.
@@ -486,6 +474,7 @@ function schemaFromTypeHint(value) {
 // subschema is invisible to them — this must run first, and must rewrite the
 // parent's slot rather than the (primitive, unmodifiable) value itself.
 const SCHEMA_SLOTS = ["items", "additionalItems", "contains", "if", "then", "else", "not", "propertyNames", "unevaluatedItems", "contentSchema"];
+const SCHEMA_MAPS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"];
 
 function expandStringSchemas(obj) {
   if (!obj || typeof obj !== "object") return;
@@ -510,7 +499,7 @@ function expandStringSchemas(obj) {
     obj.additionalProperties = expand(obj.additionalProperties);
   }
 
-  forEachChildSchema(obj, expandStringSchemas);
+  forEachSubschema(obj, expandStringSchemas);
 }
 
 // Mirror of selectBest(): keep the most informative member of a tuple.
@@ -622,7 +611,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    forEachChildSchema(obj, cleanupRequired);
+    forEachSubschema(obj, cleanupRequired);
   }
 
   cleanupRequired(cleaned);
@@ -657,7 +646,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    forEachChildSchema(obj, addPlaceholders);
+    forEachSubschema(obj, addPlaceholders);
   }
 
   addPlaceholders(cleaned);
