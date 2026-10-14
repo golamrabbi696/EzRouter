@@ -231,8 +231,63 @@ function noteUnavailableTools(body, flat, names) {
 }
 
 /**
+ * Canonicalise tool_calls in request messages to match upstream OpenCode's
+ * quartet names and parameter schema.
+ */
+export function canonicalizeMessageToolCalls(messages) {
+  if (!Array.isArray(messages)) return;
+  for (const msg of messages) {
+    if (!msg || typeof msg !== "object") continue;
+    if (Array.isArray(msg.tool_calls)) {
+      for (const call of msg.tool_calls) {
+        const fn = call?.function;
+        if (!fn || typeof fn !== "object") continue;
+        const key = String(fn.name ?? "").trim().toLowerCase();
+        if (["edit", "write", "read", "bash"].includes(key)) {
+          fn.name = key;
+          if (typeof fn.arguments === "string") {
+            try {
+              const args = JSON.parse(fn.arguments);
+              if (args && typeof args === "object" && !Array.isArray(args)) {
+                if (key === "edit") {
+                  if (args.file_path !== undefined && args.filePath === undefined) {
+                    args.filePath = args.file_path;
+                    delete args.file_path;
+                  }
+                  if (args.old_string !== undefined && args.oldString === undefined) {
+                    args.oldString = args.old_string;
+                    delete args.old_string;
+                  }
+                  if (args.new_string !== undefined && args.newString === undefined) {
+                    args.newString = args.new_string;
+                    delete args.new_string;
+                  }
+                  if (args.replace_all !== undefined && args.replaceAll === undefined) {
+                    args.replaceAll = args.replace_all;
+                    delete args.replace_all;
+                  }
+                  fn.arguments = JSON.stringify(args);
+                } else if (key === "write" || key === "read") {
+                  if (args.file_path !== undefined && args.filePath === undefined) {
+                    args.filePath = args.file_path;
+                    delete args.file_path;
+                  }
+                  fn.arguments = JSON.stringify(args);
+                }
+              }
+            } catch {
+              // Ignore invalid JSON in arguments
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
  * Full request-side pass: alias conflicting caller tools, append OpenCode's
- * fingerprint definitions, and tell the model the appended ones are off-limits.
+ * fingerprint definitions, canonicalise history tool calls, and tell the model the appended ones are off-limits.
  *
  * @param {object} body
  * @param {boolean} flat - true for Responses tools ({name}), false for chat tools
@@ -246,6 +301,7 @@ export function applyFingerprintTools(body, flat) {
   const appended = appendMissingFingerprintTools(body.tools, flat);
   retargetToolChoice(body, map);
   aliasHistoryToolCalls(body, map);
+  canonicalizeMessageToolCalls(body.messages);
   if (appended.length) noteUnavailableTools(body, flat, appended);
 
   // Responses keeps its explicit auto default. Never default to "none": upstream
@@ -270,6 +326,70 @@ export function takeRenamedToolNames(body) {
 
 // Response side -------------------------------------------------------------
 
+/** Normalize quartet tool arguments from OpenCode camelCase to snake_case */
+export function normalizeQuartetToolArgs(name, input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const lower = String(name || "").toLowerCase();
+  const out = { ...input };
+  if (lower === "edit") {
+    const path = out.file_path ?? out.filePath ?? out.path ?? out.file;
+    if (path !== undefined) {
+      out.file_path = path;
+      delete out.filePath;
+      delete out.path;
+      delete out.file;
+    }
+    const oldStr = out.old_string ?? out.oldString ?? out.old_str ?? out.oldText ?? out.old_text;
+    if (oldStr !== undefined) {
+      out.old_string = oldStr;
+      delete out.oldString;
+      delete out.old_str;
+      delete out.oldText;
+      delete out.old_text;
+    }
+    const newStr = out.new_string ?? out.newString ?? out.new_str ?? out.newText ?? out.new_text;
+    if (newStr !== undefined) {
+      out.new_string = newStr;
+      delete out.newString;
+      delete out.new_str;
+      delete out.newText;
+      delete out.new_text;
+    }
+    const replaceAll = out.replace_all ?? out.replaceAll;
+    if (replaceAll !== undefined) {
+      out.replace_all = Boolean(replaceAll);
+      delete out.replaceAll;
+    }
+  } else if (lower === "write" || lower === "read") {
+    const path = out.file_path ?? out.filePath ?? out.path ?? out.file;
+    if (path !== undefined) {
+      out.file_path = path;
+      delete out.filePath;
+      delete out.path;
+      delete out.file;
+    }
+  } else if (lower === "bash") {
+    const cmd = out.command ?? out.cmd;
+    if (cmd !== undefined) {
+      out.command = cmd;
+      delete out.cmd;
+    }
+  }
+  return out;
+}
+
+/** Normalize quartet tool arguments JSON string */
+export function normalizeQuartetToolArgsJson(name, argsJson) {
+  if (typeof argsJson !== "string") return argsJson;
+  try {
+    const parsed = JSON.parse(argsJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return argsJson;
+    return JSON.stringify(normalizeQuartetToolArgs(name, parsed));
+  } catch {
+    return argsJson;
+  }
+}
+
 /** Restore caller tool spellings in supported response/event shapes. */
 export function restoreToolNames(payload, map) {
   if (!map?.size || !payload) return payload;
@@ -292,10 +412,17 @@ export function restoreToolNames(payload, map) {
 
   // Claude non-streaming message body.
   if (Array.isArray(payload.content)) {
-    put("content", payload.content.map((block) =>
-      block?.type === "tool_use" && typeof block.name === "string" && map.has(block.name)
-        ? { ...block, name: map.get(block.name) }
-        : block));
+    put("content", payload.content.map((block) => {
+      if (block?.type === "tool_use" && typeof block.name === "string") {
+        const restoredName = map.has(block.name) ? map.get(block.name) : block.name;
+        let input = block.input;
+        if (input && typeof input === "object") {
+          input = normalizeQuartetToolArgs(restoredName, input);
+        }
+        return { ...block, name: restoredName, input };
+      }
+      return block;
+    }));
   }
 
   // OpenAI Chat Completions, both streaming delta and JSON message shapes.
@@ -308,11 +435,23 @@ export function restoreToolNames(payload, map) {
         if (!value || !Array.isArray(value.tool_calls) || value.tool_calls.length === 0) continue;
         const calls = value.tool_calls.map((call) => {
           const name = call?.function?.name;
-          if (typeof name === "string" && map.has(name)) {
+          const restoredName = typeof name === "string" && map.has(name) ? map.get(name) : name;
+          let changedCall = false;
+          let fn = call.function;
+          if (restoredName !== name) {
             changed = true;
-            return { ...call, function: { ...call.function, name: map.get(name) } };
+            changedCall = true;
+            fn = { ...fn, name: restoredName };
           }
-          return call;
+          if (holder === "message" && typeof fn?.arguments === "string") {
+            const mappedArgs = normalizeQuartetToolArgsJson(restoredName || name, fn.arguments);
+            if (mappedArgs !== fn.arguments) {
+              changed = true;
+              changedCall = true;
+              fn = { ...fn, arguments: mappedArgs };
+            }
+          }
+          return changedCall ? { ...call, function: fn } : call;
         });
         next[holder] = { ...value, tool_calls: calls };
       }
