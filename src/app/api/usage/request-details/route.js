@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
 import { prepareRequestDetailsResponse } from "@/lib/requestDetailsVisibility";
+import { getApiKeys } from "@/lib/localDb";
+
+function maskApiKey(key) {
+  if (!key || typeof key !== "string") return null;
+  if (key.length <= 12) return key.charAt(0) + "***";
+  return key.slice(0, 8) + "***" + key.slice(-4);
+}
 
 /**
  * GET /api/usage/request-details
@@ -47,12 +54,33 @@ export async function GET(request) {
     if (startDate) filter.startDate = startDate;
     if (endDate) filter.endDate = endDate;
     
-    const result = await getRequestDetails(filter);
+    const [result, apiKeys] = await Promise.all([
+      getRequestDetails(filter),
+      getApiKeys().catch(() => [])
+    ]);
+
+    const keyMap = new Map();
+    for (const k of apiKeys || []) {
+      if (k?.key) keyMap.set(k.key, k);
+    }
+
+    const enrichedDetails = (result.details || []).map((d) => {
+      const enriched = { ...d };
+      if (enriched.apiKey) {
+        const matched = keyMap.get(enriched.apiKey);
+        enriched.apiKeyName = matched?.name || null;
+        enriched.apiKey = maskApiKey(enriched.apiKey);
+      } else {
+        enriched.apiKey = null;
+        enriched.apiKeyName = "Local / No Key";
+      }
+      return enriched;
+    });
 
     // Conversation payloads stay redacted by default. Server operators may
     // explicitly opt in to exposing stored prompts and responses in the
     // dashboard with SHOW_REQUEST_PAYLOADS=true or ENABLE_PROMPT_LOGGING=true.
-    return NextResponse.json(prepareRequestDetailsResponse(result));
+    return NextResponse.json(prepareRequestDetailsResponse({ ...result, details: enrichedDetails }));
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

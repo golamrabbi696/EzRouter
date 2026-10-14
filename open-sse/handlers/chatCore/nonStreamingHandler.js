@@ -488,6 +488,7 @@ export async function handleNonStreamingResponse({
       provider,
       model: recordedModel,
       connectionId: effectiveConnId,
+      apiKey,
       latency: { ttft: totalLatency, total: totalLatency },
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),

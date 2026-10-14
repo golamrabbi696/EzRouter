@@ -122,7 +122,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, pingBytes, CLAUDE_PING_INTERVAL_MS);
 
   saveRequestDetail(buildRequestDetail({
-    provider, model: recordedModel, connectionId,
+    provider, model: recordedModel, connectionId, apiKey,
     latency: { ttft: 0, total: Date.now() - requestStartTime },
     tokens: { prompt_tokens: 0, completion_tokens: 0 },
     request: extractRequestConfig(body, stream),
@@ -158,7 +158,7 @@ export function buildOnStreamComplete({ provider, model, statisticsModel, connec
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
-      provider, model: recordedModel, connectionId,
+      provider, model: recordedModel, connectionId, apiKey,
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),

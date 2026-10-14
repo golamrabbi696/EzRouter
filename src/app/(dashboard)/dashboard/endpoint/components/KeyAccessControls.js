@@ -5,11 +5,12 @@
 // combos/models, shown as removable badges. Entries are picked with the same
 // shared ModelSelectModal the combo editor uses (combos first, then models),
 // added as a whole provider ("provider/*"), or typed by hand.
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import PropTypes from "prop-types";
 import { Toggle, ModelSelectModal } from "@/shared/components";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { KEY_ACCESS_PROVIDER_WILDCARD_SUFFIX, keyAccessWildcardProvider } from "@/shared/constants/keyAccess.js";
+import { cn } from "@/shared/utils/cn";
 
 export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict }) {
   const access = apiKey.access || { restricted: false, allow: [] };
@@ -17,16 +18,30 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict 
   const [activeProviders, setActiveProviders] = useState([]);
   const [providersLoaded, setProvidersLoaded] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
+  const [nodeNames, setNodeNames] = useState({});
   const [typed, setTyped] = useState("");
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   const loadProviders = async () => {
     if (providersLoaded) return;
     setProvidersLoaded(true);
     // Same sources the combo editor feeds the picker with.
     try {
-      const [providersRes, aliasRes] = await Promise.all([fetch("/api/providers"), fetch("/api/models/alias")]);
+      const [providersRes, aliasRes, nodesRes] = await Promise.all([
+        fetch("/api/providers"),
+        fetch("/api/models/alias"),
+        fetch("/api/provider-nodes")
+      ]);
       if (providersRes.ok) setActiveProviders((await providersRes.json()).connections || []);
       if (aliasRes.ok) setModelAliases((await aliasRes.json()).aliases || {});
+      if (nodesRes?.ok) {
+        const data = await nodesRes.json();
+        const mapping = {};
+        for (const n of data.nodes || []) {
+          if (n.id && n.name) mapping[n.id] = n.name;
+        }
+        setNodeNames(mapping);
+      }
     } catch (error) {
       console.log("Error loading picker data:", error);
     }
@@ -58,20 +73,72 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict 
     const entry = `${alias}${KEY_ACCESS_PROVIDER_WILDCARD_SUFFIX}`;
     if (seen.has(alias) || access.allow.some((e) => e.toLowerCase() === entry.toLowerCase())) continue;
     seen.add(alias);
-    providerOptions.push({ value: entry, label: AI_PROVIDERS[conn.provider]?.name || conn.provider });
+    const friendlyName = nodeNames[conn.provider] || conn.providerSpecificData?.nodeName || AI_PROVIDERS[conn.provider]?.name || conn.provider;
+    providerOptions.push({ value: entry, label: friendlyName });
   }
   providerOptions.sort((a, b) => a.label.localeCompare(b.label));
 
+  const summaryBadge = useMemo(() => {
+    const count = access.allow.length;
+    if (count === 0) return "No models allowed";
+    return `${count} model${count > 1 ? "s" : ""} allowed`;
+  }, [access.allow.length]);
+
   return (
     <div className="mt-2" data-testid="key-access">
-      <Toggle
-        size="sm"
-        checked={access.restricted}
-        label="Restrict access"
-        onChange={(checked) => (checked ? onRequestRestrict() : onChange({ restricted: false, allow: access.allow }))}
-      />
-      {access.restricted && (
-        <div className="mt-2 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <Toggle
+          size="sm"
+          checked={access.restricted}
+          label="Restrict access"
+          onChange={(checked) => {
+            if (checked) {
+              setIsConfigOpen(true);
+              onRequestRestrict();
+            } else {
+              setIsConfigOpen(false);
+              onChange({ restricted: false, allow: access.allow });
+            }
+          }}
+        />
+
+        {access.restricted && (
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border",
+                access.allow.length === 0
+                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                  : "bg-primary/10 text-primary border border-primary/20"
+              )}
+            >
+              {summaryBadge}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                loadProviders();
+                setIsConfigOpen((prev) => !prev);
+              }}
+              aria-expanded={isConfigOpen}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-text-main transition-colors select-none"
+            >
+              <span>Configure Access</span>
+              <span
+                className={cn(
+                  "material-symbols-outlined text-[16px] text-text-muted transition-transform duration-200",
+                  isConfigOpen ? "rotate-180" : ""
+                )}
+              >
+                expand_more
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {access.restricted && isConfigOpen && (
+        <div className="mt-2 flex flex-col gap-2 rounded-xl border border-black/[0.08] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.01] p-3.5">
           <div className="flex flex-wrap items-center gap-1.5">
             {access.allow.length === 0 && (
               <span className="text-xs text-orange-500">No combos or models allowed — this key can call nothing.</span>
@@ -86,6 +153,7 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict 
                 >
                   {entry}
                   <button
+                    type="button"
                     onClick={() => remove(entry)}
                     className="rounded text-text-muted hover:text-red-500"
                     title={`Remove ${entry}`}
@@ -97,6 +165,7 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict 
               );
             })}
             <button
+              type="button"
               onClick={openPicker}
               className="flex items-center gap-0.5 rounded-xl border border-dashed border-black/10 px-2 py-0.5 text-xs font-medium text-primary hover:border-primary/50 dark:border-white/10"
             >
@@ -127,6 +196,7 @@ export default function KeyAccessControls({ apiKey, onChange, onRequestRestrict 
               className="min-w-0 flex-1 rounded-xl border border-black/10 bg-transparent px-2 py-0.5 font-mono text-xs text-text-main outline-none focus:border-primary/50 dark:border-white/10"
             />
             <button
+              type="button"
               onClick={addTyped}
               disabled={!typed.trim()}
               className="rounded-xl border border-black/10 px-2 py-0.5 text-xs font-medium text-primary hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10"
