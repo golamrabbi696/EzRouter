@@ -286,6 +286,17 @@ export function canonicalizeUsage(usage) {
   copyNonnegative("cost_in_usd");
   copyNonnegative("cost_in_usd_ticks");
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+
+  // Billing-authoritative credit, when the upstream reports it (CodeBuddy /
+  // WorkBuddy put `credit` in the final usage chunk). Zero is meaningful here —
+  // it means the request was served by a free allowance, not that the field was
+  // absent — so this must not be treated as a numeric-token field: canonicalize
+  // drops every key it does not know about, and widening the token list instead
+  // would let a phantom `credit` key reach the token-summing callers.
+  const credit = Number(usage.credit);
+  if (usage.credit !== undefined && usage.credit !== null && Number.isFinite(credit)) {
+    result.credit = credit;
+  }
   return result;
 }
 
