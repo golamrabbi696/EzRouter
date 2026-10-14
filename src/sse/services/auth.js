@@ -706,6 +706,8 @@ export function extractApiKeyCandidates(request) {
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
   push(request.headers.get("x-api-key"));
+  // Check Gemini CLI header (native /v1beta path sends the client key here)
+  push(request.headers.get("x-goog-api-key"));
   return candidates;
 }
 
