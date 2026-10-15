@@ -417,9 +417,18 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
     case "zai": {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
-      // Always-on models already reason without an enable marker. An incomplete
-      // marker is rejected by Anthropic-wire upstreams that require budget_tokens.
-      if (canDisable || targetFormat !== "claude") body.thinking = { type: "enabled" };
+      // Wire-dependent: Anthropic-wire upstreams (z.ai /api/anthropic/v1/messages)
+      // require budget_tokens whenever thinking.type === "enabled" (#4771). The
+      // OpenAI-wire /chat/completions schema only defines thinking.type (+ clear_thinking)
+      // — sending budget_tokens there risks strict-parser 400s, keep the bare marker.
+      if (targetFormat === "claude") {
+        const zaiBudget = toBudget(eff, caps.thinkingRange);
+        body.thinking = zaiBudget === -1 || zaiBudget == null
+          ? { type: "enabled", budget_tokens: 8192 }
+          : { type: "enabled", budget_tokens: Math.max(1024, zaiBudget) };
+      } else {
+        body.thinking = { type: "enabled" };
+      }
       // reasoning_effort is only read by z.ai from GLM-5.2 onward — older GLM ignores it
       // (see thinkingEffortSupported in capabilities.js). Skip on unsupported models so we
       // don't send a field the API doesn't recognize.
