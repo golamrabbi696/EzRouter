@@ -269,6 +269,16 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // OpenAI streaming uses null until the terminal finish reason.
+              if (parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice.finish_reason === "") {
+                    choice.finish_reason = null;
+                    fieldsInjected = true;
+                  }
+                }
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
@@ -339,6 +349,11 @@ export function createSSEStream(options = {}) {
               // messages) in the SSE stream that would break downstream JSON decoders.
               continue;
             }
+          }
+
+          if (trimmed === "data: [DONE]" || trimmed === "data:[DONE]") {
+            if (streamDoneSent) continue;
+            streamDoneSent = true;
           }
 
           if (!injectedUsage) {
