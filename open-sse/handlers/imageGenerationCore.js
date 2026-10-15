@@ -25,7 +25,7 @@ function serializeRequestBody(requestBody) {
  * @param {function} [options.onCredentialsRefreshed]
  * @param {function} [options.onRequestSuccess]
  * @param {function} [options.onUsage] - Receives exact provider-reported usage when available
- * @returns {Promise<{ success: boolean, response: Response, status?: number, error?: string }>}
+ * @returns {Promise<{ success: boolean, response: Response, status?: number, error?: string, skipAccountCooldown?: boolean }>}
  */
 export async function handleImageGenerationCore({
   body,
@@ -167,7 +167,11 @@ export async function handleImageGenerationCore({
     const { statusCode, message } = await parseUpstreamError(providerResponse);
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     log?.debug?.("IMAGE", `Provider error: ${errMsg}`);
-    return createErrorResult(statusCode, errMsg);
+    const result = createErrorResult(statusCode, errMsg);
+    if (statusCode === HTTP_STATUS.BAD_REQUEST && adapter.shouldSkipAccountCooldown?.(message, requestBody, model)) {
+      result.skipAccountCooldown = true;
+    }
+    return result;
   }
 
   // Parse provider response — adapter may override (codex SSE / async polling / binary)

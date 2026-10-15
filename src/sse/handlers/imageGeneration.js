@@ -197,14 +197,24 @@ async function handleSingleModelImage(body, modelStr, request, { wantsStream, bi
     // Invalid client payloads are account-independent; do not rotate or lock credentials.
     if (result.retryable === false) return result.response;
 
-    const { shouldFallback } = await markAccountUnavailable(
-      credentials.connectionId,
-      result.status,
-      result.error,
-      provider,
-      model,
-      result.resetsAtMs
-    );
+    const { shouldFallback } = result.skipAccountCooldown
+      ? { shouldFallback: true }
+      : (result.resetsAtMs != null
+          ? await markAccountUnavailable(
+              credentials.connectionId,
+              result.status,
+              result.error,
+              provider,
+              model,
+              result.resetsAtMs
+            )
+          : await markAccountUnavailable(
+              credentials.connectionId,
+              result.status,
+              result.error,
+              provider,
+              model
+            ));
 
     if (shouldFallback) {
       excludeConnectionIds.add(credentials.connectionId);

@@ -19,10 +19,12 @@ const originalFetch = global.fetch;
 
 describe("handleImageGenerationCore", () => {
   beforeEach(() => {
+    vi.stubEnv("CODEX_IMAGE_RESPONSES_MODEL", "");
     global.fetch = vi.fn();
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     global.fetch = originalFetch;
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -417,7 +419,7 @@ describe("handleImageGenerationCore", () => {
     expect(result.success).toBe(true);
     const fetchCall = global.fetch.mock.calls[0];
     const requestBody = JSON.parse(fetchCall[1].body);
-    expect(requestBody.model).toBe("gpt-5.5");
+    expect(requestBody.model).toBe("gpt-5.6-luna");
     expect(requestBody.tools).toEqual([
       { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
     ]);
@@ -463,7 +465,7 @@ describe("handleImageGenerationCore", () => {
 
     expect(result.success).toBe(true);
     const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(requestBody.model).toBe("gpt-5.5");
+    expect(requestBody.model).toBe("gpt-5.6-luna");
     expect(requestBody.tools).toEqual([{
       type: "image_generation",
       action: "edit",
