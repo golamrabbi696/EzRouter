@@ -928,7 +928,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         // FreeTierError on POST /zen/v1/responses with tools (requires
         // bash+read decoys + tool_choice auto — see OpenCodeExecutor).
         const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
-          headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
+          headers: { Authorization: "Bearer public", "User-Agent": "opencode/latest/2.0.29/cli" },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
       }

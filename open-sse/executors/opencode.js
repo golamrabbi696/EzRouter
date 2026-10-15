@@ -64,7 +64,7 @@ function isPrivateIp(ip) {
 
 // OpenCode v2 UA shape: opencode/<channel>/<version>/<client>. Upstream rejects
 // the v1 "opencode/1.18.x" form with 403 FreeTierError since 2026-10-14.
-const OPENCODE_UA = "opencode/latest/2.0.26/cli";
+const OPENCODE_UA = "opencode/latest/2.0.29/cli";
 const OPENCODE_CLIENT = "cli";
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
@@ -85,8 +85,21 @@ const stableSessionCleanup = setInterval(() => {
 if (stableSessionCleanup.unref) stableSessionCleanup.unref();
 
 function hasValidOpencodeVersion(ua) {
-  const m = String(ua || "").match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
-  return !!m && parseInt(m[1], 10) >= 2;
+  // Accept both legacy "opencode/1.18.31" and channel form
+  // "opencode/latest/2.0.29/cli" (official CLI since 2.0, issue #4837/#4861).
+  const legacy = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
+  if (legacy) {
+    const major = parseInt(legacy[1], 10);
+    const minor = parseInt(legacy[2], 10);
+    return major > 1 || (major === 1 && minor >= 17);
+  }
+  const channel = String(ua || "").match(/opencode\/[a-z-]+\/(\d+)\.(\d+)(?:\.(\d+))?/i);
+  if (channel) {
+    const major = parseInt(channel[1], 10);
+    const minor = parseInt(channel[2], 10);
+    return major > 1 || (major === 1 && minor >= 17);
+  }
+  return false;
 }
 // Models served by /inference/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
