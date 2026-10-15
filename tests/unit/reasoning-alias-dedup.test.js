@@ -1,9 +1,8 @@
-import test, { describe } from "node:test";
-import assert from "node:assert";
+import { describe, it, expect } from "vitest";
 import { stripUnsupportedParams } from "../../open-sse/translator/concerns/paramSupport.js";
 
 describe("reasoning and reasoning_content alias deduplication (#4841)", () => {
-  test("drops reasoning when reasoning_content is already present on assistant message", () => {
+  it("drops reasoning when reasoning_content is already present on assistant message", () => {
     const body = {
       model: "glm-4-plus",
       messages: [
@@ -18,11 +17,11 @@ describe("reasoning and reasoning_content alias deduplication (#4841)", () => {
     };
 
     const result = stripUnsupportedParams("z-ai", "glm-4-plus", body);
-    assert.strictEqual(result.messages[1].reasoning_content, "Thinking step 1");
-    assert.strictEqual(result.messages[1].reasoning, undefined);
+    expect(result.messages[1].reasoning_content).toBe("Thinking step 1");
+    expect(result.messages[1].reasoning).toBeUndefined();
   });
 
-  test("preserves reasoning when reasoning_content is absent", () => {
+  it("preserves reasoning when reasoning_content is absent", () => {
     const body = {
       model: "glm-4-plus",
       messages: [
@@ -35,11 +34,11 @@ describe("reasoning and reasoning_content alias deduplication (#4841)", () => {
     };
 
     const result = stripUnsupportedParams("z-ai", "glm-4-plus", body);
-    assert.strictEqual(result.messages[0].reasoning, "Thinking step");
-    assert.strictEqual(result.messages[0].reasoning_content, undefined);
+    expect(result.messages[0].reasoning).toBe("Thinking step");
+    expect(result.messages[0].reasoning_content).toBeUndefined();
   });
 
-  test("preserves reasoning_content when reasoning is absent", () => {
+  it("preserves reasoning_content when reasoning is absent", () => {
     const body = {
       model: "glm-4-plus",
       messages: [
@@ -52,11 +51,11 @@ describe("reasoning and reasoning_content alias deduplication (#4841)", () => {
     };
 
     const result = stripUnsupportedParams("z-ai", "glm-4-plus", body);
-    assert.strictEqual(result.messages[0].reasoning_content, "Thinking step");
-    assert.strictEqual(result.messages[0].reasoning, undefined);
+    expect(result.messages[0].reasoning_content).toBe("Thinking step");
+    expect(result.messages[0].reasoning).toBeUndefined();
   });
 
-  test("leaves user and system messages untouched", () => {
+  it("leaves user and system messages untouched", () => {
     const body = {
       model: "kimi-k2",
       messages: [
@@ -70,7 +69,7 @@ describe("reasoning and reasoning_content alias deduplication (#4841)", () => {
     };
 
     const result = stripUnsupportedParams("moonshot", "kimi-k2", body);
-    assert.strictEqual(result.messages[0].reasoning, "User reasoning notes");
-    assert.strictEqual(result.messages[0].reasoning_content, "User notes duplicate");
+    expect(result.messages[0].reasoning).toBe("User reasoning notes");
+    expect(result.messages[0].reasoning_content).toBe("User notes duplicate");
   });
 });

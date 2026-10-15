@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { injectReasoningContent } from "../../open-sse/utils/reasoningContentInjector.js";
 import { OpenCodeExecutor } from "../../open-sse/executors/opencode.js";
+import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
 const assistantWithToolCall = {
   role: "assistant",
@@ -135,7 +136,6 @@ describe("injectReasoningContent — MiniMax thinking round-trip", () => {
   });
 
   it("DefaultExecutor transformRequest runs the injector for minimax", () => {
-    const { DefaultExecutor } = require("../../open-sse/executors/default.js");
     const executor = new DefaultExecutor("minimax");
     const out = executor.transformRequest(
       "MiniMax-M2.7",
@@ -169,4 +169,25 @@ describe("malformed messages guard (#3784)", () => {
       ).toBe(body);
     }
   );
+});
+
+describe("injectReasoningContent — #4803 idempotence with reasoning alias", () => {
+  const body = bodyWith([{ role: "user", content: "hi" }, assistantWithToolCall]);
+
+  it("does not inject when assistant already carries reasoning_content AND reasoning (#4803)", () => {
+    const msg = { ...assistantWithToolCall, reasoning: "chain", reasoning_content: "echo" };
+    const out = injectReasoningContent({ provider: "opencode", model: "deepseek-v4-flash-free", body: bodyWith([body.messages[0], msg]) });
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    expect(assistant.reasoning_content).toBe("echo");
+    expect(assistant.reasoning).toBe("chain");
+    expect(Object.keys(assistant).filter((k) => k === "reasoning_content")).toHaveLength(1);
+  });
+
+  it("does not inject when only the reasoning alias is present", () => {
+    const msg = { ...assistantWithToolCall, reasoning: "chain" };
+    const out = injectReasoningContent({ provider: "opencode", model: "deepseek-v4-flash-free", body: bodyWith([body.messages[0], msg]) });
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    expect(assistant.reasoning).toBe("chain");
+    expect(assistant.reasoning_content).toBeUndefined();
+  });
 });
