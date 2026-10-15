@@ -208,6 +208,16 @@ export const ERROR_RULES = [
   { text: "geographic use policy",     noFallback: true, modelLevel: true },
   { text: "not available in your region", noFallback: true, modelLevel: true },
 
+  // Context-overflow 400s: request cannot fit this seat's window but another
+  // combo member with a larger context may serve it (#4796). No cooldown —
+  // the credential is healthy; the request is simply too big for this model.
+  { text: "context_length_exceeded",  cooldownMs: 0 },
+  { text: "maximum context length",   cooldownMs: 0 },
+  { text: "context length exceeded",  cooldownMs: 0 },
+  { text: "prompt is too long",       cooldownMs: 0 },
+  { text: "exceeds the available context size", cooldownMs: 0 },
+  { text: "input token exceed the limit", cooldownMs: 0 },
+
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },

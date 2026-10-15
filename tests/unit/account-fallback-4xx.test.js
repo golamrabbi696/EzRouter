@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
 describe("checkFallbackError — request-scoped vs account-scoped failures", () => {
-  it("does not cool the account down for a 400 caused by the request", () => {
+  it("context-overflow 400 falls back without cooling the account down (#4796)", () => {
     const result = checkFallbackError(400, JSON.stringify({
       error: {
         message: "This model's maximum context length is 1048576 tokens. However, you requested 1186139 tokens",
@@ -18,7 +18,13 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
       },
     }));
 
-    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    // #4796: another combo member with a larger window can serve the request,
+    // so the chain must advance — but the credential stays healthy (no cooldown).
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 0 });
+  });
+
+  it("does not cool the account down or fall back for an ordinary request-scoped 400", () => {
+    expect(checkFallbackError(400, "Unsupported model mimo-auto")).toEqual({ shouldFallback: false, cooldownMs: 0 });
   });
 
   it("hands back only the request-scoped statuses", () => {
