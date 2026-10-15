@@ -68,7 +68,7 @@ describe("OpenCodeZenExecutor free-tier auth", () => {
     expect(headers["x-opencode-session"]).toMatch(OPENCODE_SESSION_RE);
     expect(headers["x-opencode-request"]).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
     expect(headers["x-opencode-client"]).toBe("desktop");
-    expect(headers["User-Agent"]).toMatch(/opencode\/\d+\.\d+/i);
+    expect(headers["User-Agent"]).toMatch(/opencode\/(?:latest\/)?\d+\.\d+/i);
   });
 
   it("does the same for responses-endpoint free models", () => {

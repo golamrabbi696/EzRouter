@@ -183,6 +183,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > assemblyai → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > atlascloud → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > atria → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1481,6 +1500,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > ovh → headers (api
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > paraloncloud → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > perplexity → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1889,6 +1927,13 @@ exports[`GOLDEN buildUrl (default executor providers) > assemblyai → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > atlascloud → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.atlascloud.ai/v1/chat/completions",
+  "stream": "https://api.atlascloud.ai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > atria → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.atria-asi.ai/v1/chat/completions",
@@ -2285,6 +2330,13 @@ exports[`GOLDEN buildUrl (default executor providers) > ovh → url (stream + no
 {
   "nonStream": "https://ai.endpoints.ovh.com/v1/chat/completions",
   "stream": "https://ai.endpoints.ovh.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > paraloncloud → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://paraloncloud.com/v1/chat/completions",
+  "stream": "https://paraloncloud.com/v1/chat/completions",
 }
 `;
 
