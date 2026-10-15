@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbe
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import {
   createNousApiKeyProbe,
   getNousApiKeyValidationError,
@@ -375,7 +376,6 @@ export async function POST(request) {
           if (!isValid) error = getNousApiKeyValidationError(res.status);
           break;
         }
-
         case "glm":
         case "glm-cn":
         case "kimi":

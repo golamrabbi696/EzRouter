@@ -34,8 +34,11 @@ const FORMAT_LEVELS = {
   hunyuan: L.base,
   step: L.base,
   nous: L.base,
+<<<<<<< HEAD
   meta: ["minimal", "low", "medium", "high", "xhigh"], // Muse Spark — no disable, no max
   ollama: L.levelMax,
+=======
+>>>>>>> 165f9b90a (feat(providers): add Nous Research OAuth + free-tier provider)
 };
 
 const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];

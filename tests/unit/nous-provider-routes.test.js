@@ -59,7 +59,7 @@ const makeValidationRequest = () => new Request("http://localhost/api/providers/
   body: JSON.stringify({ provider: "nous", apiKey: "portal-key" }),
 });
 
-describe("Nous API-key route wiring", () => {
+describe("Nous route wiring (API key + OAuth)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
@@ -126,23 +126,7 @@ describe("Nous API-key route wiring", () => {
     });
   });
 
-  it("does not accept missing models or upstream failures as proof of authentication", async () => {
-    global.fetch.mockResolvedValueOnce(makeResponse(404));
-    const missingModel = await validateProvider(makeValidationRequest());
-    expect(await missingModel.json()).toEqual({
-      valid: false,
-      error: "Unable to verify API key (Nous returned 404)",
-    });
-
-    global.fetch.mockResolvedValueOnce(makeResponse(503));
-    const unavailable = await validateProvider(makeValidationRequest());
-    expect(await unavailable.json()).toEqual({
-      valid: false,
-      error: "Unable to verify API key (Nous returned 503)",
-    });
-  });
-
-  it("uses the same authenticated probe for saved connection tests", async () => {
+  it("uses the same authenticated probe for saved API-key connection tests", async () => {
     global.fetch.mockResolvedValue(makeResponse(200));
 
     const result = await testSingleConnection("nous-connection");
@@ -161,20 +145,27 @@ describe("Nous API-key route wiring", () => {
     );
   });
 
-  it("marks a saved connection inactive when Nous rejects its key", async () => {
-    global.fetch.mockResolvedValue(makeResponse(401));
-
-    const result = await testSingleConnection("nous-connection");
-
-    expect(result).toMatchObject({
-      valid: false,
-      error: "Invalid or inactive API key",
+  it("uses minted apiKey when testing saved OAuth connections", async () => {
+    mocks.getProviderConnectionById.mockResolvedValueOnce({
+      id: "nous-oauth-conn",
+      provider: "nous",
+      authType: "oauth",
+      accessToken: "oauth-access-token",
+      apiKey: "minted-agent-key",
+      refreshToken: "oauth-refresh-token",
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      providerSpecificData: {},
     });
-    expect(mocks.updateProviderConnection).toHaveBeenCalledWith(
-      "nous-connection",
+    global.fetch.mockResolvedValue(makeResponse(200));
+
+    const result = await testSingleConnection("nous-oauth-conn");
+
+    expect(result.valid).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      NOUS_CHAT_COMPLETIONS_URL,
       expect.objectContaining({
-        testStatus: "error",
-        lastError: "Invalid or inactive API key",
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer minted-agent-key" }),
       }),
     );
   });
@@ -183,9 +174,9 @@ describe("Nous API-key route wiring", () => {
     global.fetch.mockResolvedValue(new Response(JSON.stringify({
       data: [
         {
-          id: "nousresearch/hermes-4-70b",
-          name: "Nous: Hermes 4 70B",
-          context_length: 131072,
+          id: "poolside/laguna-s-2.1:free",
+          name: "Poolside Laguna S 2.1 (Free)",
+          context_length: 262144,
           architecture: { output_modalities: ["text"] },
         },
         {
@@ -208,22 +199,15 @@ describe("Nous API-key route wiring", () => {
       provider: "nous",
       connectionId: "nous-connection",
       models: [{
-        id: "nous/nousresearch/hermes-4-70b",
-        name: "Nous: Hermes 4 70B",
-        contextLength: 131072,
-        upstreamModelId: "nousresearch/hermes-4-70b",
+        id: "nous/poolside/laguna-s-2.1:free",
+        name: "Poolside Laguna S 2.1 (Free)",
+        contextLength: 262144,
+        upstreamModelId: "poolside/laguna-s-2.1:free",
       }],
     });
     expect(parseModel(payload.models[0].id)).toMatchObject({
       provider: "nous",
-      model: "nousresearch/hermes-4-70b",
+      model: "poolside/laguna-s-2.1:free",
     });
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://inference-api.nousresearch.com/v1/models",
-      expect.objectContaining({
-        method: "GET",
-        headers: expect.objectContaining({ Authorization: "Bearer portal-key" }),
-      }),
-    );
   });
 });

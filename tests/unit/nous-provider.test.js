@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import REGISTRY from "../../open-sse/providers/registry/index.js";
 import {
@@ -10,9 +10,16 @@ import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.j
 import { getModelsByProviderId } from "../../open-sse/config/providerModels.js";
 import { parseModel, resolveProviderAlias } from "../../open-sse/services/model.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { refreshNousToken } from "../../open-sse/services/tokenRefresh.js";
+import nousOAuth from "../../src/lib/oauth/providers/nous.js";
 import {
+  NOUS_AGENT_KEY_URL,
   NOUS_CHAT_COMPLETIONS_URL,
+  NOUS_DEVICE_CODE_URL,
   NOUS_MODELS_URL,
+  NOUS_OAUTH_CLIENT_ID,
+  NOUS_OAUTH_SCOPE,
+  NOUS_TOKEN_URL,
   NOUS_VALIDATION_MODEL,
   createNousApiKeyProbe,
   getNousApiKeyValidationError,
@@ -21,19 +28,33 @@ import {
   normalizeNousModels,
 } from "../../open-sse/services/nous.js";
 
+const originalFetch = global.fetch;
+
 describe("Nous Research provider", () => {
   const entry = REGISTRY.find((candidate) => candidate.id === "nous");
-  const hermes70b = "nousresearch/hermes-4-70b";
+  const sampleFreeModel = "poolside/laguna-s-2.1:free";
 
-  it("is registered with API-key-only authentication", () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("is registered with dual OAuth (Device Code) + API-key authentication in freeTier", () => {
     expect(entry).toBeDefined();
     expect(entry.category).toBe("freeTier");
     expect(entry.hasFree).toBe(true);
-    expect(entry.authType).toBe("apikey");
-    expect(entry.authModes).toEqual(["apikey"]);
+    expect(entry.hasOAuth).toBe(true);
+    expect(entry.authType).toBe("oauth");
+    expect(entry.authModes).toEqual(["oauth", "apikey"]);
     expect(entry.display.name).toBe("Nous Research");
     expect(entry.display.notice.apiKeyUrl).toBe("https://portal.nousresearch.com/api-keys");
-    expect(PROVIDER_OAUTH.nous).toBeUndefined();
+    expect(PROVIDER_OAUTH.nous).toMatchObject({
+      clientId: NOUS_OAUTH_CLIENT_ID,
+      scope: NOUS_OAUTH_SCOPE,
+      deviceCodeUrl: NOUS_DEVICE_CODE_URL,
+      tokenUrl: NOUS_TOKEN_URL,
+      agentKeyUrl: NOUS_AGENT_KEY_URL,
+    });
   });
 
   it("uses the documented OpenAI-compatible inference endpoint", () => {
@@ -43,15 +64,21 @@ describe("Nous Research provider", () => {
     expect(NOUS_MODELS_URL).toBe("https://inference-api.nousresearch.com/v1/models");
   });
 
-  it("seeds both current Hermes 4 models with their advertised context", () => {
+  it("seeds the 8 current live free-tier models with advertised context", () => {
     const expectedIds = [
-      "nousresearch/hermes-4-70b",
-      "nousresearch/hermes-4-405b",
+      "meituan/longcat-2.0:free",
+      "meituan/longcat-2.5-preview:free",
+      "stepfun/step-5-preview:free",
+      "upstage/solar-mini4:free",
+      "stepfun/step-3.7-flash:free",
+      "poolside/laguna-s-2.1:free",
+      "poolside/laguna-xs-2.1:free",
+      "stealth/missingno",
     ];
     const models = PROVIDER_MODELS.nous || [];
 
     expect(models.map((model) => model.id)).toEqual(expectedIds);
-    expect(models.every((model) => model.contextLength === 131072)).toBe(true);
+    expect(models.every((model) => model.contextLength >= 262144)).toBe(true);
     expect(getModelsByProviderId("nous").map((model) => model.id)).toEqual(expectedIds);
     expect(entry.passthroughModels).toBe(true);
     expect(entry.modelsFetcher).toEqual({
@@ -61,52 +88,47 @@ describe("Nous Research provider", () => {
   });
 
   it("resolves the provider's public names without alias collisions", () => {
-    for (const alias of ["nous", "nous-portal", "nous-research"]) {
+    for (const alias of ["nous", "nous-portal", "nous-research", "ns"]) {
       expect(resolveProviderAlias(alias)).toBe("nous");
     }
     expect(resolveProviderAlias("nousresearch")).toBe("nousresearch");
-    expect(parseModel("nousresearch/hermes-4-70b")).toMatchObject({
-      provider: "nousresearch",
-      model: "hermes-4-70b",
-    });
-    expect(parseModel("nous/nousresearch/hermes-4-70b")).toMatchObject({
+    expect(parseModel("nous/poolside/laguna-s-2.1:free")).toMatchObject({
       provider: "nous",
-      model: "nousresearch/hermes-4-70b",
+      model: "poolside/laguna-s-2.1:free",
     });
 
     const ids = REGISTRY.map((candidate) => candidate.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("marks Hermes 4 conservatively until tool calling is advertised", () => {
+  it("advertises tool calling and reasoning capabilities for seeded Nous models", () => {
     for (const model of PROVIDER_MODELS.nous) {
       const capabilities = getCapabilitiesForModel("nous", model.id);
       expect(capabilities).toMatchObject({
-        tools: false,
+        tools: true,
         reasoning: true,
         thinkingFormat: "nous",
-        contextWindow: 131072,
-        maxOutput: 32000,
       });
+      expect(capabilities.contextWindow).toBeGreaterThanOrEqual(262144);
     }
   });
 
   it("maps reasoning controls to Nous's nested wire format", () => {
     const enabled = {
-      model: hermes70b,
+      model: sampleFreeModel,
       messages: [{ role: "user", content: "reason about this" }],
       reasoning_effort: "high",
     };
-    applyThinking("openai", hermes70b, enabled, "nous");
+    applyThinking("openai", sampleFreeModel, enabled, "nous");
     expect(enabled.reasoning_effort).toBeUndefined();
     expect(enabled.reasoning).toEqual({ enabled: true, effort: "high" });
 
     const disabled = {
-      model: hermes70b,
+      model: sampleFreeModel,
       messages: [{ role: "user", content: "answer directly" }],
       reasoning_effort: "none",
     };
-    applyThinking("openai", hermes70b, disabled, "nous");
+    applyThinking("openai", sampleFreeModel, disabled, "nous");
     expect(disabled.reasoning_effort).toBeUndefined();
     expect(disabled.reasoning).toBeUndefined();
   });
@@ -159,10 +181,10 @@ describe("Nous Research provider", () => {
           architecture: { output_modalities: ["embeddings"] },
         },
         {
-          id: "nousresearch/hermes-4-70b",
-          name: "Nous: Hermes 4 70B",
+          id: "nousresearch/first-party-model",
+          name: "Nous First Party",
           description: "Hybrid reasoning model",
-          context_length: 131072,
+          context_length: 262144,
           architecture: { output_modalities: ["text"] },
         },
         { id: "  " },
@@ -171,9 +193,9 @@ describe("Nous Research provider", () => {
 
     expect(models).toEqual([
       {
-        id: "nousresearch/hermes-4-70b",
-        name: "Nous: Hermes 4 70B",
-        contextLength: 131072,
+        id: "nousresearch/first-party-model",
+        name: "Nous First Party",
+        contextLength: 262144,
         description: "Hybrid reasoning model",
       },
       {
@@ -219,5 +241,74 @@ describe("Nous Research provider", () => {
       name: "Free Chat",
       contextLength: 262144,
     }]);
+  });
+
+  it("supports OAuth Device Code exchange and agent-key minting with fallback", async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        device_code: "dev_123",
+        user_code: "NOUS-1234",
+        verification_uri: "https://portal.nousresearch.com/device",
+        verification_uri_complete: "https://portal.nousresearch.com/device?user_code=NOUS-1234",
+        expires_in: 900,
+        interval: 5,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        api_key: "sk-nous-agent-minted",
+        key_id: "key_abc",
+        expires_at: "2026-10-15T00:00:00Z",
+        expires_in: 7200,
+      }), { status: 200 }));
+
+    const device = await nousOAuth.requestDeviceCode(nousOAuth.config);
+    expect(device.user_code).toBe("NOUS-1234");
+
+    const extra = await nousOAuth.postExchange({ access_token: "at_raw" });
+    expect(extra.agentKey).toBe("sk-nous-agent-minted");
+
+    const mapped = nousOAuth.mapTokens({
+      access_token: "at_raw",
+      refresh_token: "rt_raw",
+      expires_in: 3600,
+      scope: NOUS_OAUTH_SCOPE,
+    }, extra);
+    expect(mapped.apiKey).toBe("sk-nous-agent-minted");
+    expect(mapped.accessToken).toBe("at_raw");
+    expect(mapped.refreshToken).toBe("rt_raw");
+    expect(mapped.providerSpecificData.agentKeyId).toBe("key_abc");
+
+    const fallbackMapped = nousOAuth.mapTokens({
+      access_token: "at_raw",
+      refresh_token: "rt_raw",
+      expires_in: 3600,
+    }, { agentKey: null });
+    expect(fallbackMapped.apiKey).toBe("at_raw");
+  });
+
+  it("refreshes Nous OAuth token and mints a fresh agent key", async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: "at_refreshed",
+        refresh_token: "rt_refreshed",
+        expires_in: 3600,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        api_key: "sk-nous-agent-refreshed",
+        key_id: "key_refreshed",
+        expires_at: "2026-10-15T02:00:00Z",
+      }), { status: 200 }));
+
+    const refreshed = await refreshNousToken("rt_initial");
+    expect(refreshed).toMatchObject({
+      accessToken: "at_refreshed",
+      refreshToken: "rt_refreshed",
+      expiresIn: 3600,
+      apiKey: "sk-nous-agent-refreshed",
+      agentKey: "sk-nous-agent-refreshed",
+      providerSpecificData: {
+        agentKeyId: "key_refreshed",
+        agentKeyExpiresAt: "2026-10-15T02:00:00Z",
+      },
+    });
   });
 });

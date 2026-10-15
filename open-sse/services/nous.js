@@ -1,10 +1,17 @@
 export const NOUS_INFERENCE_BASE_URL = "https://inference-api.nousresearch.com/v1";
 export const NOUS_CHAT_COMPLETIONS_URL = `${NOUS_INFERENCE_BASE_URL}/chat/completions`;
 export const NOUS_MODELS_URL = `${NOUS_INFERENCE_BASE_URL}/models`;
+export const NOUS_PORTAL_BASE_URL = "https://portal.nousresearch.com";
+export const NOUS_DEVICE_CODE_URL = `${NOUS_PORTAL_BASE_URL}/api/oauth/device/code`;
+export const NOUS_TOKEN_URL = `${NOUS_PORTAL_BASE_URL}/api/oauth/token`;
+export const NOUS_AGENT_KEY_URL = `${NOUS_PORTAL_BASE_URL}/api/oauth/agent-key`;
+export const NOUS_OAUTH_CLIENT_ID = "hermes-cli";
+export const NOUS_OAUTH_SCOPE = "inference:invoke inference:mint_agent_key";
+
 // Use a current free-tier text model for the one-token credential probe so
-// validating a Portal key never consumes paid credits. Only successful
-// inference proves the Bearer key was accepted; Nous can return 4xx responses
-// before authentication (for example, 402 when Authorization is absent).
+// validating a Portal key or OAuth token never consumes paid credits. Only
+// successful inference proves the Bearer credential was accepted; Nous can
+// return 4xx responses before authentication (e.g. 402 when Authorization is absent).
 export const NOUS_VALIDATION_MODEL = "poolside/laguna-xs-2.1:free";
 
 const asPositiveInteger = (value) => {
@@ -30,7 +37,7 @@ const isZeroPrice = (value) =>
   value !== null && value !== undefined && Number(value) === 0;
 
 /**
- * Normalize the OpenAI-style Nous catalogue for 9router model selectors.
+ * Normalize the OpenAI-style Nous catalogue for EzRouter model selectors.
  * The live endpoint also returns embedding and image-only entries, which are
  * not valid chat models and must not be offered by the LLM route.
  */
@@ -63,9 +70,8 @@ export function normalizeNousModels(payload) {
 }
 
 /**
- * Return the live zero-cost text catalogue used by the provider detail page.
- * Its UI promises free models with at least 200K context, so enforce both
- * conditions here instead of presenting the full paid catalogue as free.
+ * Return the live zero-cost text catalogue used by the provider detail page,
+ * sorted by contextLength descending so the largest windows appear first.
  */
 export function normalizeNousFreeModels(payload) {
   const freeModels = getRawModels(payload).filter((model) => {
@@ -78,13 +84,15 @@ export function normalizeNousFreeModels(payload) {
       && contextLength >= 200000;
   });
 
-  return normalizeNousModels(freeModels);
+  return normalizeNousModels(freeModels).sort(
+    (a, b) => (b.contextLength || 0) - (a.contextLength || 0),
+  );
 }
 
 /**
  * Build the credential probe shared by initial validation and saved-connection
  * tests. Nous exposes /models publicly, so only an authenticated inference
- * request can prove that a Portal API key is accepted.
+ * request can prove that a Portal API key or OAuth token is accepted.
  */
 export function createNousApiKeyProbe(apiKey) {
   return {

@@ -495,13 +495,22 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
     case "nous": {
       // Nous's first-party client omits `reasoning` when disabled and sends a
       // nested object when enabled. The API does not advertise top-level
-      // `reasoning_effort`, so never forward that OpenAI-specific field.
+      // `reasoning_effort` for all models, so send nested `reasoning`. Never forward OpenAI-specific reasoning_effort.
       if (none && canDisable) break;
       const level = eff.mode === "auto" ? "medium" : toLevel(eff);
       body.reasoning = {
         enabled: true,
         ...(level ? { effort: level } : {}),
       };
+      break;
+    }
+    case "tokenrouter": {
+      // TokenRouter's reasoning_effort enum is low/medium/high/xhigh/max — it rejects
+      // "none"/"auto" with a 400 and supports "max" natively (no clamp like openai).
+      // "none" → omit the field so the upstream default applies; pass levels through.
+      if (none || eff.mode === "auto") break;
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level;
       break;
     }
     case "meta": {
