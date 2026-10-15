@@ -212,35 +212,52 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(logs).not.toContain(original);
   });
 
-  it("invokes onTokenSaverEvent callback with aggregate-safe data without blocking provider dispatch", async () => {
-    const onTokenSaverEvent = vi.fn();
-    onTokenSaverEvent.mockImplementation(() => { throw new Error("telemetry failed"); });
+
+  it("does not warn about healthy message compression when tools dominate the body", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const original = "x".repeat(1000);
+    const compressed = "x".repeat(500);
+    const tools = [{
+      type: "function",
+      function: { name: "lookup", description: "tool description".repeat(10000) },
+    }];
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({
+      messages: [{ role: "user", content: compressed }],
+      tokens_before: 1000,
+      tokens_after: 500,
+      tokens_saved: 500,
+    }), { status: 200 }));
 
     await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: "hello" }] },
+      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: original }], tools },
       modelInfo: { provider: "openai", model: "gpt-4o" },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
-      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      log,
       connectionId: "test-conn",
       headroomEnabled: true,
       headroomUrl: "http://localhost:8787",
-      headroomCompressUserMessages: false,
       rtkEnabled: false,
       cavemanEnabled: false,
       ponytailEnabled: false,
-      clientRawRequest: { endpoint: "/v1/chat/completions", body: {}, headers: { accept: "application/json" } },
-      onTokenSaverEvent,
+      clientRawRequest: {
+        endpoint: "/v1/chat/completions",
+        body: {},
+        headers: { accept: "application/json" },
+      },
     });
 
-    expect(onTokenSaverEvent).toHaveBeenCalledWith(expect.objectContaining({
-      requestsObserved: 1,
-      headroomState: "skipped",
-      headroomDiagnostic: "other-skip",
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        messages: [{ role: "user", content: compressed }],
+        tools,
+      }),
     }));
-    expect(executeMock).toHaveBeenCalled();
+    expect(log.warn.mock.calls.filter(([tag]) => tag === "HEADROOM")).toEqual([]);
+    expect(log.info).toHaveBeenCalledWith("HEADROOM", expect.stringContaining("effective=0.3%"));
+    expect(JSON.stringify(log.info.mock.calls)).not.toContain(tools[0].function.description);
   });
 
-  it("warns when Headroom reports savings but outbound body barely shrinks", async () => {
+  it("warns when Headroom reports savings but messages barely shrink", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const original = "x".repeat(1000);
     const nearlySame = "x".repeat(990);
@@ -278,7 +295,7 @@ describe("handleChatCore Headroom diagnostics", () => {
 
     expect(log.warn).toHaveBeenCalledWith(
       "HEADROOM",
-      expect.stringContaining("reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload")
+      expect.stringContaining("reported token delta, but messages and outbound JSON shrank <5%")
     );
   });
 
