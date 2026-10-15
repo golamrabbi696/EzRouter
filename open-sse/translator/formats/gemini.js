@@ -2,6 +2,7 @@
 
 import { safeParseJSON } from "../concerns/json.js";
 import { OPENAI_BLOCK } from "../schema/index.js";
+import { isGemini4Model } from "../../providers/capabilities.js";
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
@@ -683,8 +684,16 @@ function sanitizeFunctionResponsePart(part) {
   return { ...part, functionResponse: { ...part.functionResponse, response: sanitizeFunctionResponsePayload(response) } };
 }
 
+// Gemini 4 rejects a merged user turn whose last part is not a functionResponse (#4802)
+function moveFunctionResponsesLast(parts) {
+  const responses = parts.filter(p => p.functionResponse);
+  if (!responses.length) return parts;
+  return [...parts.filter(p => !p.functionResponse), ...responses];
+}
+
 // Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns
-export function normalizeGeminiContents(contents) {
+export function normalizeGeminiContents(contents, model = null) {
+  const frLast = isGemini4Model(model);
   const out = [];
   for (const c of contents || []) {
     if (!c?.role || !Array.isArray(c.parts)) continue;
@@ -702,6 +711,7 @@ export function normalizeGeminiContents(contents) {
         out.push({ ...c, parts: [...parts] });
       } else {
         last.parts.push(...parts);
+        if (frLast) last.parts = moveFunctionResponsesLast(last.parts);
       }
     } else {
       out.push({ ...c, parts: [...parts] });

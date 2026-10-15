@@ -311,7 +311,7 @@ export class AntigravityExecutor extends BaseExecutor {
         parts: modifiedParts || parts || [],
       };
     }).filter(c => c.parts && c.parts.length > 0);
-    const contents = normalizeGeminiContents(rawContents);
+    const contents = normalizeGeminiContents(rawContents, model);
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
@@ -359,26 +359,31 @@ export class AntigravityExecutor extends BaseExecutor {
 
     // Ensure thinkingConfig is forwarded to Antigravity upstream
     // and maxOutputTokens strictly exceeds thinkingBudget to prevent 400 INVALID_ARGUMENT
-    const thinkingBudget =
-      body?.thinking?.budget_tokens ||
-      body?.thinking_budget ||
-      requestWithoutTools?.generationConfig?.thinkingConfig?.thinkingBudget ||
-      (body?.reasoning_effort === "low" ? 1024 : body?.reasoning_effort === "medium" ? 2048 : 4096);
+    const existingThinkingConfig = requestWithoutTools?.generationConfig?.thinkingConfig;
+    if (existingThinkingConfig?.thinkingLevel) {
+      generationConfig.thinkingConfig = { ...existingThinkingConfig };
+    } else {
+      const thinkingBudget =
+        body?.thinking?.budget_tokens ||
+        body?.thinking_budget ||
+        existingThinkingConfig?.thinkingBudget ||
+        (body?.reasoning_effort === "low" ? 1024 : body?.reasoning_effort === "medium" ? 2048 : 4096);
 
-    const isThinkingModel =
-      model?.includes("thinking") ||
-      Boolean(body?.thinking) ||
-      Boolean(body?.reasoning_effort) ||
-      Boolean(requestWithoutTools?.generationConfig?.thinkingConfig);
+      const isThinkingModel =
+        model?.includes("thinking") ||
+        Boolean(body?.thinking) ||
+        Boolean(body?.reasoning_effort) ||
+        Boolean(existingThinkingConfig);
 
-    if (isThinkingModel && thinkingBudget) {
-      if (!generationConfig.maxOutputTokens || generationConfig.maxOutputTokens <= thinkingBudget) {
-        generationConfig.maxOutputTokens = Math.min(MAX_ANTIGRAVITY_OUTPUT_TOKENS, thinkingBudget + 8192);
+      if (isThinkingModel && thinkingBudget) {
+        if (!generationConfig.maxOutputTokens || generationConfig.maxOutputTokens <= thinkingBudget) {
+          generationConfig.maxOutputTokens = Math.min(MAX_ANTIGRAVITY_OUTPUT_TOKENS, thinkingBudget + 8192);
+        }
+        generationConfig.thinkingConfig = {
+          thinkingBudget,
+          includeThoughts: true,
+        };
       }
-      generationConfig.thinkingConfig = {
-        thinkingBudget,
-        includeThoughts: true,
-      };
     }
 
     const transformedRequest = {

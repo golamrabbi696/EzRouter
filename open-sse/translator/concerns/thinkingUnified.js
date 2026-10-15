@@ -339,6 +339,7 @@ function stripAll(body) {
 
 // Apply unified thinking config to body in the resolved provider-native format.
 function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined, targetFormat = undefined) {
+  const supportedLevels = getThinkingLevels(provider, model) || caps?.thinkingLevels;
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
