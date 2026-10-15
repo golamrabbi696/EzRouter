@@ -15,7 +15,14 @@ export default function createOpenAIEmbeddingAdapter(providerId) {
   return {
     buildUrl: () => embedUrl(providerId),
     buildHeaders: (creds) => {
-      return { "Content-Type": "application/json", ...bearerAuth(creds), ...(cfg.headers || {}) };
+      // cfg.tokenField: providers whose API rejects the raw accessToken in
+      // favor of an exchange-derived token (GitHub Copilot → copilotToken).
+      const token = (cfg.tokenField && creds?.[cfg.tokenField]) || creds?.apiKey || creds?.accessToken;
+      return {
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : bearerAuth(creds)),
+        ...(cfg.headers || {}),
+      };
     },
     buildBody: (model, { input, encoding_format, dimensions }) => {
       const body = { model, input };

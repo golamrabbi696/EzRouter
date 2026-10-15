@@ -86,11 +86,29 @@ export default {
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
     { id: "oswe-vscode-prime", name: "Raptor Mini" },
     { id: "goldeneye-free-auto", name: "GoldenEye" },
+    // Copilot /models catalog (issue #4792): text-embedding-3-small and
+    // -ada-002 are served; text-embedding-3-large answers 400 model_not_supported.
     { id: "text-embedding-3-small", name: "Text Embedding 3 Small (GitHub)", kind: "embedding" },
     { id: "text-embedding-ada-002", name: "Text Embedding Ada 002 (GitHub)", kind: "embedding" },
   ],
   serviceKinds: ["llm","embedding"],
-  embeddingConfig: { baseUrl: "https://api.githubcopilot.com/embeddings", authType: "apikey", authHeader: "bearer" },
+  // models.github.ai was retired (#4792): embeddings endpoint moved to the
+  // Copilot API host that already serves chat completions above. Copilot
+  // requires the exchange-derived copilotToken plus the IDE identity headers
+  // the chat executor sends — the raw OAuth token is rejected.
+  embeddingConfig: {
+    baseUrl: "https://api.githubcopilot.com/embeddings",
+    authType: "apikey",
+    authHeader: "bearer",
+    tokenField: "copilotToken",
+    headers: {
+      "copilot-integration-id": "vscode-chat",
+      "editor-version": "vscode/1.110.0",
+      "editor-plugin-version": "copilot-chat/0.38.0",
+      "user-agent": "GitHubCopilotChat/0.38.0",
+      "x-github-api-version": "2025-04-01",
+    },
+  },
   oauth: {
     clientId: "Iv1.b507a08c87ecfe98",
     authorizeUrl: "https://github.com/login/oauth/authorize",
