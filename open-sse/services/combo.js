@@ -825,7 +825,11 @@ export async function handleComboChat({ body, models, members, policy, handleSin
         markModelCooldown(modelStr, cooldownMs);
       }
 
-      // Check if should fallback to next model (policy-aware: member > combo > global)
+      // Check if should fallback to next model. advanceChain marks seat-scoped
+      // request errors (unsupported model id, rejected parameter, context
+      // overflow): the credential is healthy, but another member may accept the
+      // request — try the remaining seats and surface the LAST seat's error
+      // (status + message) when the chain exhausts (#4683 reproduction A).
       const currentMember = rotatedMembers ? rotatedMembers[i] : null;
       // Enforce maxHops if configured
       if (policy?.maxHops && i + 1 >= policy.maxHops) {
@@ -834,8 +838,14 @@ export async function handleComboChat({ body, models, members, policy, handleSin
       }
 
       if (policy || currentMember) {
-        const { shouldFallback } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
-        if (!shouldFallback) {
+        const { shouldFallback, advanceChain } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
+        if (!shouldFallback && !advanceChain) {
+          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+          return result;
+        }
+      } else {
+        const { shouldFallback, advanceChain } = checkFallbackError(result.status, errorText);
+        if (!shouldFallback && !advanceChain) {
           log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
           return result;
         }
@@ -845,6 +855,8 @@ export async function handleComboChat({ body, models, members, policy, handleSin
       // In a combo, different models belong to different providers, so transient
       // failures or model-specific errors (400, 429, 500, etc.) must not block or abort fallback.
       lastError = errorText || String(result.status);
+      // Surface the LAST seat's status, not the first's (#4683): the caller
+      // should see the status and message of the seat that failed last.
       lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
       const provider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : "unknown";

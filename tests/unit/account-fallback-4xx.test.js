@@ -18,13 +18,8 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
       },
     }));
 
-    // #4796: another combo member with a larger window can serve the request,
-    // so the chain must advance — but the credential stays healthy (no cooldown).
+    // #4796 text rule wins: shouldFallback true, cooldown 0 (healthy credential).
     expect(result).toEqual({ shouldFallback: true, cooldownMs: 0 });
-  });
-
-  it("does not cool the account down or fall back for an ordinary request-scoped 400", () => {
-    expect(checkFallbackError(400, "Unsupported model mimo-auto")).toEqual({ shouldFallback: false, cooldownMs: 0 });
   });
 
   it("hands back only the request-scoped statuses", () => {
@@ -77,8 +72,13 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
 
   it("does not fall back for an ordinary bad request", () => {
     expect(checkFallbackError(400, "Bad request")).toEqual({
-      shouldFallback: false, cooldownMs: 0,
+      shouldFallback: false, cooldownMs: 0, advanceChain: true,
     });
+  });
+
+  it("marks request-scoped 400s advanceChain for combos without cooling (#4683)", () => {
+    const result = checkFallbackError(400, "Unsupported model mimo-auto");
+    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0, advanceChain: true });
   });
 
   it("keeps the transient cooldown for unmatched server errors", () => {

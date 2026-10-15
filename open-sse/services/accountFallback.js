@@ -136,7 +136,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
   // text rules still win for rate-limit / quota / capacity wording.
   if (REQUEST_SCOPED_STATUSES.has(status)) {
-    return { shouldFallback: false, cooldownMs: 0 };
+    // advanceChain: the credential is healthy (no cooling), but the error is
+    // seat-scoped, not request-fatal — other combo members may accept the same
+    // request (different model ids, parameters, context windows). Combos use it
+    // to try the remaining seats and surface the LAST seat's error (#4683
+    // reproduction A); account fallback ignores it and keeps the conservative
+    // no-cooling behavior.
+    return { shouldFallback: false, cooldownMs: 0, advanceChain: true };
   }
 
   // Default fallback for unhandled errors (30s transient cooldown)
