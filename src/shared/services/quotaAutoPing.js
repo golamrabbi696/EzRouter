@@ -357,6 +357,9 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;
+  if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
+  if (isQuotaExhausted(quota)) return;
+
   const now = Date.now();
   const inactiveSession = shouldPingInactiveSession(
     connection,
@@ -385,8 +388,6 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
       // Keep a missed reset pending until the ping succeeds or was already sent.
       if (!isCatchUp) state.resetCache[key] = resetAt;
 
-      if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
-      if (isQuotaExhausted(quota)) return;
       if (!reactive || !resetToPing) return;
 
       resetKey = normalizeResetKey(resetToPing);
@@ -418,43 +419,6 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     // Do not mark reset/slot as pinged unless upstream accepted the tiny request.
     state.failureCache[key] = Date.now();
     console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed (${slotPending ? `slot ${dueSlot.key}` : (resetToPing ? `reset ${resetToPing}` : "inactive session")})`);
-    return;
-  }
-
-  if (resetAt) {
-    state.resetCache[key] = resetAt;
-    // Preserve accepted pings through marker write failures and older hot-reload state.
-    (state.pingedResetCache ??= {})[key] = resetKey;
-  }
-  if (inactiveSession) (state.pingCache ??= {})[key] = Date.now();
-  delete state.failureCache[key];
-  const pingedAt = new Date().toISOString();
-  await deps.updateProviderConnection(connection.id, {
-    ...(resetToPing ? { lastPingedResetAt: resetToPing, lastPingedResetKey: resetKey } : {}),
-    ...(slotPending ? { lastPingedSlotKey: dueSlot.key } : {}),
-    lastPingAt: pingedAt,
-    updatedAt: pingedAt,
-  });
-  if (inactiveSession) delete state.pingCache[key];
-  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (${slotPending ? `slot ${dueSlot.key}` : (resetToPing ? `reset ${resetToPing}` : "inactive session")})`);
-    return;
-  }
-
-  const model = provider === "codex"
-    ? (await handler.getModels(connection.accessToken, proxyOptions, connection.providerSpecificData))[0]?.slug
-    : providerConfig.pingModel;
-  if (!model) {
-    state.failureCache[key] = Date.now();
-    console.warn(`[AutoPing] ${provider}:${connection.id}: no supported model available`);
-    return;
-  }
-
-  const ok = await handler.sendPing(connection, { ...providerConfig, pingModel: model }, proxyOptions, deps);
-  providerConfig.signal?.throwIfAborted();
-  if (!ok) {
-    // Do not mark reset as pinged unless upstream accepted the tiny request.
-    state.failureCache[key] = Date.now();
-    console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed (${resetToPing ? `reset ${resetToPing}` : "inactive session"})`);
     return;
   }
 
