@@ -151,8 +151,10 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
     return super.execute({ ...args, credentials });
   }
 
-  buildHeaders(credentials, stream = true, url, model) {
-    const headers = super.buildHeaders(credentials || {}, stream, url, model);
+  buildHeaders(credentials, stream = true, url, model, body = null) {
+    // `body` must reach DefaultExecutor: the Claude lane pairs context_management with
+    // its beta flag there, and swallowing the argument made that branch dead code.
+    const headers = super.buildHeaders(credentials || {}, stream, url, model, body);
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;

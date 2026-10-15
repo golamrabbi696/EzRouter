@@ -326,6 +326,147 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
   });
 });
 
+// ─── opencode-go Claude lane: anthropic-beta must travel with the body ────────
+// OpenCode Go's /messages Claude lane is a strict Anthropic proxy. Probed upstream:
+// context_management alone → 400 "Extra inputs are not permitted"; the same body with
+// anthropic-beta: context-management-2025-06-27 → 200 + context_management.applied_edits.
+// 9router used to drop the client's flag on this provider, which broke context editing.
+// Unknown flag values are ignored upstream, so the client's set is forwarded verbatim
+// (NOT 9router's curated claude list) and the pairing flag is added when it is missing.
+describe("DefaultExecutor.buildHeaders() — opencode-go Claude lane", () => {
+  let DefaultExecutor;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("open-sse/executors/default.js");
+    DefaultExecutor = mod.DefaultExecutor || mod.default;
+  });
+
+  const betaFlags = (headers) =>
+    String(headers["Anthropic-Beta"] || headers["anthropic-beta"] || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+
+  it("forwards the client's anthropic-beta verbatim for a Claude model", () => {
+    const executor = new DefaultExecutor("opencode-go");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "k",
+        rawHeaders: { "anthropic-beta": "context-management-2025-06-27,fine-grained-tool-streaming-2025-05-14" },
+      },
+      true,
+      undefined,
+      "claude-haiku-5-5",
+      { context_management: { edits: [] } }
+    );
+
+    expect(betaFlags(headers)).toContain("context-management-2025-06-27");
+    expect(betaFlags(headers)).toContain("fine-grained-tool-streaming-2025-05-14");
+    // 9router's curated claude fingerprint must NOT be injected on this provider
+    expect(betaFlags(headers)).not.toContain("claude-code-20250219");
+  });
+
+  it("adds the context-management flag when the body carries the field but the client sent no beta", () => {
+    const executor = new DefaultExecutor("opencode-go");
+    const headers = executor.buildHeaders(
+      { apiKey: "k" },
+      true,
+      undefined,
+      "claude-haiku-5-5",
+      { context_management: { edits: [] } }
+    );
+
+    expect(betaFlags(headers)).toEqual(["context-management-2025-06-27"]);
+  });
+
+  it("sends no beta header when there is nothing to forward", () => {
+    const executor = new DefaultExecutor("opencode-go");
+    const headers = executor.buildHeaders(
+      { apiKey: "k" },
+      true,
+      undefined,
+      "claude-haiku-5-5",
+      { messages: [] }
+    );
+
+    expect(headers["Anthropic-Beta"]).toBeUndefined();
+    expect(headers["anthropic-beta"]).toBeUndefined();
+  });
+
+  it("leaves non-Claude opencode-go models without a beta header", () => {
+    const executor = new DefaultExecutor("opencode-go");
+    const headers = executor.buildHeaders(
+      { apiKey: "k", rawHeaders: { "anthropic-beta": "context-management-2025-06-27" } },
+      true,
+      undefined,
+      "glm-5.3",
+      { context_management: { edits: [] } }
+    );
+
+    expect(headers["Anthropic-Beta"]).toBeUndefined();
+    expect(headers["anthropic-beta"]).toBeUndefined();
+  });
+});
+
+// The production path goes through OpenCodeGoExecutor, whose buildHeaders override used
+// to drop the `body` argument — which silently made the context-management pairing above
+// dead code (green tests on DefaultExecutor, no pairing on the wire). These cases pin the
+// real executor so that regression cannot come back unnoticed.
+describe("OpenCodeGoExecutor.buildHeaders() — body reaches the beta pairing", () => {
+  let OpenCodeGoExecutor;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("open-sse/executors/opencode-go.js");
+    OpenCodeGoExecutor = mod.OpenCodeGoExecutor || mod.default;
+  });
+
+  const betaFlags = (headers) =>
+    String(headers["Anthropic-Beta"] || headers["anthropic-beta"] || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+
+  it("pairs context_management when the client sent no beta header", () => {
+    const executor = new OpenCodeGoExecutor();
+    const headers = executor.buildHeaders(
+      { apiKey: "k" },
+      true,
+      undefined,
+      "claude-haiku-5-5",
+      { context_management: { edits: [] } }
+    );
+
+    expect(betaFlags(headers)).toContain("context-management-2025-06-27");
+    // the session header the executor adds must survive the extra argument
+    expect(headers["x-opencode-session"]).toBeTruthy();
+  });
+
+  it("forwards the client's beta header through the real executor", () => {
+    const executor = new OpenCodeGoExecutor();
+    const headers = executor.buildHeaders(
+      { apiKey: "k", rawHeaders: { "anthropic-beta": "context-management-2025-06-27" } },
+      true,
+      undefined,
+      "claude-haiku-5-5",
+      { context_management: { edits: [] } }
+    );
+
+    expect(betaFlags(headers)).toContain("context-management-2025-06-27");
+  });
+
+  it("keeps non-Claude opencode-go models free of a beta header", () => {
+    const executor = new OpenCodeGoExecutor();
+    const headers = executor.buildHeaders(
+      { apiKey: "k", rawHeaders: { "anthropic-beta": "context-management-2025-06-27" } },
+      true,
+      undefined,
+      "glm-5.3",
+      { context_management: { edits: [] } }
+    );
+
+    expect(headers["Anthropic-Beta"]).toBeUndefined();
+    expect(headers["anthropic-beta"]).toBeUndefined();
+  });
+});
+
 // ─── proxyFetch anthropicFetch routing ────────────────────────────────────────
 
 describe("proxyAwareFetch — api.anthropic.com routing", () => {

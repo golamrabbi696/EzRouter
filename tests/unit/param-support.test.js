@@ -236,4 +236,40 @@ describe("stripUnsupportedParams", () => {
       expect(body.response_format).toBe(response_format);
     }
   });
+
+  // Claude Code sends output_config.task_budget (task budgets beta) on its requests.
+  // OpenCode Go's Claude lane rejects that field even with its own task-budgets-2026-03-13
+  // flag, so it is stripped; context_management is NOT stripped because the upstream does
+  // support context editing once default.js forwards the paired anthropic-beta flag.
+  // Only claude-* models are touched — deepseek/minimax on the same endpoint accept both.
+  it("drops task_budget but keeps context_management on OpenCode Go's Claude lane only", () => {
+    const claude = {
+      context_management: { edits: [{ type: "clear_tool_uses_20250919" }] },
+      output_config: { effort: "high", task_budget: { type: "tokens", total: 5000 } },
+    };
+    stripUnsupportedParams("opencode-go", "claude-haiku-5-5", claude);
+    // context editing is supported upstream when its beta flag travels along
+    expect(claude.context_management).toEqual({ edits: [{ type: "clear_tool_uses_20250919" }] });
+    // effort is what the upstream needs for adaptive thinking — it must survive
+    expect(claude.output_config).toEqual({ effort: "high" });
+
+    const other = {
+      context_management: { edits: [] },
+      output_config: { effort: "high", task_budget: { type: "tokens", total: 5000 } },
+    };
+    stripUnsupportedParams("opencode-go", "deepseek-v4-pro", other);
+    expect(other.context_management).toEqual({ edits: [] });
+    expect(other.output_config.task_budget).toBeDefined();
+
+    // An output_config left empty is removed rather than sent as {}
+    const empty = { output_config: { task_budget: { type: "tokens", total: 1 } } };
+    stripUnsupportedParams("opencode-go", "claude-haiku-5-5", empty);
+    expect(empty).not.toHaveProperty("output_config");
+
+    // Other providers keep both fields untouched
+    const foreign = { context_management: { edits: [] }, output_config: { effort: "high" } };
+    stripUnsupportedParams("deepseek", "deepseek-v4-pro", foreign);
+    expect(foreign.context_management).toEqual({ edits: [] });
+    expect(foreign.output_config).toEqual({ effort: "high" });
+  });
 });

@@ -296,6 +296,17 @@ export class DefaultExecutor extends BaseExecutor {
       headers["Anthropic-Beta"] = mergeAnthropicBeta(selectAnthropicBeta(model, body), clientBeta);
     } else if (this.provider === "anthropic" && clientBeta) {
       headers["Anthropic-Beta"] = mergeAnthropicBeta(headers["Anthropic-Beta"], clientBeta);
+    } else if (this.provider === "opencode-go" && isClaudeModel) {
+      // OpenCode Go's Claude lane is a strict Anthropic proxy: it rejects
+      // context_management unless the paired context-management-2025-06-27 flag is on the
+      // request (probed upstream: 400 without it, 200 + applied_edits with it), and it
+      // ignores flag values it does not know. Forward the client's flags verbatim rather
+      // than 9router's curated set — the client pairs them with its own body fields — and
+      // add the context-management flag itself when the body carries the field, so the
+      // pair can never travel half-way. Other opencode-go models keep no beta header.
+      const pairBeta = body?.context_management ? "context-management-2025-06-27" : "";
+      const opencodeBeta = mergeAnthropicBeta(headers["Anthropic-Beta"], clientBeta, pairBeta);
+      if (opencodeBeta) headers["Anthropic-Beta"] = opencodeBeta;
     }
     if (this.provider === "opencode-go") {
       headers["x-opencode-session"] = credentials?._ocgSession || openCodeGoSession(null, credentials);
