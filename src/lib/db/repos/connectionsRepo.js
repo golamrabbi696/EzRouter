@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getCombos } from "./combosRepo.js";
+import { getModelInfoCore } from "open-sse/services/model.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -304,14 +306,44 @@ export async function updateProviderConnection(id, data) {
 
 export async function deleteProviderConnection(id) {
   const db = await getAdapter();
+  // Get provider before deleting
+  const row = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
+  if (!row) return false;
+  const provider = row.provider;
+
   let ok = false;
   db.transaction(() => {
-    const row = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) return;
-    db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-    reorderInTx(db, row.provider);
-    ok = true;
+    const deleted = db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
+    reorderInTx(db, provider);
+    ok = deleted.changes > 0;
   });
+
+  // Cascade: clean up orphaned models in combos that reference this provider
+  if (ok) {
+    const combos = getCombos();
+    for (const combo of combos) {
+      if (!combo.models || !Array.isArray(combo.models)) continue;
+      const originalLength = combo.models.length;
+      // Filter out models from the deleted provider
+      const filtered = combo.models.filter((modelStr) => {
+        const info = getModelInfoCore(modelStr, {});
+        return info?.provider !== provider;
+      });
+      if (filtered.length !== originalLength) {
+        // Update combo with filtered models
+        if (filtered.length === 0) {
+          // Combo became empty - delete it to avoid 500 on use
+          db.run(`DELETE FROM combos WHERE name = ?`, [combo.name]);
+        } else {
+          db.run(
+            `UPDATE combos SET models = ?, updatedAt = datetime('now') WHERE name = ?`,
+            [stringifyJson(filtered), combo.name]
+          );
+        }
+      }
+    }
+  }
+
   return ok;
 }
 
