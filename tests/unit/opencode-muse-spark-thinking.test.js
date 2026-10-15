@@ -131,6 +131,43 @@ describe("OpenCode Free Muse Spark thinking", () => {
     expect(out.max_tokens).toBeUndefined();
   });
 
+  // Claude Code sends thinking:{type:"adaptive"}, which the unified layer turns into
+  // effort "auto". Upstream only takes none|minimal|low|medium|high|xhigh|max and
+  // answered 400 "unknown variant `auto`", so the model was unusable from Claude Code.
+  it("drops an adaptive (auto) effort but still asks for the reasoning summary", () => {
+    const m = "muse-spark-1.3-contributor-free";
+    const executor = new OpenCodeExecutor();
+    const claudeBody = (thinking) => ({
+      model: `oc/${m}`,
+      max_tokens: 8000,
+      thinking,
+      messages: [{ role: "user", content: "Is 2047 prime?" }],
+    });
+
+    const adaptive = executor.transformRequest(
+      m,
+      translateRequest(FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES, m, claudeBody({ type: "adaptive" }), true, {}, PROVIDER),
+      true,
+      {},
+    );
+    expect(adaptive.reasoning).toEqual({ summary: "auto" });
+    expect(adaptive.reasoning_effort).toBeUndefined();
+
+    // A real budget still maps to a concrete effort.
+    const budget = executor.transformRequest(
+      m,
+      translateRequest(FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES, m, claudeBody({ type: "enabled", budget_tokens: 4000 }), true, {}, PROVIDER),
+      true,
+      {},
+    );
+    expect(budget.reasoning).toEqual({ effort: "low", summary: "auto" });
+
+    // Chat clients can ask for "auto" directly (reasoning_effort or a "(auto)" suffix).
+    const chat = executor.transformRequest(m, { input, reasoning_effort: "auto" }, true, {});
+    expect(chat.reasoning).toEqual({ summary: "auto" });
+    expect(chat.reasoning_effort).toBeUndefined();
+  });
+
   it("routes muse-spark-1.3-contributor-free and future Muse Spark models to Responses API", () => {
     const executor = new OpenCodeExecutor();
     const futureModel = "muse-spark-1.4-contributor-free";
