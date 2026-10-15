@@ -1,3 +1,5 @@
+import { annotateComboResponse } from "./routeAttribution.js";
+
 /**
  * Shared combo (model combo) handling with fallback support
  */
@@ -49,7 +51,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
 
     // Success or client error - return response
     if (result.ok || result.status < 500) {
-      return result;
+      return annotateComboResponse({
+        comboName: body?.model,
+        selectedModel: modelStr,
+        attemptedModels: models.slice(0, i + 1),
+      }, result);
     }
 
     // 5xx error - try next model
@@ -60,12 +66,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
   log.warn("COMBO", "All models failed");
   
   // Return 503 with last error
-  return new Response(
+  return annotateComboResponse({
+    comboName: body?.model,
+    selectedModel: "failed",
+    attemptedModels: models,
+  }, new Response(
     JSON.stringify({ error: lastError || "All combo models unavailable" }),
     { 
       status: 503, 
       headers: { "Content-Type": "application/json" }
     }
-  );
+  ));
 }
 

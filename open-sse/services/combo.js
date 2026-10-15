@@ -834,20 +834,32 @@ export async function handleComboChat({ body, models, members, policy, handleSin
       // Enforce maxHops if configured
       if (policy?.maxHops && i + 1 >= policy.maxHops) {
         log.warn("COMBO", `Model ${modelStr} failed - maxHops ${policy.maxHops} reached`, { status: result.status });
-        return result;
+        return annotateComboResponse({
+          comboName: comboName || body?.model,
+          selectedModel: modelStr,
+          attemptedModels: rotatedModels.slice(0, i + 1),
+        }, result);
       }
 
       if (policy || currentMember) {
         const { shouldFallback, advanceChain } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
         if (!shouldFallback && !advanceChain) {
           log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-          return result;
+          return annotateComboResponse({
+            comboName: comboName || body?.model,
+            selectedModel: modelStr,
+            attemptedModels: rotatedModels.slice(0, i + 1),
+          }, result);
         }
       } else {
         const { shouldFallback, advanceChain } = checkFallbackError(result.status, errorText);
         if (!shouldFallback && !advanceChain) {
           log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-          return result;
+          return annotateComboResponse({
+            comboName: comboName || body?.model,
+            selectedModel: modelStr,
+            attemptedModels: rotatedModels.slice(0, i + 1),
+          }, result);
         }
       }
 
@@ -903,14 +915,22 @@ export async function handleComboChat({ body, models, members, policy, handleSin
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
     log.warn("COMBO", `All models failed | ${status} | ${msg} (${retryHuman})`);
-    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+    return annotateComboResponse({
+      comboName: comboName || body?.model,
+      selectedModel: "failed",
+      attemptedModels: rotatedModels,
+    }, unavailableResponse(status, msg, earliestRetryAfter, retryHuman));
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
-  return new Response(
+  return annotateComboResponse({
+    comboName: comboName || body?.model,
+    selectedModel: "failed",
+    attemptedModels: rotatedModels,
+  }, new Response(
     JSON.stringify({ error: { message: msg } }),
     { status, headers: { "Content-Type": "application/json" } }
-  );
+  ));
 }
 
 /**

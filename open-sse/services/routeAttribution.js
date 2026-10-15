@@ -2,14 +2,14 @@ import { ROUTE_ATTRIBUTION } from "../config/runtimeConfig.js";
 
 const EXPOSED_HEADERS = Object.values(ROUTE_ATTRIBUTION.headers);
 
-function safeToken(value) {
+export function safeToken(value) {
   return String(value || "")
     .trim()
     .replace(/[^A-Za-z0-9._:/-]+/g, "-")
     .slice(0, ROUTE_ATTRIBUTION.maxTokenLength);
 }
 
-function splitModel(value) {
+export function splitModel(value) {
   const leaf = safeToken(value);
   const slash = leaf.indexOf("/");
   return slash > 0
@@ -17,21 +17,25 @@ function splitModel(value) {
     : { leaf, provider: "", model: leaf };
 }
 
-function list(value) {
+export function list(value) {
   return String(value || "")
     .split(",")
     .map(safeToken)
     .filter(Boolean);
 }
 
-function unique(values) {
+export function unique(values) {
   return [...new Set(values.filter(Boolean))].slice(0, ROUTE_ATTRIBUTION.maxAttempts);
 }
 
-function withHeaders(response, values) {
+export function withHeaders(response, values) {
   if (!(response instanceof Response)) return response;
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(values)) headers.set(name, String(value));
+  for (const [name, value] of Object.entries(values)) {
+    if (value != null && value !== "") {
+      headers.set(name, String(value));
+    }
+  }
   headers.set(
     "Access-Control-Expose-Headers",
     unique([
@@ -49,6 +53,7 @@ function withHeaders(response, values) {
 export function annotateDirectResponse({ requestedModel, resolvedModel }, response) {
   const requested = safeToken(requestedModel);
   const resolved = splitModel(resolvedModel || requested);
+  const actualModel = resolved.leaf || requested;
   return withHeaders(response, {
     [ROUTE_ATTRIBUTION.headers.requestedModel]: requested || resolved.leaf,
     [ROUTE_ATTRIBUTION.headers.routePath]: resolved.leaf,
@@ -56,6 +61,8 @@ export function annotateDirectResponse({ requestedModel, resolvedModel }, respon
     [ROUTE_ATTRIBUTION.headers.resolvedModel]: resolved.model,
     [ROUTE_ATTRIBUTION.headers.fallbackCount]: 0,
     [ROUTE_ATTRIBUTION.headers.attemptedModels]: resolved.leaf,
+    [ROUTE_ATTRIBUTION.headers.model]: actualModel,
+    [ROUTE_ATTRIBUTION.headers.routerModel]: actualModel,
   });
 }
 
@@ -70,6 +77,9 @@ export function annotateComboResponse({ comboName, selectedModel, attemptedModel
   const currentAttempts = unique(attemptedModels.map(safeToken));
   const priorAttempts = list(response.headers.get(headers.attemptedModels));
   const priorFallbacks = Number.parseInt(response.headers.get(headers.fallbackCount) || "0", 10);
+  const actualModel = response.headers.get(headers.model)
+    || (resolvedProvider && resolvedProvider !== "unknown" ? `${resolvedProvider}/${resolvedModel}` : (selected.leaf || resolvedModel));
+
   return withHeaders(response, {
     [headers.requestedModel]: combo,
     [headers.routePath]: unique([combo, ...(priorPath.length ? priorPath : [selected.leaf])]).join(","),
@@ -77,5 +87,8 @@ export function annotateComboResponse({ comboName, selectedModel, attemptedModel
     [headers.resolvedModel]: resolvedModel,
     [headers.fallbackCount]: Math.max(0, Number.isFinite(priorFallbacks) ? priorFallbacks : 0) + Math.max(0, currentAttempts.length - 1),
     [headers.attemptedModels]: unique([...currentAttempts, ...priorAttempts]).join(","),
+    [headers.model]: actualModel,
+    [headers.routerModel]: actualModel,
+    [headers.combo]: "true",
   });
 }

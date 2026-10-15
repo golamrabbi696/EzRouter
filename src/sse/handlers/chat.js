@@ -29,6 +29,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { annotateDirectResponse } from "open-sse/services/routeAttribution.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
@@ -524,7 +525,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     const isSuccess = result instanceof Response || (result && !result.isError && (result.ok || result.status === HTTP_STATUS.OK || !result.status));
     if (isSuccess) {
-      return result instanceof Response ? result : (result.response || result);
+      const resp = result instanceof Response ? result : (result.response || result);
+      return annotateDirectResponse({
+        requestedModel: requestedModel || modelStr,
+        resolvedModel: `${provider}/${model}`,
+      }, resp);
     }
 
     const errorStatus = result?.status || HTTP_STATUS.INTERNAL_SERVER_ERROR;
@@ -561,6 +566,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       continue;
     }
 
-    return result instanceof Response ? result : (result?.response || errorResponse(errorStatus, errorMessage));
+    const finalResp = result instanceof Response ? result : (result?.response || errorResponse(errorStatus, errorMessage));
+    return annotateDirectResponse({
+      requestedModel: requestedModel || modelStr,
+      resolvedModel: `${provider}/${model}`,
+    }, finalResp);
   }
 }

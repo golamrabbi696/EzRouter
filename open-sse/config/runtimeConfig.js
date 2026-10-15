@@ -114,6 +114,9 @@ export const ROUTE_ATTRIBUTION = {
     resolvedModel: "X-9Router-Resolved-Model",
     fallbackCount: "X-9Router-Fallback-Count",
     attemptedModels: "X-9Router-Attempted-Models",
+    model: "x-model",
+    routerModel: "x-9router-model",
+    combo: "x-9router-combo",
   },
 };
 
