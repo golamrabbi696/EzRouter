@@ -34,4 +34,9 @@ describe("getThinkingLevels", () => {
   it.each(["openai", "kiro"])("does not add codex-only max for %s", (provider) => {
     expect(supportsThinkingLevel(provider, "gpt-5.6-sol", "max")).toBe(false);
   });
+
+  it("does not add max for other Codex models", () => {
+    const levels = getThinkingLevels("codex", "gpt-daybreak-blue-latest");
+    expect(levels || []).not.toContain("max");
+  });
 });

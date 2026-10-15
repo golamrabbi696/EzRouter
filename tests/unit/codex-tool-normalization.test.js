@@ -13,13 +13,13 @@ beforeEach(() => fetchMock.mockReset());
 function normalizeTools(tools) {
   const executor = new CodexExecutor();
   const body = {
-    model: "gpt-5.5",
+    model: "gpt-5.6-terra",
     input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "probe" }] }],
     tools,
     stream: true,
   };
 
-  executor.transformRequest("gpt-5.5", body, true, {
+  executor.transformRequest("gpt-5.6-terra", body, true, {
     connectionId: "test-codex-tools",
     providerSpecificData: {},
   });

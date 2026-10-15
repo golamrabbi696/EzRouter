@@ -40,6 +40,7 @@ vi.mock("@/shared/constants/config", () => ({
         resetAtDriftMs: 30000,
         minPingIntervalMs: 600000,
         skipWhenBlockingQuotaExhausted: true,
+        pingModel: "gpt-5.6-terra",
         pingText: "hi",
         pingInstructions: "Reply with OK.",
         pingReasoningEffort: "none",
