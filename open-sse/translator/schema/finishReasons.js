@@ -22,6 +22,13 @@ export const CLAUDE_STOP = {
   REFUSAL: "refusal",
 };
 
+// OpenAI Responses API incomplete_details.reason values. The Responses API has no
+// finish reason: a cut-short turn ends with response.incomplete carrying one of these.
+export const RESPONSES_INCOMPLETE = {
+  MAX_OUTPUT_TOKENS: "max_output_tokens",
+  CONTENT_FILTER: "content_filter",
+};
+
 // Gemini finishReason values.
 export const GEMINI_FINISH = {
   STOP: "STOP",

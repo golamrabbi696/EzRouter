@@ -7,6 +7,7 @@ import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
+import { toOpenAIFinish } from "../concerns/finishReason.js";
 import { reasoningDelta, extractReasoningText, REASONING_PART_SEPARATOR } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../../config/errorConfig.js";
@@ -798,10 +799,12 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Response completed (or truncated — response.incomplete carries
-  // incomplete_details.reason, e.g. "max_output_tokens" → finish "length")
-  if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
-    // Extract usage from response.completed event
+  // Response completed, or cut short (response.incomplete: hit max_output_tokens
+  // or content filter). Incomplete is just as terminal and carries usage too;
+  // without it the client saw finish_reason "stop", no usage and an empty answer.
+  const isIncomplete = eventType === "response.incomplete";
+  if (eventType === "response.completed" || eventType === "response.done" || isIncomplete) {
+    // Extract usage from the terminal event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {
       const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
@@ -815,8 +818,8 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     }
 
     if (!state.finishReasonSent) {
-      const finishReason = eventType === "response.incomplete"
-        ? (data.response?.incomplete_details?.reason === "max_output_tokens" ? OPENAI_FINISH.LENGTH : computeFinishReason(state))
+      const finishReason = isIncomplete
+        ? toOpenAIFinish(data.response?.incomplete_details?.reason, FORMATS.OPENAI_RESPONSES)
         : computeFinishReason(state);
 
       state.finishReasonSent = true;

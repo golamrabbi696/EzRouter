@@ -1,6 +1,6 @@
 // Concern #6: finish_reason / stop_reason mapping.
 // One entry per direction; switch by special format, default handles common providers.
-import { OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH, GEMINI_ERROR_FINISH_REASONS, GEMINI_CONTENT_FILTER_FINISH_REASONS } from "../schema/finishReasons.js";
+import { OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH, GEMINI_ERROR_FINISH_REASONS, GEMINI_CONTENT_FILTER_FINISH_REASONS, RESPONSES_INCOMPLETE } from "../schema/finishReasons.js";
 
 // upstream finish/stop reason → OpenAI finish_reason
 export function toOpenAIFinish(reason, format) {
@@ -41,6 +41,14 @@ export function toOpenAIFinish(reason, format) {
         default: return OPENAI_FINISH.STOP;
       }
     }
+    // reason = incomplete_details.reason of a response.incomplete turn. Every such
+    // turn was cut short, so an unknown reason still reads as truncation, not "stop".
+    case "openai-responses":
+      switch (reason) {
+        case RESPONSES_INCOMPLETE.CONTENT_FILTER: return OPENAI_FINISH.CONTENT_FILTER;
+        case RESPONSES_INCOMPLETE.MAX_OUTPUT_TOKENS:
+        default: return OPENAI_FINISH.LENGTH;
+      }
     case "kiro":
     case "ollama":
       switch (reason) {
