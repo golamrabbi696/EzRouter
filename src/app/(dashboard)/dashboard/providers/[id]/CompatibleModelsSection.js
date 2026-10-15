@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { filterModelsForImport } from "@/shared/utils/modelImportFilter";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
@@ -74,9 +75,9 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
 export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onTestModel: onExternalTestModel, externalTestResults, externalTestingModelIds, disabledModelIds = [] }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [importFilter, setImportFilter] = useState("all");
   const [modelTestResults, setModelTestResults] = useState({});
 
   // Auto-fetch suggested models from upstream /models on mount
@@ -90,14 +91,15 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
-        const ids = (data.models || [])
+        const filtered = filterModelsForImport(data.models, importFilter);
+        const ids = (filtered || [])
           .map((m) => m.id || m.name || m.model)
           .filter((id) => typeof id === "string" && id.trim() !== "");
         setSuggestedModels([...new Set(ids)]);
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [connections]);
+  }, [connections, importFilter]);
 
   const handleTestModel = async (modelId) => {
     if (onExternalTestModel) {
@@ -161,7 +163,14 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         alert(data.error || "Failed to fetch models");
         return;
       }
-      const models = data.models || [];
+      const models = filterModelsForImport(data.models, importFilter);
+      if (models.length === 0) {
+        alert(importFilter === "all"
+          ? "No models returned from /models."
+          : "No models match the selected price filter. Try All models if pricing is unavailable.");
+        setSuggestedModels([]);
+        return;
+      }
       const ids = models
         .map((m) => m.id || m.name || m.model)
         .filter((id) => typeof id === "string" && id.trim() !== "");
@@ -203,10 +212,30 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
+        <div>
+          <label htmlFor="compatible-model-import-filter" className="text-xs text-text-muted mb-1 block">Import price filter</label>
+          <select
+            id="compatible-model-import-filter"
+            value={importFilter}
+            onChange={(event) => setImportFilter(event.target.value)}
+            disabled={!canImport || importing}
+            className="px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+          >
+            <option value="all">All models</option>
+            <option value="free">Free only</option>
+            <option value="paid">Paid only</option>
+          </select>
+        </div>
         <Button size="sm" variant="secondary" icon="search" onClick={handleFetchSuggestions} disabled={!canImport || importing}>
           {importing ? "Fetching..." : "Fetch /models"}
         </Button>
       </div>
+
+      {canImport && (
+        <p className="text-xs text-text-muted">
+          Price filters use the provider catalog. Models with unknown pricing are included only in All models.
+        </p>
+      )}
 
       {!canImport && (
         <p className="text-xs text-text-muted">
