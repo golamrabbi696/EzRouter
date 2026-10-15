@@ -11,6 +11,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { updateComboStrategy } from "@/shared/utils/comboStrategy";
+import { JEV_DEFAULT_CLASSIFIER_MODEL, JEV_MIN_CONFIDENCE, JEV_TIMEOUT_MS, JEV_TIMEOUT_MAX_MS } from "open-sse/config/jev.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -55,6 +56,7 @@ const STRATEGY_OPTIONS = [
   { value: "auto", label: "Auto Router — select one tier" },
   { value: "weighted", label: "Weighted — random by weight" },
   { value: "fusion", label: "Fusion — panel + judge" },
+  { value: "smart", label: "Smart — Jev complexity routing" },
 ];
 
 export default function CombosPage() {
@@ -364,6 +366,7 @@ export default function CombosPage() {
             <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
             <li><span className="font-medium text-text-main">Auto Router</span> — classifies request complexity and selects one configured tier before normal routing</li>
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
+            <li><span className="font-medium text-text-main">Smart</span> — uses a System One classifier to pick the lead model by task complexity, then falls back normally</li>
           </ul>
           <p className="hidden text-xs text-text-muted mt-3 max-w-2xl">
             <span className="font-medium text-text-main">Cursor / Claude Default</span> create combos named exactly like those clients&apos; model IDs (e.g. <code className="font-mono">composer-2.5</code>, <code className="font-mono">opus</code>), seeded with the matching <code className="font-mono">cu/…</code> or <code className="font-mono">cc/…</code> route so traffic can hit EzRouter without the prefix.
@@ -569,11 +572,44 @@ const fmtK = (n) => {
   return `${Math.round(n / 1000)}k`;
 };
 
+// Number input that commits on blur/Enter (not per keystroke, to avoid a settings POST each key).
+// Empty/invalid input resets to the default; out-of-range input is clamped. The default is
+// stored as "" and classifyTier treats "" as unset.
+function SmartNumberField({ label, title, value, fallback, min, max, step, onCommit }) {
+  const commit = (input) => {
+    const n = Number(input.value);
+    const next = input.value === "" || !Number.isFinite(n) ? "" : Math.min(max, Math.max(min, n));
+    const stored = next === fallback ? "" : next;
+    input.value = stored === "" ? fallback : stored;
+    if (stored !== (value ?? "")) onCommit(stored);
+  };
+  return (
+    <label className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted" title={title}>
+      {label}
+      <input
+        key={value ?? "default"}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        defaultValue={value ?? fallback}
+        onBlur={(e) => commit(e.target)}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        className="w-16 rounded border border-border bg-transparent px-1 py-0.5 font-mono text-[11px] text-text-main focus:border-primary focus:outline-none"
+      />
+    </label>
+  );
+}
+
 function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, globalComboStrategy = "fallback", onSetStrategy, selected = false, onToggleSelect }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [showClassifierSelect, setShowClassifierSelect] = useState(false);
   const current = strategy.fallbackStrategy || "inherit";
   const judge = strategy.judgeModel || "";
-  const isFusion = (current === "inherit" ? globalComboStrategy : current) === "fusion";
+  const classifier = strategy.smartClassifierModel || JEV_DEFAULT_CLASSIFIER_MODEL;
+  const effectiveStrategy = current === "inherit" ? globalComboStrategy : current;
+  const isFusion = effectiveStrategy === "fusion";
+  const isSmart = effectiveStrategy === "smart";
   // The synced catalog is server-only, so resolving here would fall back to the
   // generic patterns and under-report the limits. getCaps carries the server's
   // answer for /api/models.
@@ -622,6 +658,49 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 <span>ctx {fmtK(comboCaps.contextWindow)}</span>
                 <span className="opacity-40">·</span>
                 <span>max {fmtK(comboCaps.maxOutput)}</span>
+              </div>
+            )}
+            {/* Smart: provider-neutral System One classifier picker */}
+            {isSmart && (
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium text-text-muted">Classifier</span>
+                <button
+                  onClick={() => setShowClassifierSelect(true)}
+                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
+                  title="Choose any connected System One model; OpenCode Jev Free is the default"
+                >
+                  <span className="material-symbols-outlined text-[13px]">psychology</span>
+                  <span className="truncate">{classifier}</span>
+                </button>
+                {strategy.smartClassifierModel && (
+                  <button
+                    onClick={() => onSetStrategy({ smartClassifierModel: "" })}
+                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    title={`Reset to ${JEV_DEFAULT_CLASSIFIER_MODEL}`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">close</span>
+                  </button>
+                )}
+                <SmartNumberField
+                  label="Min conf."
+                  title={`Below this classifier confidence the default combo order is kept (default ${JEV_MIN_CONFIDENCE})`}
+                  value={strategy.smartMinConfidence === "" ? undefined : strategy.smartMinConfidence}
+                  fallback={JEV_MIN_CONFIDENCE}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onCommit={(v) => onSetStrategy({ smartMinConfidence: v })}
+                />
+                <SmartNumberField
+                  label="Timeout ms"
+                  title={`Classifier deadline; on timeout the default order is used (default ${JEV_TIMEOUT_MS})`}
+                  value={strategy.smartTimeoutMs === "" ? undefined : strategy.smartTimeoutMs}
+                  fallback={JEV_TIMEOUT_MS}
+                  min={500}
+                  max={JEV_TIMEOUT_MAX_MS}
+                  step={500}
+                  onCommit={(v) => onSetStrategy({ smartTimeoutMs: v })}
+                />
               </div>
             )}
             {/* Fusion: judge picker (Auto = first model) */}
@@ -702,6 +781,20 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           </div>
         </div>
       </div>
+
+      {/* Smart classifier picker: System One models only (OpenCode/OpenRouter/Vercel/etc.). */}
+      {showClassifierSelect && (
+        <ModelSelectModal
+          isOpen={showClassifierSelect}
+          onClose={() => setShowClassifierSelect(false)}
+          onSelect={(m) => { onSetStrategy({ smartClassifierModel: m?.value || "" }); setShowClassifierSelect(false); }}
+          activeProviders={activeProviders}
+          title="Select System One Classifier"
+          kindFilter="systemone"
+          addedModelValues={[classifier]}
+          closeOnSelect={true}
+        />
+      )}
 
       {/* Judge model picker (single-select; combo members make natural judges too) */}
       {showJudgeSelect && (
