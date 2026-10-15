@@ -19,7 +19,6 @@ const MAX_SESSION_LENGTH = 256;
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/v1/responses";
 // Console rejects max_output_tokens < 16 with 400 invalid_request_error.
 const MIN_OUTPUT_TOKENS = 16;
-const MAX_TOOL_NAME_LEN = 128;
 const OPENCODE_UA = "opencode/latest/2.0.29/cli";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;

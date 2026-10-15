@@ -1,3 +1,35 @@
+# v0.6.23 (2026-10-16)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4800 - #4889)
+- **Security Audit & Invariant Enforcement**:
+  - **Preserved Default Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`) across all configurations, Next.js server actions, CLI bundles, and tests.
+  - **REJECTED Upstream Commit `2aa9307f5`**: Per-key token quotas were reverted upstream in `6ed886857`; confirmed excluded from EzRouter.
+  - **REJECTED Upstream PRs #4828, #4840, #4851**: Obsolete OpenCode v1 fingerprinting and stale migration attempts that regress OpenCode v2 `/inference/v1` were strictly rejected.
+  - **SKIPPED Upstream PR #4814**: Redundant upstream Docker CI workflow with hardcoded port `20128` was excluded in favor of EzRouter's native multi-arch Docker publishing on port `20126`.
+- **Combo Engine & Smart Routing**:
+  - **Smart Routing via System One Classifier (`#4863`)**: Added task complexity classification (SIMPLE / MEDIUM / COMPLEX / REASONING) using System One decision models (`oc/jev-1.13-free`, `typesafe-ai/jev`), reordering combo members so the optimal model is tried first while preserving the availability/quota fallback ladder.
+  - **Route Attribution Headers (`#4850`)**: Exposes the actually used model and route lineage headers (`x-model`, `x-9router-model`, `x-9router-combo`, `x-9router-route-path`, `x-9router-fallback-count`).
+  - **Context-Overflow Fallback (`#4879`, superseding `#4820`)**: Context-length exceeded HTTP 400 errors are now treated as fallbackable in combos without triggering unwarranted account cooldown.
+  - **Empty 2xx Handling (`#4880`, `#4886`)**: Treats 2xx responses with no usable content as seat failures, advancing the combo chain while maintaining accurate 503 error classification.
+  - **Synchronized Combo Fallback Status (`#4823`)**: Accurately synchronizes HTTP status codes across combo fallback retries and ensures compliant proxy bypass headers.
+- **Provider Registry & Integration Updates**:
+  - **Gemini 4 Argon (`#4887`, `#4821`, `#4802`, `#4882`)**: Added full support for Gemini 4 Argon across Google Gemini, Vertex AI, and Antigravity with `getModelMeta()`; honored API-key project/location on Vertex; dropped deprecated sampling parameters; and separated `functionResponse` into distinct user turns.
+  - **Atlas Cloud (`#4849`)**: Added Atlas Cloud (`atlascloud`) API-key provider to the provider registry.
+  - **Nous Research (`#4827`)**: Added Nous Research OAuth device code flow and free-tier catalog integration.
+  - **SubQ Decisions API (`#4800`)**: Added SubQ Decisions API probabilistic decision provider (`subq.ai`) and calibrated models.
+  - **OpenCode v2 Fingerprint Refresh (`#4842`, `#4854`, `#4860`, `#4883`, `#4805`, `#4876`)**: Migrated free-tier to `/inference/v1` using official v2 `read`/`shell` tool schemas and client fingerprint `opencode/latest/2.0.29/cli`; forwarded Claude beta headers and enabled adaptive thinking for `claude-haiku-5-5`.
+  - **Kiro Claude Translation & Cache (`#4857`)**: Translates non-streaming responses for Claude clients in Kiro and preserves upstream cache token metrics.
+  - **GitHub Copilot Embeddings (`#4878`)**: Sends Copilot auth token and IDE metadata headers for GitHub embeddings.
+  - **Codex Image Responses Model (`#4866`, `1ba5ca70a`)**: Configurable image response model (`gpt-5.6-luna`), `CODEX_IMAGE_RESPONSES_MODEL` environment override, and removal of retired `gpt-5.5`.
+- **Dashboard & UI Enhancements**:
+  - **Export Keys Modal (`#4889`)**: Added secure per-provider Export Keys modal in provider detail pages powered by authenticated Next.js Server Actions with full dashboard session cookie validation.
+  - **Model Picker Negation & Batch Search (`30dd2e036`)**: Added regex, exclusion negation (`!`), batch select, and provider filtering in model selectors.
+  - **API Key History & Friendly Node Names (`#4826`, `#4818`)**: Added API key attribution to request history, friendly node names in dropdowns, and opt-in full payload view in request details.
+  - **Model Import Price Filtering (`#4874`)**: Filter compatible model imports by price range.
+  - **Quota Auto-Ping Anchored Schedule (`#4848`, `916cc71a7`)**: Anchored auto-ping schedules at fixed local times alongside reactive usage pings.
+  - **Installed CLI Update Detection (`#4830`)**: Correctly inspects `@rabbi696/ezrouter` CLI package version for dashboard update notifications.
+  - **Server Action Body Limit (`#4872`)**: Configured Next.js `serverActions.bodySizeLimit` to accept large image payloads.
+
 # v0.6.22 (2026-10-14)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4740 - #4800)

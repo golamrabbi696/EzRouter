@@ -20,11 +20,6 @@ import {
   shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
 import {
-  createNousApiKeyProbe,
-  getNousApiKeyValidationError,
-  isNousApiKeyAccepted,
-} from "open-sse/services/nous.js";
-import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
   KIRO_CONFIG,
