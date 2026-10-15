@@ -157,7 +157,7 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
   });
 
   sortedProviders.forEach((provider) => {
-    const providerName = Object.hasOwn(PROVIDER_ALIAS_NAMES, provider)
+    const providerName = Object.prototype.hasOwnProperty.call(PROVIDER_ALIAS_NAMES, provider)
       ? PROVIDER_ALIAS_NAMES[provider]
       : provider;
     categories.push({
