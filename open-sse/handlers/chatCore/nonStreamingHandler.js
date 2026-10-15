@@ -3,6 +3,7 @@ import { needsTranslation } from "../../translator/index.js";
 import { toOpenAIFinish, fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { openAICompletionToClaudeMessage } from "./claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
+import { kiroToClaudeNonStreaming } from "../../translator/response/kiro-to-claude.js";
 import { addBufferToUsage, filterUsageForFormat, enrichUsageCost } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { canonicalEchoModel } from "../../services/model.js";
@@ -119,6 +120,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       }
     }
     return responseBody;
+  }
+  // KiroExecutor decodes EventStream into OpenAI-shaped SSE. After aggregation,
+  // Claude JSON clients (including Auto's classifier) still need a message body.
+  if (targetFormat === FORMATS.KIRO && sourceFormat === FORMATS.CLAUDE) {
+    return kiroToClaudeNonStreaming(responseBody);
   }
   const openAIBody = providerResponseToOpenAI(responseBody, targetFormat);
   return openAICompletionToClientFormat(openAIBody, sourceFormat, customToolNames, namespaceToolMap);

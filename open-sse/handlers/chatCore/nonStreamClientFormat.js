@@ -56,6 +56,12 @@ export function openAICompletionToClaudeMessage(responseBody) {
     usage: {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
       output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      ...(typeof (usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens) === "number"
+        ? { cache_read_input_tokens: usage.cache_read_input_tokens ?? usage.prompt_tokens_details.cached_tokens }
+        : {}),
+      ...(typeof (usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens) === "number"
+        ? { cache_creation_input_tokens: usage.cache_creation_input_tokens ?? usage.prompt_tokens_details.cache_creation_tokens }
+        : {}),
     },
   };
 }
