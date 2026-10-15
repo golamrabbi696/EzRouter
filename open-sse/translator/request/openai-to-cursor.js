@@ -81,10 +81,10 @@ function convertMessages(messages) {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
 
-    if (msg.role === ROLE.SYSTEM) {
+    if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
       result.push({
-        role: ROLE.USER,
-        content: `[System Instructions]\n${extractContent(msg.content)}`
+        role: ROLE.SYSTEM,
+        content: extractContent(msg.content)
       });
       continue;
     }

@@ -94,7 +94,7 @@ export function isAgentCapableRequest(body) {
   });
 }
 
-function encodeHistoryMessage(message) {
+function formatHistoryMessage(message) {
   const content = textFromContent(message?.content);
   const extras = [];
   if (message?.role === ROLE.ASSISTANT && message.tool_calls?.length) {
@@ -106,35 +106,34 @@ function encodeHistoryMessage(message) {
     extras.push(`[tool_result id=${message.tool_call_id || ""}]`);
   }
   const textBody = [content, ...extras].filter(Boolean).join("\n");
-  if (!textBody) return null;
-
-  // ConversationHistoryMessage.user / .assistant -> repeated content -> text.
-  const text = agentString(1, textBody);
-  if (message.role === ROLE.ASSISTANT) {
-    return agentMessage(2, agentMessage(1, agentMessage(1, text)));
-  }
-  return agentMessage(1, agentMessage(1, agentMessage(1, text)));
+  return textBody ? `[${message.role}]\n${textBody}` : "";
 }
 
 export function buildAgentRunFrame(messages, model, tools = [], reasoningEffort = null) {
   // custom_system_prompt (RunRequest field 8) makes AgentService return an
   // empty turn. Fold system text into the current user message instead.
   const system = messages
-    .filter((message) => message?.role === ROLE.SYSTEM)
+    .filter((message) => message?.role === ROLE.SYSTEM || message?.role === ROLE.DEVELOPER)
     .map((message) => textFromContent(message.content))
     .filter(Boolean)
     .join("\n\n");
-  const chatMessages = messages.filter((message) => message?.role !== ROLE.SYSTEM);
-  const currentIndex = [...chatMessages].map((message) => message?.role).lastIndexOf(ROLE.USER);
-  const current = currentIndex >= 0 ? chatMessages[currentIndex] : chatMessages.at(-1);
+  const chatMessages = messages.filter((message) => message?.role !== ROLE.SYSTEM && message?.role !== ROLE.DEVELOPER);
+  const current = chatMessages.at(-1);
   const history = chatMessages
-    .slice(0, currentIndex >= 0 ? currentIndex : -1)
-    .map(encodeHistoryMessage)
+    .slice(0, -1)
+    .map(formatHistoryMessage)
     .filter(Boolean);
-  const rawUser = textFromContent(current?.content) || "Continue.";
-  const userText = system ? `${system}\n\n${rawUser}` : rawUser;
+  const rawUser = (current?.role === ROLE.USER
+    ? textFromContent(current.content)
+    : formatHistoryMessage(current)) || "Continue.";
+  // UserMessageAction has no history field. Stateless turns must replay prior
+  // messages in UserMessage.text so the server actually passes them to the model.
+  const prompt = history.length
+    ? `<conversation_history>\n${history.join("\n\n")}\n</conversation_history>\n\n${rawUser}`
+    : rawUser;
+  const userText = system ? `${system}\n\n${prompt}` : prompt;
 
-  // agent.v1.UserMessageAction.user_message and its optional history.
+  // agent.v1.UserMessageAction.user_message.
   // selected_context (3) + mode=1 (4) match cursor-agent's wire format; without
   // them the server may accept the RPC and stream an empty turn.
   const userMessage = concatBuffers(
@@ -143,13 +142,7 @@ export function buildAgentRunFrame(messages, model, tools = [], reasoningEffort 
     agentMessage(3, new Uint8Array()),
     encodeField(4, PROTOBUF_VARINT, 1),
   );
-  const conversationHistory = history.length
-    ? concatBuffers(...history.map((entry) => agentMessage(1, entry)))
-    : null;
-  const userAction = concatBuffers(
-    agentMessage(1, userMessage),
-    ...(conversationHistory ? [agentMessage(7, conversationHistory)] : []),
-  );
+  const userAction = agentMessage(1, userMessage);
   const conversationAction = agentMessage(1, userAction);
   const effort = String(reasoningEffort || "").toLowerCase();
   const effortValue = effort === "ultra" ? "max" : effort === "minimal" ? "low" : effort;
@@ -477,7 +470,13 @@ export class CursorExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     // Messages are already translated by chatCore (claude→openai→cursor)
     // Do NOT call openaiToCursorRequest again — double-translation drops tool_results
-    const messages = body.messages || [];
+    // ChatService only has user/assistant roles. Preserve its existing system
+    // instruction representation while AgentService receives real system roles.
+    const messages = (body.messages || []).map((message) =>
+      message.role === ROLE.SYSTEM || message.role === ROLE.DEVELOPER
+        ? { ...message, role: ROLE.USER, content: `[System Instructions]\n${textFromContent(message.content)}` }
+        : message
+    );
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
     // Detect Claude Code UA to force Agent mode (issue #643)
