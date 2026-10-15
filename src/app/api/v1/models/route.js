@@ -2,6 +2,7 @@ import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/co
 import {
   ALIAS_TO_ID,
   AI_PROVIDERS,
+  FREE_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
@@ -299,7 +300,7 @@ export function comboSeatLimits(combo, combosByName, activeConnectionByProvider 
       if (typeof seat !== "string") continue;
       const slash = seat.indexOf("/");
       if (slash <= 0) {
-        const nested = combosByName.get(seat);
+        const nested = combosByName?.get(seat);
         if (nested) {
           const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, visiting);
           if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
@@ -401,6 +402,9 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
   // Lookup map so aggregateComboCapabilities can recursively resolve nested combos
   const comboByName = Object.fromEntries(combos.map((c) => [c.name, c.models]));
+  const combosByName = new Map(
+    combos.filter((c) => typeof c?.name === "string").map((c) => [c.name, c]),
+  );
 
   let settings = {};
   try {
@@ -413,7 +417,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     const comboOnlyModels = [];
     for (const combo of combos) {
       if (!comboMatchesKinds(combo, kindFilter)) continue;
-      const entry = comboToEntry(combo, comboByName);
+      const entry = comboToEntry(combo, comboByName, combosByName);
       if (seenModelIds.has(entry.id)) continue;
       seenModelIds.add(entry.id);
       comboOnlyModels.push(entry);
@@ -490,10 +494,18 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  // Include no-auth free providers (e.g. opencode) so their models are exposed in /v1/models
+  for (const [id, provider] of Object.entries(FREE_PROVIDERS || {})) {
+    if (provider?.noAuth && !activeConnectionByProvider.has(id)) {
+      activeConnectionByProvider.set(id, {
+        id: "noauth",
+        provider: id,
+        isActive: true,
+      });
+    }
+  }
+
   const models = [];
-  const combosByName = new Map(
-    combos.filter((c) => typeof c?.name === "string").map((c) => [c.name, c]),
-  );
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
@@ -524,7 +536,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (enabledModels.length > 0 && !enabledModels.includes(model.id)) continue;
-        if (isDisabled(alias, model.id)) continue;
+        if (isDisabled(alias, model.id) || isDisabled(providerId, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
@@ -689,7 +701,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         // imageToText custom models stay in the LLM list (vision-capable chat models)
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;
-        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId) || isDisabled(providerId, modelId)) continue;
 
         const model = {
           id: `${outputAlias}/${modelId}`,
