@@ -10,6 +10,7 @@ import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
+import { getDuePingSlot, normalizePingSchedule } from "@/shared/services/quotaPingSchedule";
 
 const C = QUOTA_AUTOPING_CONFIG;
 const CLAUDE_PING_URL = "https://api.anthropic.com/v1/messages?beta=true";
@@ -136,6 +137,11 @@ function getResetToPing(providerConfig, cachedReset, resetAt, now) {
     && now - cachedResetMs < C.catchUpWindowMs
     && resetMs - cachedResetMs > C.refreshAheadMs
     ? cachedReset : null;
+}
+
+function getConnectionSchedule(settings, providerConfig, connectionId) {
+  const schedules = settings?.[providerConfig.settingsKey]?.schedules || {};
+  return normalizePingSchedule(schedules[connectionId]);
 }
 
 function buildProxyOptions(cfg) {
@@ -322,12 +328,13 @@ function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
   return failedAt && nowMs - failedAt < C.failureCooldownMs;
 }
 
-async function pingConnection(conn, provider, providerConfig, handler, deps, state = g) {
+async function pingConnection(conn, provider, providerConfig, handler, deps, state = g, schedule = null, reactive = true) {
   const key = cacheKey(provider, conn.id);
 
   // resetAt is stable for time-based windows; Codex polls every tick because inactive windows slide forward.
+  // A schedule needs a fresh look every tick, since its slots do not depend on resetAt.
   const cachedReset = state.resetCache[key];
-  if (!providerConfig.pingWhenResetAtSlides && cachedReset && Date.now() < new Date(cachedReset).getTime() - C.refreshAheadMs) return;
+  if (!schedule && !providerConfig.pingWhenResetAtSlides && cachedReset && Date.now() < new Date(cachedReset).getTime() - C.refreshAheadMs) return;
 
   // Avoid hammering provider auth/quota endpoints if a ping failed recently.
   if (shouldSkipAfterFailure(state, key)) return;
@@ -360,28 +367,76 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     now,
     state.pingCache?.[key],
   );
+
   let resetKey = null;
   let resetToPing = null;
-  if (resetAt) {
-    resetToPing = getResetToPing(providerConfig, cachedReset, resetAt, now);
-    const isCatchUp = resetToPing && resetToPing !== resetAt;
-    // Keep a missed reset pending until the ping succeeds or was already sent.
-    if (!isCatchUp) state.resetCache[key] = resetAt;
 
-    if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
-    if (isQuotaExhausted(quota)) return;
-    if (!resetToPing) return;
+  // Anchored schedule runs alongside the reactive path: it fires on its own wall-clock
+  // slots, whether or not the provider reported a reset.
+  const dueSlot = schedule ? getDuePingSlot(schedule, now) : null;
+  const slotPending = Boolean(dueSlot) && connection.lastPingedSlotKey !== dueSlot.key;
 
-    resetKey = normalizeResetKey(resetToPing);
-    const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
+  if (slotPending) {
+    if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
+  } else {
+    if (resetAt) {
+      resetToPing = getResetToPing(providerConfig, cachedReset, resetAt, now);
+      const isCatchUp = resetToPing && resetToPing !== resetAt;
+      // Keep a missed reset pending until the ping succeeds or was already sent.
+      if (!isCatchUp) state.resetCache[key] = resetAt;
 
-    // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
-    if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)
-      || lastPingedResetKey === resetKey || state.pingedResetCache?.[key] === resetKey) {
-      state.resetCache[key] = resetAt;
+      if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
+      if (isQuotaExhausted(quota)) return;
+      if (!reactive || !resetToPing) return;
+
+      resetKey = normalizeResetKey(resetToPing);
+      const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
+
+      // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
+      if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)
+        || lastPingedResetKey === resetKey || state.pingedResetCache?.[key] === resetKey) {
+        state.resetCache[key] = resetAt;
+        return;
+      }
+    } else if (!reactive || !inactiveSession) {
       return;
     }
-  } else if (!inactiveSession) {
+  }
+
+  const model = provider === "codex"
+    ? (await handler.getModels(connection.accessToken, proxyOptions, connection.providerSpecificData))[0]?.slug
+    : providerConfig.pingModel;
+  if (!model) {
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${connection.id}: no supported model available`);
+    return;
+  }
+
+  const ok = await handler.sendPing(connection, { ...providerConfig, pingModel: model }, proxyOptions, deps);
+  providerConfig.signal?.throwIfAborted();
+  if (!ok) {
+    // Do not mark reset/slot as pinged unless upstream accepted the tiny request.
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed (${slotPending ? `slot ${dueSlot.key}` : (resetToPing ? `reset ${resetToPing}` : "inactive session")})`);
+    return;
+  }
+
+  if (resetAt) {
+    state.resetCache[key] = resetAt;
+    // Preserve accepted pings through marker write failures and older hot-reload state.
+    (state.pingedResetCache ??= {})[key] = resetKey;
+  }
+  if (inactiveSession) (state.pingCache ??= {})[key] = Date.now();
+  delete state.failureCache[key];
+  const pingedAt = new Date().toISOString();
+  await deps.updateProviderConnection(connection.id, {
+    ...(resetToPing ? { lastPingedResetAt: resetToPing, lastPingedResetKey: resetKey } : {}),
+    ...(slotPending ? { lastPingedSlotKey: dueSlot.key } : {}),
+    lastPingAt: pingedAt,
+    updatedAt: pingedAt,
+  });
+  if (inactiveSession) delete state.pingCache[key];
+  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (${slotPending ? `slot ${dueSlot.key}` : (resetToPing ? `reset ${resetToPing}` : "inactive session")})`);
     return;
   }
 
@@ -410,13 +465,15 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   }
   if (inactiveSession) (state.pingCache ??= {})[key] = Date.now();
   delete state.failureCache[key];
+  const pingedAt = new Date().toISOString();
   await deps.updateProviderConnection(connection.id, {
     ...(resetToPing ? { lastPingedResetAt: resetToPing, lastPingedResetKey: resetKey } : {}),
-    lastPingAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    ...(slotPending ? { lastPingedSlotKey: dueSlot.key } : {}),
+    lastPingAt: pingedAt,
+    updatedAt: pingedAt,
   });
   if (inactiveSession) delete state.pingCache[key];
-  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (${resetToPing ? `reset ${resetToPing}` : "inactive session"})`);
+  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (${slotPending ? `slot ${dueSlot.key}` : (resetToPing ? `reset ${resetToPing}` : "inactive session")})`);
 }
 
 function createDefaultDeps() {
@@ -444,13 +501,23 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
       if (!handler) continue;
 
       const enabledMap = settings?.[providerConfig.settingsKey]?.connections || {};
-      if (Object.keys(enabledMap).length === 0) continue;
+      const scheduleMap = settings?.[providerConfig.settingsKey]?.schedules || {};
+      if (Object.keys(enabledMap).length === 0 && Object.keys(scheduleMap).length === 0) continue;
 
       const conns = await deps.getProviderConnections({ provider, isActive: true });
-      const targets = conns.filter((conn) => conn.authType === "oauth" && enabledMap[conn.id] === true);
+      // A schedule stands on its own: an account can run only on its slots, with the
+      // reactive ping left off.
+      const targets = conns.filter((conn) => (
+        conn.authType === "oauth"
+        && (enabledMap[conn.id] === true || normalizePingSchedule(scheduleMap[conn.id]) !== null)
+      ));
       for (const conn of targets) {
         try {
-          await withAccountLock(conn.id, deps, state, (signal) => pingConnection(conn, provider, { ...providerConfig, signal }, handler, deps, state));
+          const schedule = getConnectionSchedule(settings, providerConfig, conn.id);
+          const reactive = enabledMap[conn.id] === true;
+          await withAccountLock(conn.id, deps, state, (signal) =>
+            pingConnection(conn, provider, { ...providerConfig, signal }, handler, deps, state, schedule, reactive)
+          );
         } catch (e) {
           state.failureCache[cacheKey(provider, conn.id)] = Date.now();
           console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
@@ -479,10 +546,16 @@ export function stopQuotaAutoPing() {
   console.log("[AutoPing] scheduler stopped");
 }
 
+// An opted-in account or a single enabled schedule is enough to need the scheduler.
+export function hasAnyAutoPingEnabled(settings) {
+  return Object.values(C.providers).some((providerConfig) => {
+    const config = settings?.[providerConfig.settingsKey];
+    return Object.values(config?.connections || {}).some(Boolean)
+      || Object.values(config?.schedules || {}).some((schedule) => normalizePingSchedule(schedule) !== null);
+  });
+}
+
 export function configureQuotaAutoPing(settings) {
-  const enabled = Object.values(C.providers).some((providerConfig) =>
-    Object.values(settings?.[providerConfig.settingsKey]?.connections || {}).some(Boolean)
-  );
-  if (enabled) startQuotaAutoPing();
+  if (hasAnyAutoPingEnabled(settings)) startQuotaAutoPing();
   else stopQuotaAutoPing();
 }
