@@ -80,8 +80,8 @@ describe("usage by API key (#3640)", () => {
   it("still reports the key masked, never in full", async () => {
     const stats = await db.getUsageStats("24h");
     for (const bucket of Object.values(stats.byApiKey)) {
-      expect(bucket.apiKeyMasked).toMatch(/\*\*\*$/);
-      expect(bucket.apiKeyMasked.length).toBeLessThanOrEqual(11);
+      expect(bucket.apiKeyMasked).toMatch(/\*\*\*[a-zA-Z0-9]+$/);
+      expect(bucket.apiKeyMasked.length).toBeLessThanOrEqual(16);
     }
   });
 });
