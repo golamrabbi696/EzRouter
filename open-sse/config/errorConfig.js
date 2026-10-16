@@ -188,7 +188,6 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   // Schema-validation rejections: same body fails on every account.
-  { text: "improperly formed request", fallback: false },
   { text: "extra inputs are not permitted", fallback: false },
   { text: "unknown parameter",        fallback: false },
   { text: "unrecognized request argument", fallback: false },
