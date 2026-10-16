@@ -239,7 +239,9 @@ function convertConstToEnum(obj) {
   if (!obj || typeof obj !== "object") return;
 
   if (obj.const !== undefined && !obj.enum) {
-    obj.enum = [obj.const];
+    if (obj.const !== "" && obj.const !== null && obj.const !== undefined) {
+      obj.enum = [obj.const];
+    }
     delete obj.const;
   }
 
@@ -247,12 +249,26 @@ function convertConstToEnum(obj) {
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
+// Also sanitizes enum values: filters out empty strings and deletes empty enum arrays (Gemini rejects empty enum / empty string enum values with 400 "cannot be empty")
 function convertEnumValuesToStrings(obj) {
   if (!obj || typeof obj !== "object") return;
 
-  if (obj.enum && Array.isArray(obj.enum)) {
-    obj.enum = obj.enum.map(v => String(v));
-    // Gemini API requires type:"string" when enum is present — without it returns 400
+  if (obj.enum !== undefined) {
+    if (Array.isArray(obj.enum)) {
+      const validEnums = obj.enum
+        .filter(v => v !== null && v !== undefined)
+        .map(v => String(v))
+        .filter(v => v.length > 0);
+
+      if (validEnums.length === 0) {
+        delete obj.enum;
+      } else {
+        obj.enum = validEnums;
+      }
+    } else {
+      delete obj.enum;
+    }
+
     if (!obj.type) {
       obj.type = "string";
     }
@@ -595,18 +611,27 @@ export function cleanJSONSchemaForAntigravity(schema) {
   // Phase 3.5: Ensure array items again after keywords removal (which may leave items as empty object)
   ensureArrayItems(cleaned);
 
+  // Re-run enum sanitization after flattening in case complex structures revealed empty enums
+  convertEnumValuesToStrings(cleaned);
+
   // Phase 4: Cleanup required fields recursively
   function cleanupRequired(obj) {
     if (!obj || typeof obj !== "object") return;
 
-    if (obj.required && Array.isArray(obj.required) && obj.properties) {
-      const validRequired = obj.required.filter(field =>
-        Object.prototype.hasOwnProperty.call(obj.properties, field)
-      );
-      if (validRequired.length === 0) {
+    if (obj.required !== undefined) {
+      if (!Array.isArray(obj.required) || !obj.properties) {
         delete obj.required;
       } else {
-        obj.required = validRequired;
+        const validRequired = obj.required.filter(field =>
+          typeof field === "string" &&
+          field.length > 0 &&
+          Object.prototype.hasOwnProperty.call(obj.properties, field)
+        );
+        if (validRequired.length === 0) {
+          delete obj.required;
+        } else {
+          obj.required = validRequired;
+        }
       }
     }
 
