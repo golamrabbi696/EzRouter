@@ -183,9 +183,10 @@ describe("opencodeFingerprint — in-place normalization", () => {
     expect(namesOf(body.tools)).toEqual(["shell", "Edit", "read"]);
     expect(map.size).toBe(0);
     expect(takeRenamedToolNames(body)).toBeNull();
-    expect(body.instructions).toBeUndefined();
     expect(body.tools[0].description).toContain("Commands run on Linux using bash.");
     expect(body.tools[0].parameters.required).toEqual(["command"]);
+    // Only the genuinely absent `read` is still advertised as a placeholder.
+    expect(body.instructions).toBe("Do not call the `read` tool; it is a placeholder that does nothing. Use the other tools you have been given instead.");
   });
 
   it("normalizes the nested chat shape without adding a system note", () => {
