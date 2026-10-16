@@ -22,6 +22,7 @@ import { getGroqUsage } from "./usage/groq.js";
 import { getZedUsage } from "./usage/zed.js";
 import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
+import { getCloudflareUsage } from "./usage/cloudflare.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import { getClinepassUsage } from "./usage/clinepass.js";
@@ -71,6 +72,7 @@ const USAGE_HANDLERS = {
   "opencode-go": (c) => getOpenCodeGoUsage(c.apiKey, c.proxyOptions),
   "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   clinepass: (c) => getClinepassUsage(c.apiKey || c.accessToken, c.proxyOptions),
+  "cloudflare-ai": (c) => getCloudflareUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
 };
 
 // Qoder intl/CN share one usage path: PATs must be exchanged to a job token
