@@ -52,7 +52,11 @@ const PROVIDER_MODELS = {
     { id: "minimax-m2" },
     { id: "glm-4.7" },
   ],
-ag: [
+  ag: [
+    { id: "gemini-4-argon-high" },
+    { id: "gemini-4-argon-medium" },
+    { id: "gemini-4-argon-low" },
+    { id: "gemini-4-argon" },
     { id: "gemini-3.8-flash-high" },
     { id: "gemini-3.8-flash-medium" },
     { id: "gemini-3.8-flash-low" },
