@@ -564,10 +564,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   let shouldFallback, cooldownMs, newBackoffLevel;
   if (classified.shouldFallback && resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    cooldownMs = resolveProviderId(provider) === "antigravity"
-      ? resetsAtMs - Date.now()
-      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    // Upstream providers with exact rate-limit / quota resets (antigravity, codex, codebuddy)
+    // provide exact resetAt. Do not truncate it to MAX_RATE_LIMIT_COOLDOWN_MS.
+    cooldownMs = resetsAtMs - Date.now();
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = classified);
