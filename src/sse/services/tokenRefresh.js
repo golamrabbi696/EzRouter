@@ -248,6 +248,8 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 
 // ─── Local-specific: proactive token refresh ─────────────────────────────────
 
+const pendingCredentialChecks = new Map();
+
 /**
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
@@ -262,6 +264,25 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  * @returns {Promise<object>} updated credentials object
  */
 export async function checkAndRefreshToken(provider, credentials, optionsOrExecutor = {}) {
+  const connectionId = credentials?.connectionId || credentials?.id;
+  if (!connectionId) return checkAndRefreshTokenUnlocked(provider, credentials, optionsOrExecutor);
+
+  const key = `${provider}:${connectionId}`;
+  const previous = pendingCredentialChecks.get(key) || Promise.resolve();
+  // Serialize the DB reread, refresh and persistence, not just the upstream call.
+  // Each caller keeps its own snapshot/options and rechecks the freshly saved token.
+  const pending = previous.catch(() => {}).then(() =>
+    checkAndRefreshTokenUnlocked(provider, credentials, optionsOrExecutor)
+  );
+  pendingCredentialChecks.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (pendingCredentialChecks.get(key) === pending) pendingCredentialChecks.delete(key);
+  }
+}
+
+async function checkAndRefreshTokenUnlocked(provider, credentials, optionsOrExecutor = {}) {
   const executor = (optionsOrExecutor && typeof optionsOrExecutor.needsRefresh === "function") ? optionsOrExecutor : null;
   const options = (optionsOrExecutor && typeof optionsOrExecutor === "object" && !executor) ? optionsOrExecutor : {};
   let creds = { ...credentials };
@@ -277,7 +298,7 @@ export async function checkAndRefreshToken(provider, credentials, optionsOrExecu
     const credsRefreshMs = Date.parse(creds.lastRefreshAt || "");
     const dbIsNewer = Number.isFinite(latestRefreshMs)
       && (!Number.isFinite(credsRefreshMs) || latestRefreshMs > credsRefreshMs);
-    if (dbIsNewer && latest.refreshToken && latest.refreshToken !== creds.refreshToken) {
+    if (dbIsNewer && latest.refreshToken) {
       creds = {
         ...creds,
         refreshToken: latest.refreshToken,
