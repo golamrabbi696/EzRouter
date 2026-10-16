@@ -23,6 +23,7 @@
 // The check runs before any credential lookup, so a denied request never
 // touches a provider account.
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
+import { getAdapter } from "@/lib/db/driver.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
 import { getModelInfo, getComboModels } from "./model.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
@@ -72,11 +73,16 @@ export async function getKeyAccessContext(request) {
   const apiKey = extractClientApiKey(request);
   if (!apiKey) return null;
   const record = await getApiKeyByKey(apiKey);
-  if (!record?.access?.restricted) return null;
+  if (!record) return null;
+  const policies = process.env.NINEROUTER_HA_CONFIG
+    ? (await getAdapter()).ha?.policies(record.id).filter(p => p.restricted) || []
+    : [];
+  if (!record.access?.restricted && !policies.length) return null;
   return {
     keyId: record.id,
     keyName: record.name || record.id,
     allow: record.access.allow || [],
+    haPolicies: policies,
     _sets: null,
   };
 }
@@ -85,6 +91,12 @@ export async function getKeyAccessContext(request) {
 // resolved provider ids (for provider-as-model kinds) and "provider/*" grants.
 async function getAllowSets(ctx) {
   if (ctx._sets) return ctx._sets;
+  if (ctx.haPolicies?.length) {
+    const policies = await Promise.all(ctx.haPolicies.map(p => getAllowSets({ allow: p.allow })));
+    ctx._sets = Object.fromEntries(['combos', 'models', 'providers'].map(kind => [kind,
+      new Set([...policies[0][kind]].filter(value => policies.every(p => p[kind].has(value))))]));
+    return ctx._sets;
+  }
   const comboNames = new Set((await getCombos()).map((c) => lower(c.name)));
   const combos = new Set();
   const models = new Set();

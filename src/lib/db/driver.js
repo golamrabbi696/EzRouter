@@ -79,6 +79,14 @@ async function initAdapter() {
 
   const { runMigrationOnce } = await import("./migrate.js");
   await runMigrationOnce(adapter);
+  if (process.env.NINEROUTER_HA_CONFIG) {
+    const { loadHaConfig, startHaRuntime } = await import('../ha/runtime.js');
+    const { attachHaStore } = await import('../ha/store.js');
+    const config = loadHaConfig(process.env.NINEROUTER_HA_CONFIG);
+    adapter = attachHaStore(adapter, { bindings: config.bindings || {} });
+    adapter.ha.runtime = startHaRuntime(adapter.ha, config);
+    await adapter.ha.runtime.ready;
+  }
   return adapter;
 }
 

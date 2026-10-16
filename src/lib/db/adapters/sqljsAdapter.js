@@ -52,7 +52,7 @@ export async function createSqlJsAdapter(filePath) {
 
     let fd;
     try {
-      fd = fs.openSync(tmpPath, "w");
+      fd = fs.openSync(tmpPath, "w", 0o600);
       fs.writeFileSync(fd, Buffer.from(data));
       fs.fsyncSync(fd);
     } catch (err) {
@@ -64,9 +64,14 @@ export async function createSqlJsAdapter(filePath) {
 
     try {
       fs.renameSync(tmpPath, filePath);
+      if (process.platform !== "win32") {
+        const dirFd = fs.openSync(dir, "r");
+        try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+      }
     } catch (err) {
       try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
       throw err;
+    }
     }
     dirty = false;
   }
@@ -160,5 +165,9 @@ export async function createSqlJsAdapter(filePath) {
   process.once("SIGINT", onShutdown);
   process.once("SIGTERM", onShutdown);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  function flushDurable() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (dirty) persist();
+  }
+  return { driver: "sql.js", run, get, all, exec, transaction, close, flushDurable, raw: db };
 }

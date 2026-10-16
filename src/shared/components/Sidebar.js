@@ -40,6 +40,7 @@ const debugItems = [
 ];
 
 const systemItems = [
+  { href: "/dashboard/ha", label: "High Availability", icon: "sync" },
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];

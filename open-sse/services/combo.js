@@ -4,6 +4,7 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse, clientStatusForBreakerOpen } from "../utils/error.js";
+import { NO_REPLAY_HEADER } from '../config/ha.js';
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -789,9 +790,9 @@ export async function handleComboChat({ body, models, members, policy, handleSin
 
     try {
       const result = await handleSingleModel(body, modelStr);
+      if (result.headers?.get(NO_REPLAY_HEADER) === '1') return result;
+
       // Success (2xx) — but a 200 is not proof of a usable answer. A provider can
-      // open an SSE stream, send nothing but keepalives and close cleanly; that
-      // must fall through to the next model rather than be handed to the client.
       if (result.ok) {
         // A 2xx with no usable content (empty message / in_progress stop) is a
         // seat failure, not success — fall through to the next model (#4736).

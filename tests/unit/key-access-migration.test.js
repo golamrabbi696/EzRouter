@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { SCHEMA_VERSION } from '../../src/lib/db/schema.js';
 
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;

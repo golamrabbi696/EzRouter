@@ -129,6 +129,11 @@ export async function handleChat(request, clientRawRequest = null, translationCa
   }
   cacheClaudeHeaders(clientRawRequest.headers);
 
+  if (clientRawRequest?.headers) {
+    clientRawRequest = { ...clientRawRequest, headers: Object.fromEntries(
+      Object.entries(clientRawRequest.headers).filter(([name]) => !['x-9router-ha-proof', 'x-ez-ha-proof'].includes(name.toLowerCase()))
+    ) };
+  }
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.
@@ -172,6 +177,14 @@ export async function handleChat(request, clientRawRequest = null, translationCa
   const keyAccess = await getKeyAccessContext(request);
   const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
+
+  if (process.env.NINEROUTER_HA_CONFIG) {
+    const { forwardedTarget } = await import('@/lib/ha/routing.js');
+    try {
+      const target = await forwardedTarget(request, body);
+      if (target) return handleSingleModelChat(body, target, clientRawRequest, request, apiKey, modelStr);
+    } catch { return errorResponse(HTTP_STATUS.FORBIDDEN, 'Forwarded target is not authorized'); }
+  }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
@@ -456,6 +469,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if ((process.env.EZROUTER_HA_CONFIG || process.env.NINEROUTER_HA_CONFIG) && request && excludeConnectionIds.size === 0) {
+        const { maybeForwardChat } = await import('@/lib/ha/routing.js');
+        const originalModel = requestedModel || clientRawRequest?.body?.model || body.model;
+        const peerResponse = await maybeForwardChat(request, { ...body, model: originalModel }, modelStr, true);
+        if (peerResponse) return peerResponse;
+      }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         // Preserve the upstream class so 4xx still means stop and 5xx still means

@@ -123,7 +123,7 @@ export async function getProviderConnections(filter = {}) {
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const rows = db.all(sql, params);
-  const list = rows.map(rowToConn);
+  const list = rows.map(rowToConn).filter(c => filter.isActive !== true || !db.ha || db.ha.canUseConnection(c));
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
   return list;
 }
