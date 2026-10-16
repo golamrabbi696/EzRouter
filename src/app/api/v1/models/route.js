@@ -589,23 +589,41 @@ export async function buildModelsList(kindFilter, options = {}) {
         ? enabledModels
         : providerModels.map((model) => model.id);
 
-      // Check if user has manually added custom models for this compatible provider.
-      // If so, skip dynamic /models fetch — only expose user-curated models.
-      const hasProviderCustomModels = isCompatibleProvider && customModels.some((m) => {
-        if (!m?.id) return false;
-        const a = m.providerAlias;
-        return a === staticAlias || a === outputAlias || a === providerId;
-      });
+      const customModelKindById = new Map();
+      // User-declared per-model capabilities from the dashboard (kv customModels
+      // "caps"). These are explicit statements about a model the operator added
+      // by hand, so they must win over the pattern-matched guesses below —
+      // otherwise a hand-declared "vision: true" is silently overwritten by a
+      // PATTERN_CAPABILITIES match and /v1/models reports the model as text-only.
+      const customModelCapsById = new Map();
+      const customModelIds = customModels
+        .filter((m) => {
+          if (!m?.id) return false;
+          const kind = getModelKind(m) || LLM_KIND;
+          // imageToText custom models are vision-capable chat models: expose them
+          // both in the default LLM list and in /v1/models/image-to-text.
+          if (!kindFilter.includes(kind) && !(kind === "imageToText" && kindFilter.includes(LLM_KIND))) return false;
+          const alias = m.providerAlias;
+          return alias === staticAlias || alias === outputAlias || alias === providerId;
+        })
+        .map((m) => {
+          const modelId = String(m.id).trim();
+          if (modelId) {
+            customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
+            if (m.caps && typeof m.caps === "object") customModelCapsById.set(modelId, m.caps);
+          }
+          return modelId;
+        })
+        .filter((modelId) => modelId !== "");
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !hasProviderCustomModels && !skipDynamicFetch) {
+      if (isCompatibleProvider && rawModelIds.length === 0 && customModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
-      // Config-driven live catalog override (e.g. Kiro returns dynamic
-      // -thinking/-agentic variants per account). On failure, fall back to
-      // whatever rawModelIds already holds.
+      // Config-driven live catalog override for providers that have no static list (or explicit enabledModels).
+      // If provider has static or custom models configured in UI, do not override with upstream live catalog.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels) {
+      if (liveResolver && !hasExplicitEnabledModels && providerModels.length === 0 && customModelIds.length === 0) {
         try {
           const live = await liveResolver(conn);
           if (live?.models?.length) {
@@ -641,32 +659,6 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
-      const customModelKindById = new Map();
-      // User-declared per-model capabilities from the dashboard (kv customModels
-      // "caps"). These are explicit statements about a model the operator added
-      // by hand, so they must win over the pattern-matched guesses below —
-      // otherwise a hand-declared "vision: true" is silently overwritten by a
-      // PATTERN_CAPABILITIES match and /v1/models reports the model as text-only.
-      const customModelCapsById = new Map();
-      const customModelIds = customModels
-        .filter((m) => {
-          if (!m?.id) return false;
-          const kind = getModelKind(m) || LLM_KIND;
-          // imageToText custom models are vision-capable chat models: expose them
-          // both in the default LLM list and in /v1/models/image-to-text.
-          if (!kindFilter.includes(kind) && !(kind === "imageToText" && kindFilter.includes(LLM_KIND))) return false;
-          const alias = m.providerAlias;
-          return alias === staticAlias || alias === outputAlias || alias === providerId;
-        })
-        .map((m) => {
-          const modelId = String(m.id).trim();
-          if (modelId) {
-            customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
-            if (m.caps && typeof m.caps === "object") customModelCapsById.set(modelId, m.caps);
-          }
-          return modelId;
-        })
-        .filter((modelId) => modelId !== "");
 
       const aliasModelIds = Object.values(modelAliases || {})
         .filter((fullModel) => {
