@@ -1,15 +1,14 @@
-"use client";
-
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button } from "@/shared/components";
-import { filterModelsForImport } from "@/shared/utils/modelImportFilter";
-import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { Button } from "@/shared/components/Button";
+import { getProviderCustomModelRows } from "./providerDetailUtils";
+import { ImportModelsModal } from "./ImportModelsModal";
+
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
-    ? "border-green-500/40"
+    ? "border-green-500/50"
     : testStatus === "error"
-    ? "border-red-500/40"
+    ? "border-red-500/50"
     : "border-border";
 
   const iconColor = testStatus === "ok"
@@ -72,42 +71,27 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onTestModel: onExternalTestModel, externalTestResults, externalTestingModelIds, disabledModelIds = [] }) {
+CompatibleModelRow.propTypes = {
+  modelId: PropTypes.string.isRequired,
+  fullModel: PropTypes.string.isRequired,
+  copied: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
+  onDeleteAlias: PropTypes.func.isRequired,
+  onTest: PropTypes.func,
+  testStatus: PropTypes.string,
+  isTesting: PropTypes.bool,
+};
+
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onModelsChanged, importSupported = false }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
-  const [suggestedModels, setSuggestedModels] = useState([]);
-  const [testingModelIds, setTestingModelIds] = useState(() => new Set());
-  const [importFilter, setImportFilter] = useState("all");
+  const [showImport, setShowImport] = useState(false);
+  const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
 
-  // Auto-fetch suggested models from upstream /models on mount
-  useEffect(() => {
-    const activeConnection = connections.find((conn) => conn.isActive !== false);
-    if (!activeConnection) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/providers/${activeConnection.id}/models`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        const filtered = filterModelsForImport(data.models, importFilter);
-        const ids = (filtered || [])
-          .map((m) => m.id || m.name || m.model)
-          .filter((id) => typeof id === "string" && id.trim() !== "");
-        setSuggestedModels([...new Set(ids)]);
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-  }, [connections, importFilter]);
-
   const handleTestModel = async (modelId) => {
-    if (onExternalTestModel) {
-      await onExternalTestModel(modelId);
-      return;
-    }
-    if (testingModelIds.has(modelId)) return;
-    setTestingModelIds((prev) => new Set(prev).add(modelId));
+    if (testingModelId) return;
+    setTestingModelId(modelId);
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -119,7 +103,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
     } finally {
-      setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
+      setTestingModelId(null);
     }
   };
 
@@ -129,7 +113,6 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     providerAlias: providerStorageAlias,
     type: "llm",
   });
-  const visibleModels = allModels.filter((model) => !disabledModelIds.includes(model.id));
 
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
@@ -150,50 +133,16 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
-  const handleFetchSuggestions = async () => {
-    if (importing) return;
-    const activeConnection = connections.find((conn) => conn.isActive !== false);
-    if (!activeConnection) return;
-
-    setImporting(true);
-    try {
-      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || "Failed to fetch models");
-        return;
-      }
-      const models = filterModelsForImport(data.models, importFilter);
-      if (models.length === 0) {
-        alert(importFilter === "all"
-          ? "No models returned from /models."
-          : "No models match the selected price filter. Try All models if pricing is unavailable.");
-        setSuggestedModels([]);
-        return;
-      }
-      const ids = models
-        .map((m) => m.id || m.name || m.model)
-        .filter((id) => typeof id === "string" && id.trim() !== "");
-      setSuggestedModels([...new Set(ids)]);
-    } catch (error) {
-      console.log("Error fetching models:", error);
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const handleAddSuggested = async (modelId) => {
-    if (allModels.some((m) => m.id === modelId)) return;
-    await onAddCustomModel(modelId);
-    setSuggestedModels((prev) => prev.filter((id) => id !== modelId));
-  };
-
-  const canImport = connections.some((conn) => conn.isActive !== false);
+  const activeConnectionId = connections.find((conn) => conn.isActive !== false)?.id || null;
+  // Import requires an active connection with a Base URL configured
+  // (probed via ?check=1 on the parent page).
+  const canImport = !!activeConnectionId && importSupported === true;
+  const existingIds = new Set(allModels.map((m) => m.id));
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or discover them from the /models endpoint.
+        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -212,40 +161,22 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <div>
-          <label htmlFor="compatible-model-import-filter" className="text-xs text-text-muted mb-1 block">Import price filter</label>
-          <select
-            id="compatible-model-import-filter"
-            value={importFilter}
-            onChange={(event) => setImportFilter(event.target.value)}
-            disabled={!canImport || importing}
-            className="px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-          >
-            <option value="all">All models</option>
-            <option value="free">Free only</option>
-            <option value="paid">Paid only</option>
-          </select>
-        </div>
-        <Button size="sm" variant="secondary" icon="search" onClick={handleFetchSuggestions} disabled={!canImport || importing}>
-          {importing ? "Fetching..." : "Fetch /models"}
+        <Button size="sm" variant="secondary" icon="download" onClick={() => setShowImport(true)} disabled={!canImport}>
+          Import from /models
         </Button>
       </div>
 
-      {canImport && (
-        <p className="text-xs text-text-muted">
-          Price filters use the provider catalog. Models with unknown pricing are included only in All models.
-        </p>
-      )}
-
       {!canImport && (
         <p className="text-xs text-text-muted">
-          Add a connection to discover models from /models.
+          {activeConnectionId
+            ? "Set a Base URL on the active connection to enable importing models."
+            : "Add a connection to enable importing models."}
         </p>
       )}
 
-      {visibleModels.length > 0 && (
+      {allModels.length > 0 && (
         <div className="flex flex-col gap-3">
-          {visibleModels.map(({ id, alias, source }) => (
+          {allModels.map(({ id, alias, source }) => (
             <CompatibleModelRow
               key={`${source}-${providerStorageAlias}/${id}`}
               modelId={id}
@@ -254,37 +185,21 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onCopy={onCopy}
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
-              testStatus={externalTestResults?.[id] || modelTestResults[id]}
-              isTesting={externalTestingModelIds?.has(id) || testingModelIds.has(id)}
+              testStatus={modelTestResults[id]}
+              isTesting={testingModelId === id}
             />
           ))}
         </div>
       )}
 
-      {/* Suggested models from /models endpoint — show only models not yet added */}
-      {suggestedModels.length > 0 && (() => {
-        const addedIds = new Set(allModels.map((m) => m.id));
-        const notAdded = suggestedModels.filter((id) => !addedIds.has(id));
-        if (notAdded.length === 0) return null;
-        return (
-          <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Suggested models from /models ({notAdded.length}):</p>
-            <div className="flex flex-wrap gap-2">
-              {notAdded.map((id) => (
-                <button
-                  key={id}
-                  onClick={() => handleAddSuggested(id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                  title={id}
-                >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
-                  {id}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+      <ImportModelsModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        connectionId={activeConnectionId}
+        providerStorageAlias={providerStorageAlias}
+        existingIds={existingIds}
+        onImported={onModelsChanged}
+      />
     </div>
   );
 }
@@ -304,8 +219,6 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
-  onTestModel: PropTypes.func,
-  externalTestResults: PropTypes.object,
-  externalTestingModelIds: PropTypes.instanceOf(Set),
-  disabledModelIds: PropTypes.arrayOf(PropTypes.string),
+  onModelsChanged: PropTypes.func,
+  importSupported: PropTypes.bool,
 };
