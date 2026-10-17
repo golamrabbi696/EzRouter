@@ -130,17 +130,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
         if (strategy !== "none") {
           const availablePools = usablePools.filter((pool) =>
-            !excludeProxyPoolIds.has(pool.id) && !isProxyPoolCoolingDown(pool, providerId)
+            !excludeProxyPoolIds.has(pool.id) &&
+            !excludeSet.has(`proxy:${pool.id}`) &&
+            !excludeSet.has(pool.id) &&
+            !isProxyPoolCoolingDown(pool, providerId)
           );
 
           if (usablePools.length > 0 && availablePools.length === 0) {
+            log.warn("AUTH", `${provider} | all proxy pools exhausted (${excludeSet.size} excluded)`);
             return buildProxyPoolUnavailable(usablePools, providerId);
           }
 
           pickedId = pickProxyPoolId(availablePools.map((pool) => pool.id), strategy, providerId);
         } else if (configuredPoolId) {
           const configuredPool = usablePools.find((pool) => pool.id === configuredPoolId);
-          if (configuredPool && (excludeProxyPoolIds.has(configuredPoolId) || isProxyPoolCoolingDown(configuredPool, providerId))) {
+          const isExcluded = excludeProxyPoolIds.has(configuredPoolId) ||
+            excludeSet.has(`proxy:${configuredPoolId}`) ||
+            excludeSet.has(configuredPoolId);
+          if (configuredPool && (isExcluded || isProxyPoolCoolingDown(configuredPool, providerId))) {
+            log.warn("AUTH", `${provider} | configured proxy pool ${configuredPoolId} excluded`);
             return buildProxyPoolUnavailable([configuredPool], providerId);
           }
           // Preserve the existing behavior for a deleted/inactive fixed pool:
@@ -149,10 +157,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         }
       }
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
+      const connectionId = pickedId ? `proxy:${pickedId}` : "noauth";
+      const connectionName = pickedId ? (resolvedProxy.proxyPool?.name || `Proxy (${pickedId.slice(0, 8)})`) : "Public";
       return {
-        id: "noauth",
-        connectionId: "noauth",
-        connectionName: "Public",
+        id: connectionId,
+        connectionId,
+        connectionName,
         isActive: true,
         accessToken: "public",
         providerSpecificData: {
@@ -533,6 +543,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
 
   if (!connectionId) return { shouldFallback: false, cooldownMs: 0 };
+  if (connectionId.startsWith("proxy:")) {
+    const { shouldFallback, cooldownMs } = checkFallbackError(status, errorText, 0, provider);
+    return { shouldFallback, cooldownMs };
+  }
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
