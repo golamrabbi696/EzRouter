@@ -32,6 +32,7 @@ export default {
     { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
     { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
     { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+    { format: "gemini", baseUrl: "https://opencode.ai/inference/go/v1/models", auth: { combined: true, header: "x-goog-api-key", scheme: "raw" } },
   ],
   // supportedFormats follow the endpoint table in https://opencode.ai/docs/go/
   models: [
@@ -84,6 +85,11 @@ export default {
     // "ModelProtocolUnsupported". Declaring targetFormat lets clients on the OpenAI
     // wire translate to Claude and land on the matched transport (chatCore guard).
     { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", targetFormat: "claude", supportedFormats: ["claude"] },
+    // Served by /inference/go/v1/models only via Google Generative AI wire protocol.
+    { id: "gemini-4-argon-contributor", name: "Gemini 4 Argon Contributor", targetFormat: "gemini", supportedFormats: ["gemini"] },
+    { id: "longcat-2.5-preview-free", name: "LongCat 2.5 Preview (Free)", supportedFormats: ["openai"] },
+    { id: "step-5-preview", name: "Step 5 Preview", supportedFormats: ["openai"] },
+    { id: "beam-free", name: "Beam (Free)", supportedFormats: ["openai"] },
   ],
   // Live catalogue; ids outside this curated list get their endpoint lane from the
   // family regex in providers/models/helpers.js (opencodeFamilyFormats).

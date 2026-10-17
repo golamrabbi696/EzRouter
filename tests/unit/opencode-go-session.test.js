@@ -6,6 +6,7 @@ const TRANSPORTS = [
   { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
   { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages" },
   { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses" },
+  { format: "gemini", baseUrl: "https://opencode.ai/inference/go/v1/models" },
 ];
 
 function request(executor, {
