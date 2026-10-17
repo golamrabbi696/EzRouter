@@ -1,4 +1,4 @@
-import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_CLI_USER_AGENT, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 export default {
   id: "antigravity",
@@ -23,7 +23,7 @@ export default {
     format: "antigravity",
     forceStream: true,
     headers: {
-      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+      "User-Agent": ANTIGRAVITY_CLI_USER_AGENT,
     },
     retry: {
       "429": {
@@ -93,7 +93,7 @@ export default {
     apiVersion: "v1internal",
     loadCodeAssistEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
-    loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
+    loadCodeAssistUserAgent: ANTIGRAVITY_CLI_USER_AGENT,
     refreshLeadMs: 300000,
   },
   searchViaChat: {

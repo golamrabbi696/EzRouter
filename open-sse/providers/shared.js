@@ -96,12 +96,14 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
-// Official Antigravity IDE Desktop 2.23.0 fingerprint captured from macOS arm64.
-// Keep this static even when 9router runs on Linux: the provider profile is
-// intentionally matching the IDE client, not the server host.
+// Antigravity client identifiers. Google Cloud Code upstream requires the 'cli'
+// flavor for Gemini 4 Argon tiered models (the 'ide' flavor receives HTTP 404).
+export const ANTIGRAVITY_CLI_VERSION = "1.4.0";
 export const ANTIGRAVITY_IDE_VERSION = "2.23.0";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
-export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+export const ANTIGRAVITY_CLI_USER_AGENT = `antigravity/cli/${ANTIGRAVITY_CLI_VERSION} (aidev_client; os_type=windows; arch=amd64; cl=1000494485; auth_method=consumer)`;
+// Kept for backward compatibility across modules expecting IDE user agent
+export const ANTIGRAVITY_IDE_USER_AGENT = ANTIGRAVITY_CLI_USER_AGENT;
 
 // Official Antigravity IDE endpoint for Gemini 3.7 Flash
 export const ANTIGRAVITY_GEMINI_37_FLASH_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";

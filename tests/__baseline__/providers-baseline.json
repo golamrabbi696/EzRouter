@@ -29,7 +29,7 @@
     ],
     "format": "antigravity",
     "headers": {
-      "User-Agent": "antigravity/ide/2.23.0 darwin/arm64"
+      "User-Agent": "antigravity/cli/1.4.0 (aidev_client; os_type=windows; arch=amd64; cl=1000494485; auth_method=consumer)"
     },
     "retry": {
       "429": {
