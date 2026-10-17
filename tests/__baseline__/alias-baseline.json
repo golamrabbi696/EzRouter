@@ -131,7 +131,9 @@
     "nous": "nous",
     "nous-portal": "nous",
     "nous-research": "nous",
-    "ns": "nous"
+    "ns": "nous",
+    "kira": "kira",
+    "kiraai": "kira"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -203,6 +205,7 @@
     "kilocode": "kc",
     "kimchi": "kimchi",
     "kimi": "kimi",
+    "kira": "kira",
     "kiro": "kr",
     "linkup": "linkup",
     "llm7": "llm7",
@@ -328,6 +331,7 @@
     "kgw",
     "kimchi",
     "kimi",
+    "kira",
     "kr",
     "llm7",
     "local-device",

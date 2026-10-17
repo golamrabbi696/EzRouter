@@ -439,6 +439,7 @@ const PROVIDER_MODELS_CONFIG = {
   // reuse createOpenAIModelsConfig; Kira and Dahl serve their catalogue
   // publicly, the rest need the connection API key.
   tokenharbor: createOpenAIModelsConfig("https://tokenharbor.ai/v1/models"),
+  kira: createOpenAIModelsConfig("https://kiraai.vn/api/v1/models"),
   dahl: createOpenAIModelsConfig("https://inference.dahl.global/v1/models"),
   atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
   agnes: createOpenAIModelsConfig("https://apihub.agnes-ai.com/v1/models"),

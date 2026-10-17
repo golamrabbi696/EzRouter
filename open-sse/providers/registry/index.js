@@ -79,6 +79,7 @@ import providerKiloGateway from "./kilo-gateway.js";
 import providerKilocode from "./kilocode.js";
 import providerKimchi from "./kimchi.js";
 import providerKimi from "./kimi.js";
+import providerKira from "./kira.js";
 import providerKiro from "./kiro.js";
 import providerLinkup from "./linkup.js";
 import providerLlm7 from "./llm7.js";
@@ -228,6 +229,7 @@ export default [
   providerKilocode,
   providerKimchi,
   providerKimi,
+  providerKira,
   providerKiro,
   providerLinkup,
   providerLlm7,

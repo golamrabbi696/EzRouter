@@ -10,6 +10,7 @@ const ICON_ALIASES = {
   // MiniMax Code rides the existing MiniMax brand mark
   "minimax-code": "minimax",
   "minimax-code-global": "minimax",
+  "kiraai": "kira",
 };
 
 // Runtime only — first 404 remembers id for the whole session
