@@ -3,7 +3,44 @@
 HA is opt-in. Each node keeps its own SQLite database, serves requests and accepts
 configuration edits while disconnected. A private authenticated peer listener
 exchanges a durable configuration journal. The dashboard's **High Availability**
-page shows connectivity and conflicting edits. Usage and request logs stay local.
+page shows named peers, hostnames/IPs, configured and observed transport addresses,
+sync round-trip latency, last attempts/errors and conflicting edits. Remote host
+details are from the last successful sync; an SSH tunnel's observed transport IP
+is loopback, not the remote VM's address. Usage and request logs stay local.
+
+## Guided setup
+
+Open **Dashboard → High Availability → Set up two peers**. Enter both private
+HTTPS listener addresses and node names to prepare a setup command. Run it on a
+trusted machine with this source checkout and its dependencies installed:
+
+```sh
+node scripts/ha-setup.mjs --first https://10.0.0.10:20130 --second https://10.0.0.20:20130 --first-name Proxmox --second-name Azure
+```
+
+Omit the address options for interactive prompts. `--help` lists the options.
+`--api-port` defaults to 20128; set it to the normal local API port on your hosts.
+The command creates a **new** `9router-ha-pair/` directory containing `node-a/`,
+`node-b/` and installation instructions. Each node folder includes its private
+`ha.json`, separate incoming token, SHA-256 TLS key/certificate and the other
+node's trusted certificate. Nothing is written into an existing installation or
+overwritten. Tokens/keys are never printed. On Unix files are mode 0600 and
+directories 0700; Windows uses an explicit current-user-only directory ACL.
+
+Securely copy each folder to its matching host, set `NINEROUTER_HA_CONFIG` in
+that service's environment, verify `localApiUrl`, allow the listener only from
+its peer over your private network/VPN, and restart the services. Certificate
+paths resolve relative to `ha.json`, so each folder can move intact. Generated
+certificates match the supplied hostname/IP and expire after one year: replace
+certificates and peer trust before expiry. This helper pairs **directly reachable**
+listeners; use the manual configuration below for SSH tunnels, existing managed
+certificates or different API ports on the two hosts. It does not configure a
+VPN, firewall, service manager, client gateway or local provider logins.
+
+Existing configurations continue to work; optionally add `name` and `peer.name`
+for readable labels. Peer identity/IP metadata is exchanged only across the
+authenticated HA listener and exposed by the administrator-only HA status API.
+Older peers without metadata still synchronize and show “Not yet reported”.
 
 ## Pair two installations
 

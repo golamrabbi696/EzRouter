@@ -41,6 +41,7 @@ it('keeps authorization, model, tools and effort unchanged through a fresh failo
   const g = await start([{ url: a.url, name: 'primary' }, { url: b.url, name: 'azure' }]);
   expect(await (await fetch(`${g.url}/v1/chat/completions`, { method: 'POST', body: '{}' })).text()).toBe('primary');
   await new Promise(resolve => a.server.close(resolve));
+  await g.probeNow();
   const body = { model: 'coding', messages: [{ role: 'user', content: 'test' }], tools: [{ type: 'function', function: { name: 'test' } }], reasoning_effort: 'xhigh', stream: true };
   const response = await fetch(`${g.url}/v1/chat/completions`, { method: 'POST', headers: { authorization: 'Bearer client-key' }, body: JSON.stringify(body) });
   expect(await response.text()).toContain('azure');
