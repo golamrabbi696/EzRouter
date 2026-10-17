@@ -137,12 +137,13 @@ describe("opencode settings route — V2 emission", () => {
     expect(config.model).toBeUndefined();
   });
 
-  it("preserves JSONC config (trailing commas) on POST update", async () => {
-    // Pre-existing JSONC config: trailing commas must not wipe mcp/plugins.
+  it("preserves JSONC config (comments, trailing commas) on POST update", async () => {
+    // Pre-existing JSONC config: comments + trailing commas must not wipe mcp/plugins.
     await fs.mkdir(path.dirname(configPath()), { recursive: true });
     await fs.writeFile(
       configPath(),
       `{
+  // user note
   "providers": { "dummy": { "name": "dummy" }, },
   "mcp": { "servers": { "example": {} } },
   "plugins": ["@example/plugin"],
@@ -157,5 +158,18 @@ describe("opencode settings route — V2 emission", () => {
     expect(config.providers.dummy).toBeDefined();
     expect(config.mcp?.servers?.example).toBeDefined();
     expect(config.plugins).toContain("@example/plugin");
+  });
+
+  it("keeps a baseURL with a // scheme intact when stripping comments", async () => {
+    await fs.mkdir(path.dirname(configPath()), { recursive: true });
+    await fs.writeFile(
+      configPath(),
+      `{
+  "providers": { "9router": { "settings": { "baseURL": "https://keep.example.com/v1" } } }, // trailing
+}`,
+    );
+
+    const res = await GET();
+    expect(res.body.opencode.baseURL).toBe("https://keep.example.com/v1");
   });
 });

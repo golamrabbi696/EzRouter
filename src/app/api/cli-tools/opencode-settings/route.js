@@ -37,9 +37,15 @@ const checkOpenCodeInstalled = async () => {
 const readConfig = async () => {
   try {
     const content = await fs.readFile(getConfigPath(), "utf-8");
-    // opencode config files may use JSONC format (trailing commas, comments).
-    // Strip trailing commas before parsing to avoid SyntaxError on valid JSONC.
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
+    // opencode config files are JSONC: comments and trailing commas are allowed.
+    // Strip comments first — string-aware, so "https://..." survives — then
+    // trailing commas, otherwise JSON.parse throws and callers treat the file as
+    // absent (POST would then rewrite it and drop mcp/plugins/model).
+    const withoutComments = content.replace(
+      /("(?:\\.|[^"\\])*")|\/\/[^\n\r]*|\/\*[\s\S]*?\*\//g,
+      (match, stringLiteral) => stringLiteral ?? "",
+    );
+    const stripped = withoutComments.replace(/,(\s*[}\]])/g, "$1");
     return JSON.parse(stripped);
   } catch (error) {
     if (error.code === "ENOENT") return null;
@@ -71,13 +77,24 @@ const getProviderEntry = (config) =>
 const setProviderEntry = (config, entry) => {
   if (!config.providers) config.providers = {};
   config.providers["9router"] = entry;
-  if (config.provider) delete config.provider["9router"];
+  if (config.provider) {
+    delete config.provider["9router"];
+    // Drop the V1 key entirely once it holds nothing, so a migrated config does
+    // not keep a stray `"provider": {}` block around.
+    if (Object.keys(config.provider).length === 0) delete config.provider;
+  }
 };
 
 // Remove the 9router provider entry from both schema versions.
 const deleteProviderEntry = (config) => {
-  if (config.providers) delete config.providers["9router"];
-  if (config.provider) delete config.provider["9router"];
+  if (config.providers) {
+    delete config.providers["9router"];
+    if (Object.keys(config.providers).length === 0) delete config.providers;
+  }
+  if (config.provider) {
+    delete config.provider["9router"];
+    if (Object.keys(config.provider).length === 0) delete config.provider;
+  }
 };
 
 // Read the configured baseURL regardless of config schema version.
