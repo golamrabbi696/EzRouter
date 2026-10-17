@@ -8,6 +8,7 @@ import { updateSettings, getSettings } from '../../src/lib/db/repos/settingsRepo
 import { createCombo, updateCombo } from '../../src/lib/db/repos/combosRepo.js';
 import { createProviderConnection, updateProviderConnection, getProviderConnections } from '../../src/lib/db/repos/connectionsRepo.js';
 import { createProviderNode, updateProviderNode } from '../../src/lib/db/repos/nodesRepo.js';
+import { DefaultExecutor } from '../../open-sse/executors/default.js';
 
 const databases = [];
 const listeners = [];
@@ -25,6 +26,19 @@ function exchange(a, b) {
 afterEach(() => { databases.splice(0).forEach(db => db.close()); for (const [event, listener] of listeners.splice(0)) process.removeListener(event, listener); });
 
 describe('HA configuration transactions', () => {
+  it('derives compatible-provider transport from the receiving node before using its local key', async () => {
+    const a = await fresh();
+    const provider = 'openai-compatible-chat-local';
+    await createProviderNode({ id: provider, type: 'openai-compatible', name: 'Local CoS', prefix: 'cos', apiType: 'chat', baseUrl: 'http://127.0.0.1:20129/v1' });
+    const c = await createProviderConnection({ provider, authType: 'apikey', name: 'Local key', apiKey: 'source-key', providerSpecificData: { baseUrl: 'http://127.0.0.1:20129/v1', apiType: 'chat', prefix: 'cos' } });
+    const b = await fresh({ bindings: { [`providerNodes:${provider}`]: { baseUrl: 'http://127.0.0.1:20229/v1' }, [`providerConnections:${c.id}`]: { apiKey: 'receiver-key' } } });
+    exchange(a, b);
+    const connection = JSON.parse(b.get('SELECT data FROM providerConnections WHERE id=?', [c.id]).data);
+    expect(connection.providerSpecificData).toMatchObject({ baseUrl: 'http://127.0.0.1:20229/v1', apiType: 'chat', prefix: 'cos' });
+    expect(new DefaultExecutor(provider).buildUrl('latest', true, 0, connection)).toBe('http://127.0.0.1:20229/v1/chat/completions');
+    expect(connection.apiKey).toBe('receiver-key');
+    expect(JSON.stringify(b.ha.eventsSince({}))).not.toContain('receiver-key');
+  });
   it('provides an opt-in store', () => expect(store.attachHaStore).toBeTypeOf('function'));
   it('captures repository settings and merges separate nested fields', async () => {
     const a = await fresh();

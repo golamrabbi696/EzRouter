@@ -207,6 +207,9 @@ export function materialize(db, replica, bindings = {}) {
         credentials = { apiKey: b.apiKey ?? null, projectId: b.projectId ?? null, providerSpecificData };
       }
       const next = { ...localData, ...credentials, ...local, haCredentialIdentity: identity };
+      // A replicated account has no local transport metadata yet. Never let its key use the executor's default vendor endpoint.
+      if (node) next.providerSpecificData = { ...next.providerSpecificData,
+        baseUrl: nodeData.baseUrl, apiType: nodeData.apiType, prefix: nodeData.prefix };
       const missing = b.authType === 'apikey' ? !next.apiKey : !next.accessToken;
       next.haEndpointMismatch = Boolean(b.endpoint && b.endpoint !== (nodeData.haLocalBinding ? 'local' : nodeData.baseUrl));
       next.haRemoteOnly = Boolean(missing || nodeData.haRemoteOnly || next.haEndpointMismatch);
