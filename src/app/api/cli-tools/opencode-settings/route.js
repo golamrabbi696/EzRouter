@@ -139,12 +139,10 @@ export async function POST(request) {
 
     await fs.mkdir(configDir, { recursive: true });
 
-    // Read existing config or start fresh
-    let config = {};
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      config = JSON.parse(existing);
-    } catch { /* No existing config */ }
+    // Read existing config or start fresh. Reuse readConfig() so a JSONC file
+    // (comments / trailing commas) parses instead of being silently replaced by
+    // a fresh config, which would drop the user's mcp/plugins/model entries.
+    let config = (await readConfig()) || {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const keyToUse = await resolveCliApiKey(apiKey);

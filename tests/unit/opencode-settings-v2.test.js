@@ -136,4 +136,26 @@ describe("opencode settings route — V2 emission", () => {
     expect(config.agent?.explorer).toBeUndefined();
     expect(config.model).toBeUndefined();
   });
+
+  it("preserves JSONC config (trailing commas) on POST update", async () => {
+    // Pre-existing JSONC config: trailing commas must not wipe mcp/plugins.
+    await fs.mkdir(path.dirname(configPath()), { recursive: true });
+    await fs.writeFile(
+      configPath(),
+      `{
+  "providers": { "dummy": { "name": "dummy" }, },
+  "mcp": { "servers": { "example": {} } },
+  "plugins": ["@example/plugin"],
+  "model": "dummy/old",
+}`,
+    );
+
+    await post({ baseUrl: "https://9router.example.com", apiKey: "sk_test_key", models: ["New"] });
+
+    const config = await readConfigFile();
+    expect(config.providers["9router"]).toBeDefined();
+    expect(config.providers.dummy).toBeDefined();
+    expect(config.mcp?.servers?.example).toBeDefined();
+    expect(config.plugins).toContain("@example/plugin");
+  });
 });
