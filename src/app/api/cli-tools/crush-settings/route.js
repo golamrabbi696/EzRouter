@@ -7,6 +7,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { resolveModelDisplayName } from "@/shared/utils/modelDisplayName";
 
 const execAsync = promisify(exec);
 
@@ -113,7 +114,7 @@ export async function POST(request) {
       models: [
         {
           id: modelId,
-          name: modelId,
+          name: resolveModelDisplayName(modelId),
           context_window: 128000,
         },
       ],

@@ -5,6 +5,7 @@ import { getCapsOverrides } from "@/lib/db/index.js";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getCapabilitiesForModel, pickClientCaps } from "open-sse/providers/capabilities.js";
+import { resolveModelDisplayName } from "@/shared/utils/modelDisplayName";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
@@ -31,7 +32,7 @@ export async function GET() {
         const c = { ...getCapabilitiesForModel(m.provider, m.model), ...(saved?.caps || {}), ...(override || {}) };
         return {
           ...m,
-          name: saved?.name || m.name,
+          name: saved?.name || resolveModelDisplayName(m.model, m.name),
           fullModel,
           routedModel,
           alias: modelAliases[fullModel] || m.model,

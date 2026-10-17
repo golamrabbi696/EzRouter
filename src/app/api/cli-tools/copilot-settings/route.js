@@ -6,6 +6,7 @@ import { resolveCliApiKey } from "../resolveApiKey.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { resolveModelDisplayName } from "@/shared/utils/modelDisplayName";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
@@ -92,7 +93,7 @@ export async function POST(request) {
       apiKey: keyToUse,
       models: models.map((id) => ({
         id,
-        name: id,
+        name: resolveModelDisplayName(id),
         url: endpointUrl,
         toolCalling: true,
         vision: false,

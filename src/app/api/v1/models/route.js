@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
+import { resolveModelDisplayName } from "@/shared/utils/modelDisplayName";
 import {
   ALIAS_TO_ID,
   AI_PROVIDERS,
@@ -327,6 +328,7 @@ function comboToEntry(combo, comboByName, combosByName, activeConnectionByProvid
     id: combo.name,
     object: "model",
     owned_by: "combo",
+    name: resolveModelDisplayName(combo.name),
   };
   if (combo.kind === "webSearch" || combo.kind === "webFetch") {
     entry.kind = combo.kind;
@@ -541,6 +543,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
+          name: resolveModelDisplayName(model.id, model.name),
           capabilities: { ...getCapabilitiesForModel(providerId, model.id), ...findCustomModelCaps(customModels, [alias, providerId], model.id) },
         });
       }
@@ -560,6 +563,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         id: `${providerAlias}/${modelId}`,
         object: "model",
         owned_by: providerAlias,
+        name: resolveModelDisplayName(modelId, customModel.name),
       });
     }
   } else {
@@ -582,7 +586,13 @@ export async function buildModelsList(kindFilter, options = {}) {
       const staticModelKindById = new Map(
         providerModels.map((m) => [m.id, modelKind(m)])
       );
+      // Registry entries publish a human name for most models; keep it for the
+      // entries below instead of making clients render the raw id.
+      const staticModelNameById = new Map(
+        providerModels.filter((m) => m?.id).map((m) => [m.id, m.name])
+      );
       let liveModelKindById = new Map();
+      let liveModelNameById = new Map();
       let liveCapabilitiesById = new Map();
 
       let rawModelIds = hasExplicitEnabledModels
@@ -590,6 +600,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         : providerModels.map((model) => model.id);
 
       const customModelKindById = new Map();
+      const customModelNameById = new Map();
       // User-declared per-model capabilities from the dashboard (kv customModels
       // "caps"). These are explicit statements about a model the operator added
       // by hand, so they must win over the pattern-matched guesses below —
@@ -610,6 +621,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           const modelId = String(m.id).trim();
           if (modelId) {
             customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
+            if (typeof m.name === "string") customModelNameById.set(modelId, m.name);
             if (m.caps && typeof m.caps === "object") customModelCapsById.set(modelId, m.caps);
           }
           return modelId;
@@ -632,6 +644,11 @@ export async function buildModelsList(kindFilter, options = {}) {
               live.models
                 .filter((m) => m?.id)
                 .map((m) => [m.id, modelKind(m)])
+            );
+            liveModelNameById = new Map(
+              live.models
+                .filter((m) => m?.id && typeof m.name === "string")
+                .map((m) => [m.id, m.name])
             );
             liveCapabilitiesById = new Map(
               live.models
@@ -699,6 +716,12 @@ export async function buildModelsList(kindFilter, options = {}) {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
+          // Prefer the name the provider/custom entry published; ids with none
+          // (combos, raw passthrough slugs) get a readable name derived from it.
+          name: resolveModelDisplayName(
+            modelId,
+            customModelNameById.get(modelId) || liveModelNameById.get(modelId) || staticModelNameById.get(modelId),
+          ),
         };
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
         // { id, name } — no per-model capability data. Fall back to the same

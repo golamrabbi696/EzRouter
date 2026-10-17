@@ -7,6 +7,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { resolveModelDisplayName } from "@/shared/utils/modelDisplayName";
 
 const execAsync = promisify(exec);
 
@@ -127,7 +128,6 @@ export async function POST(request) {
     if (!existing.providers) existing.providers = {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-
     // Existing provider block (may have hand-tuned model metadata we must not erase).
     const existingProvider = existing.providers["ezrouter"] || existing.providers["9router"] || {};
     // Build a map of existing models keyed by id for O(1) merge.
@@ -149,7 +149,7 @@ export async function POST(request) {
         return {
           ...(existing || {}),
           id: m,
-          name: (existing?.name) || m,
+          name: (existing?.name) || resolveModelDisplayName(m),
           contextWindow: existing?.contextWindow || DEFAULT_CONTEXT,
           maxTokens: existing?.maxTokens || DEFAULT_MAX_TOKENS,
         };
@@ -162,7 +162,7 @@ export async function POST(request) {
       return {
         ...prev,
         id,
-        name: m.name || m.id || prev.name || id,
+        name: resolveModelDisplayName(id, m.name || prev.name),
         contextWindow,
         maxTokens,
       };
