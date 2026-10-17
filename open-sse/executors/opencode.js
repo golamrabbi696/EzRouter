@@ -437,9 +437,6 @@ export class OpenCodeExecutor extends BaseExecutor {
       if (!credentials[SESSION_FIELD]) {
         credentials[SESSION_FIELD] = resolveOpencodeSession(body, credentials);
       }
-      if (!credentials[REQ_FIELD]) {
-        credentials[REQ_FIELD] = resolveOpencodeRequestId(body, credentials, credentials[SESSION_FIELD]);
-      }
     }
     if (body && typeof body === "object" && model && !body.model) body.model = model;
     // Zen rejects non-streaming requests on free models with 403 FreeTierError;
