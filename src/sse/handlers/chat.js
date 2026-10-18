@@ -37,6 +37,7 @@ import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../s
 import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
 
 async function handleAutoRouterCombo({ body, comboName, models, settings, autoRouterPath = new Set(), handleSelectedTarget }) {
   let decision;
@@ -119,7 +120,7 @@ export function applyCodexFastMode(body, provider, model, settings, credentials 
 export async function handleChat(request, clientRawRequest = null, translationCache = null) {
   let body;
   try {
-    body = await request.json();
+    body = await parseJsonBody(request);
   } catch {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
