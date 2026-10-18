@@ -72,7 +72,6 @@ export async function createSqlJsAdapter(filePath) {
       try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
       throw err;
     }
-    }
     dirty = false;
   }
 

@@ -34,7 +34,7 @@ export const MEMORY_CONFIG = {
 };
 
 // Parse a positive integer env override, falling back to a default.
-function envMs(name, def) {
+export function envMs(name, def) {
   const raw = process.env[name];
   if (raw == null || raw === "") return def;
   const n = parseInt(raw, 10);

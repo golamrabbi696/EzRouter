@@ -1046,6 +1046,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > kira → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > llm7 → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2183,6 +2202,13 @@ exports[`GOLDEN buildUrl (default executor providers) > kimi → url (stream + n
 {
   "nonStream": "https://api.kimi.com/coding/v1/messages?beta=true",
   "stream": "https://api.kimi.com/coding/v1/messages?beta=true",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > kira → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://kiraai.vn/api/v1/chat/completions",
+  "stream": "https://kiraai.vn/api/v1/chat/completions",
 }
 `;
 
