@@ -19,15 +19,15 @@ node scripts/ha-setup.mjs --first https://10.0.0.10:20130 --second https://10.0.
 ```
 
 Omit the address options for interactive prompts. `--help` lists the options.
-`--api-port` defaults to 20128; set it to the normal local API port on your hosts.
-The command creates a **new** `9router-ha-pair/` directory containing `node-a/`,
+`--api-port` defaults to 20126; set it to the normal local API port on your hosts.
+The command creates a **new** `ezrouter-ha-pair/` directory containing `node-a/`,
 `node-b/` and installation instructions. Each node folder includes its private
 `ha.json`, separate incoming token, SHA-256 TLS key/certificate and the other
 node's trusted certificate. Nothing is written into an existing installation or
 overwritten. Tokens/keys are never printed. On Unix files are mode 0600 and
 directories 0700; Windows uses an explicit current-user-only directory ACL.
 
-Securely copy each folder to its matching host, set `NINEROUTER_HA_CONFIG` in
+Securely copy each folder to its matching host, set `EZROUTER_HA_CONFIG` (or `NINEROUTER_HA_CONFIG`) in
 that service's environment, verify `localApiUrl`, allow the listener only from
 its peer over your private network/VPN, and restart the services. Certificate
 paths resolve relative to `ha.json`, so each folder can move intact. Generated
@@ -73,13 +73,13 @@ Create a private `ha.json` (mode 0600 on Unix):
     "token": "PEER_INCOMING_TOKEN",
     "caFile": "/private/peer-ca.crt"
   },
-  "localApiUrl": "http://127.0.0.1:20128",
+  "localApiUrl": "http://127.0.0.1:20126",
   "intervalMs": 3000,
   "bindings": {}
 }
 ```
 
-Set `NINEROUTER_HA_CONFIG` to its absolute path in each service environment.
+Set `EZROUTER_HA_CONFIG` (or `NINEROUTER_HA_CONFIG`) to its absolute path in each service environment.
 The normal database initialization starts the peer listener. `/api/health` checks
 database readiness when HA is enabled. A listener configuration failure prevents
 HA startup, rather than silently falling back to an unsynchronized instance.
