@@ -42,6 +42,7 @@ export { default as ProviderInfoCard } from "./ProviderInfoCard";
 export { default as CapacityBadges } from "./CapacityBadges";
 export { default as ComboTestModal } from "./ComboTestModal";
 export { default as SmartPolicyModal } from "./SmartPolicyModal";
+export { default as AnimatedNumber } from "./AnimatedNumber";
 
 // Layouts
 export * from "./layouts";
