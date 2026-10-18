@@ -873,25 +873,27 @@ export async function buildModelsList(kindFilter, options = {}) {
     // even need admin custom-model rows: the catalog IS the source of truth.
     // Without this, new upstream models stayed invisible until an admin added
     // them by hand — the failure mode where free models "work then break".
-    const catalogEntries = await getOpencodeCatalog();
-    for (const entry of catalogEntries) {
-      if (!entry?.id) continue;
-      const modelId = String(entry.id).trim();
-      if (!modelId) continue;
-      if (isDisabled("oc", modelId)) continue;
-      const id = `oc/${modelId}`;
-      if (seenModelIds.has(id)) continue;
-      seenModelIds.add(id);
-      const model = {
-        id,
-        object: "model",
-        owned_by: "oc",
-      };
-      const caps = getCapabilitiesForModel("oc", modelId);
-      if (caps) model.capabilities = caps;
-      if (Number.isFinite(caps?.contextWindow)) model.context_length = caps.contextWindow;
-      if (Number.isFinite(caps?.maxOutput)) model.max_completion_tokens = caps.maxOutput;
-      dedupedModels.push(model);
+    if (!skipDynamicFetch && connections.some((c) => c.provider === "opencode")) {
+      const catalogEntries = await getOpencodeCatalog();
+      for (const entry of catalogEntries) {
+        if (!entry?.id) continue;
+        const modelId = String(entry.id).trim();
+        if (!modelId) continue;
+        if (isDisabled("oc", modelId)) continue;
+        const id = `oc/${modelId}`;
+        if (seenModelIds.has(id)) continue;
+        seenModelIds.add(id);
+        const model = {
+          id,
+          object: "model",
+          owned_by: "oc",
+        };
+        const caps = getCapabilitiesForModel("oc", modelId);
+        if (caps) model.capabilities = caps;
+        if (Number.isFinite(caps?.contextWindow)) model.context_length = caps.contextWindow;
+        if (Number.isFinite(caps?.maxOutput)) model.max_completion_tokens = caps.maxOutput;
+        dedupedModels.push(model);
+      }
     }
   }
 
