@@ -75,7 +75,7 @@ That's it! Start coding with FREE AI models.
 ezrouter                    # Start with default settings (port 20126)
 ezrouter --port 8080        # Custom port
 ezrouter --no-browser       # Don't open browser
-ezrouter --skip-update      # Skip auto-update check
+ezrouter --skip-update      # Skip update checks (CLI and dashboard notice)
 ezrouter --help             # Show all options
 ```
 

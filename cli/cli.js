@@ -66,6 +66,7 @@ const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const { getUpdateCommand, isHomebrewManaged } = require("./hooks/packageManager");
+const { buildServerEnv } = require("./src/cli/serverEnv");
 const args = process.argv.slice(2);
 
 // Provider-scoped auth hook used by modern Codex. Stdout must contain only the
@@ -184,7 +185,7 @@ Options:
   -t, --tray          ${homebrewManaged
     ? "Run without the TUI (tray unavailable in Homebrew)"
     : "Run in system tray mode (background)"}
-  --skip-update       Skip auto-update check
+  --skip-update       Skip update checks (CLI and dashboard notice)
   -h, --help          Show this help message
   -v, --version       Show version
 
@@ -556,7 +557,10 @@ function isRestrictedEnvironment() {
 // Check if new version available, return latest version or null
 function checkForUpdate() {
   return new Promise((resolve) => {
-    if (skipUpdate) {
+    // Tray mode never surfaces the result - the menu loop that consumes it is
+    // skipped - so checking here would only spend a registry request in every
+    // detached/autostart process.
+    if (skipUpdate || trayMode) {
       resolve(null);
       return;
     }
@@ -711,11 +715,12 @@ function startServer(updatePromise) {
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,
       windowsHide: true,
-      env: {
-        ...buildEnvWithRuntime(process.env),
-        PORT: port.toString(),
-        HOSTNAME: host
-      }
+      env: buildServerEnv({
+        baseEnv: buildEnvWithRuntime(process.env),
+        port,
+        host,
+        skipUpdate
+      })
     });
     if (!showLog && child.stderr) {
       child.stderr.on("data", (data) => {
