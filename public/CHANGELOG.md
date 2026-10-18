@@ -1,3 +1,43 @@
+# v0.6.24 (2026-10-18)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #4889 - #5010)
+- **Security Audit & Invariant Enforcement**:
+  - **Preserved Default Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`) across all configurations, Next.js server actions, CLI bundles, and tests.
+  - Zero occurrences of `20128` across all codebase diffs.
+- **Provider & Model Enhancements**:
+  - **Kira AI Provider (`#4976`)**: Added Kira AI provider (`kiraai.vn`) with OpenAI-compatible chat completions support.
+  - **OpenCode Free Tier & Thinking Updates (`#4984`, `#4988`, `#4996`, `#4998`, `#5003`)**:
+    - Honored low/high/max reasoning efforts for Zen free `deepseek-v4.1-flash` (`#4984`).
+    - Added one-time direct replay fallback when a proxied 403 `FreeTierError` occurs on OpenCode (`#4988`).
+    - Fixed OpenCode v2 provider config emission and v1 backward compatibility with comments preservation in JSONC (`#4996`).
+    - Added proxy pool fallback for free providers and supported `deepseek-v4.1-flash-free` (`#4998`).
+    - Sent `reasoning_effort` instead of unsupported `thinking` object for OpenCode's `glm-5.3-flash-free` (`#5003`).
+  - **Antigravity Reasoning & Tier Resolution (`#4930`, `#4932`, `#5004`)**:
+    - Resolved tiered models dynamically (e.g. `gemini-3.8-flash-high/low`) from client reasoning effort on unadorned model IDs instead of unconditionally defaulting to medium (`#5004`).
+    - Added Gemini 4 Argon tiered models and weekly quota support (`#4930`, `#4932`).
+  - **CommandCode Prompt-Cache Continuity (`#5006`)**:
+    - Kept a conversation-stable session id / threadId across turns and mapped `cachedInputTokens` into prompt token details to prevent cache thrashing and accurately report cache reads.
+  - **Model Catalog & Display Names (`#4989`, `#4928`)**:
+    - Published human-readable display names across `/v1/models`, `/v1beta/models`, and CLI tool configs (`#4989`).
+    - Added dynamic model management and metadata persistence (`#4928`).
+  - **Compatible Providers Quota Check (`#4999`)**:
+    - Added opt-in quota checking via `/credits` for custom OpenAI- and Anthropic-compatible provider nodes.
+  - **SOCKS5 Proxy Opt-in Local DNS (`#4987`)**:
+    - Added opt-in local DNS resolution support for SOCKS5 proxy targets with configurable timeout options.
+- **Dashboard & UI Enhancements**:
+  - **Live Mode Toggle & Animated Counters (`#5010`)**:
+    - Added Live mode toggle on the Usage Overview page that polls local usage stats without hitting upstream provider rate limits, rendering stats via smooth animated counters.
+  - **Default Usage Table Sort (`#5009`)**:
+    - Defaulted usage table sort to most recently used.
+  - **Combo Search Box (`#5008`)**:
+    - Added quick search filter to the combos list page matching combo names and member models.
+  - **Drag-to-Reorder Providers (`#4920`)**:
+    - Enabled drag-and-drop provider reordering in the Quota Tracker.
+  - **Turkish UI & Docs (`#4926`, `#4927`)**:
+    - Added full Turkish translations for the dashboard and GitBook documentation.
+  - **High Availability (`#4885`, `#4887`)**:
+    - Added peer replication, client failover, and HA pairing tools while enforcing port `20126` and EzRouter branding.
+
 # v0.6.23 (2026-10-16)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4800 - #4889)
