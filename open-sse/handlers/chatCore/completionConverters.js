@@ -1,6 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { ROLE, CLAUDE_BLOCK, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { fromOpenAIFinish, toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 
 /**
  * Shared Chat Completions JSON converters (non-streaming).
@@ -170,13 +170,17 @@ export function responsesJsonToClaudeMessage(jsonResponse, model, textContent, t
   }
   if (content.length === 0) content.push({ type: CLAUDE_BLOCK.TEXT, text: "" });
 
+  const stopReason = jsonResponse.status === "incomplete"
+    ? fromOpenAIFinish(toOpenAIFinish(jsonResponse.incomplete_details?.reason, FORMATS.OPENAI_RESPONSES), FORMATS.CLAUDE)
+    : (hasToolCalls ? "tool_use" : "end_turn");
+
   return {
     id: String(jsonResponse.id || `msg_${Date.now()}`).replace(/^resp_/, "msg_").replace(/^chatcmpl-/, ""),
     type: "message",
     role: ROLE.ASSISTANT,
     model: jsonResponse.model || model || "unknown",
     content,
-    stop_reason: hasToolCalls ? "tool_use" : "end_turn",
+    stop_reason: stopReason,
     stop_sequence: null,
     usage: {
       input_tokens: inTokens || 0,
