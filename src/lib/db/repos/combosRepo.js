@@ -71,7 +71,7 @@ export async function createCombo(data) {
     name: data.name,
     kind: data.kind || null,
     models,
-    config: effectiveConfig,
+    config: effectiveConfig || undefined,
     createdAt: now,
     updatedAt: now,
   };
