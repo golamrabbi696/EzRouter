@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, ComboTestModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, ComboTestModal, SmartPolicyModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
@@ -58,6 +58,18 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
   { value: "smart", label: "Smart — Jev complexity routing" },
 ];
+
+function getPolicyBadgeLabel(strategy = {}) {
+  const policy = strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart");
+  if (policy === "strict") return "Strict Lock";
+  if (policy === "per-turn") return "Per-Turn";
+  if (policy === "custom") {
+    const raw = strategy.confidenceThreshold;
+    const pct = Math.round((raw || 0.8) * (raw && raw <= 1 ? 100 : 1));
+    return `Custom (≥${pct || 80}%)`;
+  }
+  return "Smart (≥80%)";
+}
 
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
@@ -604,6 +616,7 @@ function SmartNumberField({ label, title, value, fallback, min, max, step, onCom
 function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, globalComboStrategy = "fallback", onSetStrategy, selected = false, onToggleSelect }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showClassifierSelect, setShowClassifierSelect] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
   const current = strategy.fallbackStrategy || "inherit";
   const judge = strategy.judgeModel || "";
   const classifier = strategy.smartClassifierModel || JEV_DEFAULT_CLASSIFIER_MODEL;
@@ -701,6 +714,14 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                   step={500}
                   onCommit={(v) => onSetStrategy({ smartTimeoutMs: v })}
                 />
+                <button
+                  onClick={() => setShowPolicyModal(true)}
+                  className="inline-flex items-center gap-1 rounded border border-border/70 bg-black/[0.02] dark:bg-white/[0.02] px-2 py-0.5 text-[11px] text-text-main hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                  title="Configure routing policy and prompt cache retention"
+                >
+                  <span className="material-symbols-outlined text-[13px] text-text-muted">tune</span>
+                  <span className="font-medium">{getPolicyBadgeLabel(strategy)}</span>
+                </button>
               </div>
             )}
             {/* Fusion: judge picker (Auto = first model) */}
@@ -806,6 +827,18 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           title="Select Judge Model"
           addedModelValues={judge ? [judge] : []}
           closeOnSelect={true}
+        />
+      )}
+
+      {/* Smart Router Policy Settings Modal */}
+      {showPolicyModal && (
+        <SmartPolicyModal
+          isOpen={showPolicyModal}
+          onClose={() => setShowPolicyModal(false)}
+          comboName={combo.name}
+          currentPolicy={strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart")}
+          currentThreshold={strategy.confidenceThreshold ?? 80}
+          onSave={onSetStrategy}
         />
       )}
     </Card>

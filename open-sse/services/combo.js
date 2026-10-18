@@ -12,6 +12,12 @@ import { saveErrorLog } from "@/lib/usageDb.js";
 import { inspectComboPreaction } from "./comboPreaction.js";
 import { annotateComboResponse } from "./routeAttribution.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
+import {
+  getStickyComboModel,
+  setStickyComboModel,
+  clearStickyComboSession,
+  orderModelsByChoice,
+} from "./systemoneRouter.js";
 
 const ENDPOINT_COMBO = "/v1/chat/completions";
 
@@ -744,13 +750,112 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, members, policy, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, isModelLocked = null }) {
+export async function handleComboChat({
+  body,
+  models,
+  members,
+  policy,
+  handleSingleModel,
+  log,
+  comboName,
+  comboStrategy,
+  comboStickyLimit = 1,
+  autoSwitch = true,
+  isModelLocked = null,
+  sessionId = null,
+  smartPolicy = "smart",
+  sessionSticky = true,
+  confidenceThreshold = 0.8,
+  resolveSmartChoice = null,
+}) {
   // Normalize members: if provided use them, else derive from models
   const normMembers = normalizeMembers(members, models);
   const effectiveModels = normMembers.length ? normMembers.map((m) => m.id) : models;
   const sticky = policy?.sticky ?? comboStickyLimit;
-  // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(effectiveModels, comboName, comboStrategy, sticky, normMembers.length ? normMembers : null);
+  let rotatedModels = effectiveModels;
+  let activeStickyModel = null;
+
+  if (comboStrategy === "smart") {
+    const sp = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
+    const isPerTurn = sp === "per-turn" || sessionSticky === false;
+    const isStrict = sp === "strict";
+
+    let switchThreshold = 0.8;
+    if (sp === "custom") {
+      const custom = Number(confidenceThreshold);
+      if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
+    } else if (sp === "smart-switch-70") switchThreshold = 0.7;
+    else if (sp === "smart-switch-90") switchThreshold = 0.9;
+    else if (sp.startsWith("smart-switch") || sp === "smart") {
+      const custom = Number(confidenceThreshold);
+      if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
+    }
+
+    if (!isPerTurn && sessionId) {
+      activeStickyModel = getStickyComboModel(comboName, sessionId, effectiveModels);
+    }
+
+    if (activeStickyModel) {
+      if (isStrict) {
+        // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
+        rotatedModels = [activeStickyModel, ...effectiveModels.filter((m) => m !== activeStickyModel)];
+        log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
+      } else if (typeof resolveSmartChoice === "function") {
+        // Smart Switch (Adaptive): check if the user's task drastically shifted
+        try {
+          const smartResult = await resolveSmartChoice(body, effectiveModels);
+          const newChoice = smartResult?.choice;
+          const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
+
+          if (newChoice && newChoice !== activeStickyModel && effectiveModels.includes(newChoice) && conf !== null && conf >= switchThreshold) {
+            // Task changed with high confidence: switch model and update session
+            rotatedModels = orderModelsByChoice(effectiveModels, smartResult);
+            log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${newChoice} (confidence: ${conf} >= ${switchThreshold})`);
+            if (sessionId) {
+              setStickyComboModel(comboName, sessionId, newChoice);
+              activeStickyModel = newChoice;
+            }
+          } else {
+            // Stay on current model to preserve warm prompt cache
+            rotatedModels = [activeStickyModel, ...effectiveModels.filter((m) => m !== activeStickyModel)];
+            log.info("COMBO", `smart-router [smart-switch] retained prompt cache model "${activeStickyModel}"`);
+          }
+        } catch (err) {
+          // Fail open to active sticky model
+          rotatedModels = [activeStickyModel, ...effectiveModels.filter((m) => m !== activeStickyModel)];
+          log.warn("COMBO", `smart-router error, retained model "${activeStickyModel}"`, { error: err?.message || String(err) });
+        }
+      } else {
+        rotatedModels = [activeStickyModel, ...effectiveModels.filter((m) => m !== activeStickyModel)];
+      }
+    } else if (typeof resolveSmartChoice === "function") {
+      // Turn 1 or per-turn: evaluate System One to select initial model
+      try {
+        const smartResult = await resolveSmartChoice(body, effectiveModels);
+        const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
+
+        if (smartResult?.choice && effectiveModels.includes(smartResult.choice)) {
+          if (switchThreshold > 0 && conf !== null && conf < switchThreshold) {
+            log.info("COMBO", `smart-router confidence (${conf}) below threshold (${switchThreshold}), fallback to order: [${effectiveModels.join(", ")}]`);
+          } else {
+            rotatedModels = orderModelsByChoice(effectiveModels, smartResult);
+            log.info("COMBO", `smart-router selected ${smartResult.choice} (confidence: ${conf ?? "N/A"})`);
+            if (!isPerTurn && sessionId) {
+              setStickyComboModel(comboName, sessionId, smartResult.choice);
+              activeStickyModel = smartResult.choice;
+            }
+          }
+        } else {
+          log.info("COMBO", `smart-router no decision, fallback to order: [${effectiveModels.join(", ")}]`);
+        }
+      } catch (err) {
+        log.warn("COMBO", `smart-router error, fallback to order: [${effectiveModels.join(", ")}]`, { error: err?.message || String(err) });
+      }
+    }
+  } else {
+    // Apply rotation strategy if enabled
+    rotatedModels = getRotatedModels(effectiveModels, comboName, comboStrategy, sticky, normMembers.length ? normMembers : null);
+  }
   // Keep member order aligned with rotatedModels for per-member policy lookup
   let rotatedMembers = null;
   if (normMembers.length) {
@@ -810,6 +915,9 @@ export async function handleComboChat({ body, models, members, policy, handleSin
         }
         if (emptyOk) {
           log.warn("COMBO", `Model ${modelStr} returned 2xx with no usable content, trying next`);
+          if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+            clearStickyComboSession(comboName, sessionId);
+          }
           lastError = "empty response from upstream";
           // Keep lastStatus null here: a 2xx must not leak into the final
           // "all models failed" response as a success status.
@@ -845,6 +953,11 @@ export async function handleComboChat({ body, models, members, policy, handleSin
         if (!lastStatus) lastStatus = 502;
         log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
         continue;
+      }
+
+      // If the model that failed was the session-sticky model, clear it so next turns re-evaluate
+      if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+        clearStickyComboSession(comboName, sessionId);
       }
 
       // Extract error info from response
@@ -944,6 +1057,9 @@ export async function handleComboChat({ body, models, members, policy, handleSin
       }).catch(() => {});
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
+      if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+        clearStickyComboSession(comboName, sessionId);
+      }
       lastError = error.message || String(error);
       lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
@@ -1259,3 +1375,10 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
   return handleSingleModel(judgeBody, judge);
 }
+
+export {
+  getStickyComboModel,
+  setStickyComboModel,
+  clearStickyComboSession,
+  orderModelsByChoice,
+} from "./systemoneRouter.js";

@@ -35,6 +35,8 @@ import { annotateDirectResponse } from "open-sse/services/routeAttribution.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
+import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
+import { resolveSmartChoice } from "../services/systemoneRouter.js";
 
 async function handleAutoRouterCombo({ body, comboName, models, settings, autoRouterPath = new Set(), handleSelectedTarget }) {
   let decision;
@@ -139,6 +141,9 @@ export async function handleChat(request, clientRawRequest = null, translationCa
   // The capability travels in the anthropic-beta header, forwarded as-is.
   const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
+
+  const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+  const sessionId = session?.sessionId || null;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -263,45 +268,48 @@ export async function handleChat(request, clientRawRequest = null, translationCa
     // combo so the tier-appropriate model leads. Fail-open — on any classifier
     // miss we keep `augmentedModels` as-is and fall through to normal fallback.
     // The availability/quota ladder + capability auto-switch below are untouched.
+    const comboCfg = comboStrategies[modelStr] || {};
     let effectiveStrategy = comboStrategy;
     if (comboStrategy === "smart") {
-      const smartCfg = comboStrategies[modelStr] || {};
+      const smartCfg = comboCfg;
       const tierMap = smartCfg.smartTiers;
-      const classifierModel = smartCfg.smartClassifierModel;
-      let skipped = null;
-      const classified = await classifyTier({
-        body,
-        log,
-        classifierModel: classifierModel || undefined,
-        criteria: smartCfg.smartCriteria,
-        instructions: smartCfg.smartInstructions,
-        minConfidence: smartCfg.smartMinConfidence,
-        timeoutMs: smartCfg.smartTimeoutMs,
-        onSkip: (reason, message) => { skipped = { reason, message }; },
-        evaluateSystemone: (payload, model) => {
-          const headers = new Headers({ "Content-Type": "application/json" });
-          // Clients may authenticate with x-api-key instead of Authorization.
-          const authorization = request.headers.get("Authorization")
-            || (request.headers.get("x-api-key") ? `Bearer ${request.headers.get("x-api-key")}` : null);
-          if (authorization) headers.set("Authorization", authorization);
-          return handleSystemone(new Request(new URL("/api/v1/systemone", request.url), {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ ...payload, model }),
-          }));
-        },
-      });
-      if (classified) {
-        const reordered = reorderModelsForTier(augmentedModels, classified.tier, tierMap);
-        if (reordered[0] !== augmentedModels[0]) {
-          log.info("CHAT", `Combo "${modelStr}" smart-routing tier=${classified.tier} → ${reordered[0]}`);
+      if (tierMap) {
+        const classifierModel = smartCfg.smartClassifierModel;
+        let skipped = null;
+        const classified = await classifyTier({
+          body,
+          log,
+          classifierModel: classifierModel || undefined,
+          criteria: smartCfg.smartCriteria,
+          instructions: smartCfg.smartInstructions,
+          minConfidence: smartCfg.smartMinConfidence,
+          timeoutMs: smartCfg.smartTimeoutMs,
+          onSkip: (reason, message) => { skipped = { reason, message }; },
+          evaluateSystemone: (payload, model) => {
+            const headers = new Headers({ "Content-Type": "application/json" });
+            // Clients may authenticate with x-api-key instead of Authorization.
+            const authorization = request.headers.get("Authorization")
+              || (request.headers.get("x-api-key") ? `Bearer ${request.headers.get("x-api-key")}` : null);
+            if (authorization) headers.set("Authorization", authorization);
+            return handleSystemone(new Request(new URL("/api/v1/systemone", request.url), {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ ...payload, model }),
+            }));
+          },
+        });
+        if (classified) {
+          const reordered = reorderModelsForTier(augmentedModels, classified.tier, tierMap);
+          if (reordered[0] !== augmentedModels[0]) {
+            log.info("CHAT", `Combo "${modelStr}" smart-routing tier=${classified.tier} → ${reordered[0]}`);
+          }
+          augmentedModels = reordered;
+        } else {
+          log.info("CHAT", `Combo "${modelStr}" smart-routing skipped (${skipped?.reason || "unknown"}: ${skipped?.message || "no detail"}) — using default order`);
         }
-        augmentedModels = reordered;
-      } else {
-        log.info("CHAT", `Combo "${modelStr}" smart-routing skipped (${skipped?.reason || "unknown"}: ${skipped?.message || "no detail"}) — using default order`);
+        // Run the reordered chain through the normal fallback ladder.
+        effectiveStrategy = "fallback";
       }
-      // Run the reordered chain through the normal fallback ladder.
-      effectiveStrategy = "fallback";
     }
 
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}${effectiveStrategy !== comboStrategy ? `→${effectiveStrategy}` : ""}, sticky: ${comboStickyLimit})`);
@@ -317,7 +325,19 @@ export async function handleChat(request, clientRawRequest = null, translationCa
       log,
       comboName: modelStr,
       comboStrategy: effectiveStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      sessionId,
+      smartPolicy: comboCfg.smartPolicy || "smart",
+      sessionSticky: comboCfg.sessionSticky !== false,
+      confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
+      resolveSmartChoice: effectiveStrategy === "smart"
+        ? (b, m) => resolveSmartChoice({
+            body: b,
+            models: m,
+            routerModel: comboCfg.routerModel,
+            log,
+          })
+        : null,
     });
   }
 
@@ -408,6 +428,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
 
       const comboStickyLimit = policy.sticky ?? chatSettings.comboStickyRoundRobinLimit;
+      const nestedSession = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
+      const nestedSessionId = nestedSession?.sessionId || null;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
@@ -421,7 +443,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        sessionId: nestedSessionId,
+        smartPolicy: comboCfg.smartPolicy || "smart",
+        sessionSticky: comboCfg.sessionSticky !== false,
+        confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
+        resolveSmartChoice: comboStrategy === "smart"
+          ? (b, m) => resolveSmartChoice({
+              body: b,
+              models: m,
+              routerModel: comboCfg.routerModel,
+              log,
+            })
+          : null,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

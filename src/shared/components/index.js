@@ -41,6 +41,7 @@ export { default as Tooltip } from "./Tooltip";
 export { default as ProviderInfoCard } from "./ProviderInfoCard";
 export { default as CapacityBadges } from "./CapacityBadges";
 export { default as ComboTestModal } from "./ComboTestModal";
+export { default as SmartPolicyModal } from "./SmartPolicyModal";
 
 // Layouts
 export * from "./layouts";
