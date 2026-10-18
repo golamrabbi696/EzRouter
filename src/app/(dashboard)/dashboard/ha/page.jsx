@@ -20,7 +20,7 @@ function PairingSetup({ enabled }) {
   }
   return <details open={!enabled} className="rounded-xl border border-border p-5 space-y-4">
     <summary className="cursor-pointer font-semibold">{enabled ? 'Set up another pair' : 'Set up two peers'}</summary>
-    <p>Use private IPs or VPN hostnames reachable from the other VM. This prepares a Bash command to run on a trusted machine with the 9Router source and dependencies installed.</p>
+    <p>Use private IPs or VPN hostnames reachable from the other VM. This prepares a Bash command to run on a trusted machine with the EzRouter source and dependencies installed.</p>
     <form onSubmit={prepare} className="grid gap-3 sm:grid-cols-2">
       {[['firstName', 'First node name', 'agents01'], ['secondName', 'Second node name', 'Azure VM1'], ['first', 'First node HTTPS address', 'https://10.0.0.10:20130'], ['second', 'Second node HTTPS address', 'https://10.0.0.20:20130']].map(([key, label, placeholder]) => <label key={key} className="space-y-1">
         <span className="block text-sm">{label}</span>
@@ -69,7 +69,7 @@ export default function HighAvailabilityPage() {
     <h1 className="text-2xl font-semibold">High availability</h1>
     {error && <p role="alert" className="text-red-500">{error}</p>}
     {!status ? <p>Loading status…</p> : !status.enabled ? <section className="space-y-3">
-      <p>Pair two independent 9Router installations to synchronize configuration and keep serving during a disconnection.</p>
+      <p>Pair two independent EzRouter installations to synchronize configuration and keep serving during a disconnection.</p>
     </section> : <>
       <section className="rounded-xl border border-border p-5 space-y-2">
         <p><strong>Peer:</strong> {status.fenced ? 'Recovery required' : status.healthy ? 'Connected' : 'Disconnected — local service remains available'}</p>
