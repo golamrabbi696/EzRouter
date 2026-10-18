@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import { Badge, Button, Input, Modal, Select, Toggle } from "@/shared/components";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -90,6 +90,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     baseUrl: config.defaultBaseUrl,
     clientIdentityProfile: "default",
     clientIdentityHeadersText: "",
+    quotaEnabled: false,
+    quotaPath: "/credits",
   });
 
   const [formData, setFormData] = useState(initialFormData);
@@ -144,6 +146,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           type: config.type,
           clientIdentityProfile: formData.clientIdentityProfile,
           clientIdentityHeaders: customHeaders.headers,
+          quotaEnabled: formData.quotaEnabled,
+          quotaPath: formData.quotaPath,
         }),
       });
       const data = await res.json();
@@ -274,6 +278,21 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
             />
             <p className="text-xs text-text-muted">JSON object or Header: value lines. Auth headers are ignored.</p>
           </div>
+        )}
+        <Toggle
+          checked={formData.quotaEnabled}
+          onChange={(value) => setFormData({ ...formData, quotaEnabled: value })}
+          label="Quota check"
+          description="Read remaining credits from the standard /credits endpoint."
+        />
+        {formData.quotaEnabled && (
+          <Input
+            label="Quota path"
+            value={formData.quotaPath}
+            onChange={(e) => setFormData({ ...formData, quotaPath: e.target.value })}
+            placeholder="/credits"
+            hint='GET {Base URL}{Quota path} with Authorization: Bearer <API key>; response {"credits": 123.45}. Optional total/used drive the usage bar.'
+          />
         )}
         <Input
           label="API Key (for Check)"

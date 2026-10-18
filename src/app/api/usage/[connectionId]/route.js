@@ -2,7 +2,9 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderNodeById } from "@/models";
 import { getUsageForProvider } from "open-sse/services/usage.js";
+import { isCustomQuotaProvider } from "open-sse/services/usage/customCredits.js";
 import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -147,15 +149,36 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    // Compatible nodes opt in to the standard quota endpoint on the node itself.
+    // Merge the node settings into the connection so the usage handler can use
+    // the same base URL and quota path that the provider was configured with.
+    let customQuotaNode = null;
+    if (isCustomQuotaProvider(connection.provider)) {
+      customQuotaNode = await getProviderNodeById(connection.provider);
+      if (!customQuotaNode?.quotaEnabled) {
+        return Response.json({ message: "Usage not available for this connection" });
+      }
+      connection = {
+        ...connection,
+        providerSpecificData: {
+          ...(connection.providerSpecificData || {}),
+          baseUrl: customQuotaNode.baseUrl || connection.providerSpecificData?.baseUrl,
+          quotaEnabled: true,
+          quotaPath: customQuotaNode.quotaPath || "/credits",
+          nodeName: customQuotaNode.name,
+        },
+      };
+    }
+
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while
     // generic apikey providers persist "apikey" — accept both spellings here.
     const normalizedAuth = String(connection.authType || "").toLowerCase().replace(/[-_]/g, "");
     const isOAuth = normalizedAuth === "oauth" || normalizedAuth === "accesstoken";
-    const isApikeyEligible =
       (normalizedAuth === "apikey") && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
+    const isCustomQuota = customQuotaNode?.quotaEnabled === true;
 
-    if (!isOAuth && !isApikeyEligible) {
+    if (!isOAuth && !isApikeyEligible && !isCustomQuota) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 

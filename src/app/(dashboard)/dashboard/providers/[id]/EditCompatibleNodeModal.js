@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, Toggle } from "@/shared/components";
 
 const CLIENT_IDENTITY_OPTIONS = [
   { value: "default", label: "Default" },
@@ -58,6 +58,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     baseUrl: "https://api.openai.com/v1",
     clientIdentityProfile: "default",
     clientIdentityHeadersText: "",
+    quotaEnabled: false,
+    quotaPath: "/credits",
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -76,6 +78,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         clientIdentityHeadersText: node.clientIdentityHeaders
           ? JSON.stringify(node.clientIdentityHeaders, null, 2)
           : "",
+        quotaEnabled: node.quotaEnabled === true,
+        quotaPath: node.quotaPath || "/credits",
       });
     }
   }, [node, isAnthropic]);
@@ -102,6 +106,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         baseUrl: formData.baseUrl,
         clientIdentityProfile: formData.clientIdentityProfile,
         clientIdentityHeaders: customHeaders.headers,
+        quotaEnabled: formData.quotaEnabled,
+        quotaPath: formData.quotaPath,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -196,6 +202,21 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
             />
             <p className="text-xs text-text-muted">JSON object or Header: value lines. Auth headers are ignored.</p>
           </div>
+        )}
+        <Toggle
+          checked={formData.quotaEnabled}
+          onChange={(value) => setFormData({ ...formData, quotaEnabled: value })}
+          label="Quota check"
+          description="Read remaining credits from the standard /credits endpoint."
+        />
+        {formData.quotaEnabled && (
+          <Input
+            label="Quota path"
+            value={formData.quotaPath}
+            onChange={(e) => setFormData({ ...formData, quotaPath: e.target.value })}
+            placeholder="/credits"
+            hint='GET {Base URL}{Quota path} with Authorization: Bearer <API key>; response {"credits": 123.45}. Optional total/used drive the usage bar.'
+          />
         )}
         <div className="flex gap-2">
           <Input

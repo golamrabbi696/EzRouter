@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections, getSettings } from "@/lib/localDb";
+import { getProviderNodes } from "@/models";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
-import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import {
+  USAGE_APIKEY_PROVIDERS,
+  USAGE_SUPPORTED_PROVIDERS,
+  isAnthropicCompatibleProvider,
+  isOpenAICompatibleProvider,
+} from "@/shared/constants/providers";
 import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
 import { sanitizeProviderOrder, sortConnectionsByProviderOrder } from "@/shared/utils/providerOrder";
 
@@ -30,6 +36,9 @@ const SAFE_PSD_FIELDS = [
   "username", "firstName", "lastName", "authMethod", "authKind",
   "profileArn",
   "fastMode",
+  "nodeName",
+  "quotaEnabled",
+  "quotaPath",
 ];
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -61,7 +70,13 @@ function sanitize(c) {
   return safe;
 }
 
-function isUsageEligible(connection) {
+function isUsageEligible(connection, nodeById) {
+  if (
+    isOpenAICompatibleProvider(connection.provider) ||
+    isAnthropicCompatibleProvider(connection.provider)
+  ) {
+    return nodeById?.get(connection.provider)?.quotaEnabled === true;
+  }
   const auth = String(connection.authType || "").toLowerCase().replace(/[-_]/g, "");
   const isOAuthLike = auth === "oauth" || auth === "accesstoken";
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
@@ -101,7 +116,9 @@ export async function GET(request) {
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
     const allConnections = await getProviderConnections();
-    const eligibleConnections = allConnections.filter(isUsageEligible);
+    const nodes = await getProviderNodes();
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const eligibleConnections = allConnections.filter((conn) => isUsageEligible(conn, nodeById));
     const providerOptions = Array.from(new Set(eligibleConnections.map((conn) => conn.provider))).sort();
 
     // Display-only provider order set by dragging cards in the Quota Tracker.

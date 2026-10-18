@@ -7,7 +7,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, quotaEnabled, quotaPath } = body;
     const node = await getProviderNodeById(id);
     const isCompatibleNode = node?.type === "openai-compatible" || node?.type === "anthropic-compatible";
     const hasIdentityUpdate = Object.prototype.hasOwnProperty.call(body, "clientIdentityProfile") ||
@@ -74,6 +74,21 @@ export async function PUT(request, { params }) {
       updates.apiType = apiType;
     }
 
+    if (node.type === "openai-compatible" || node.type === "anthropic-compatible") {
+      // Preserve the existing value when an older client does not send the fields.
+      const nextQuotaEnabled = typeof quotaEnabled === "boolean"
+        ? quotaEnabled
+        : node.quotaEnabled === true;
+      let nextQuotaPath = typeof quotaPath === "string" && quotaPath.trim()
+        ? quotaPath.trim()
+        : (node.quotaPath || "/credits");
+      if (!/^https?:\/\//i.test(nextQuotaPath) && !nextQuotaPath.startsWith("/")) {
+        nextQuotaPath = `/${nextQuotaPath}`;
+      }
+      updates.quotaEnabled = nextQuotaEnabled;
+      updates.quotaPath = nextQuotaPath;
+    }
+
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
@@ -86,6 +101,8 @@ export async function PUT(request, { params }) {
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
           ...identityData,
+          quotaEnabled: updates.quotaEnabled,
+          quotaPath: updates.quotaPath,
         }
       })
     )));

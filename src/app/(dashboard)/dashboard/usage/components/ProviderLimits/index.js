@@ -150,8 +150,8 @@ function claudeGrantStatus(grant) {
   return grant.useRequiresLimit ? "at limit only" : "unavailable";
 }
 
-function providerLabel(providerId) {
-  return AI_PROVIDERS[providerId]?.name || providerId;
+function providerLabel(providerId, connection) {
+  return connection?.providerSpecificData?.nodeName || AI_PROVIDERS[providerId]?.name || providerId;
 }
 function formatCreditDate(value) {
   if (!value) return "N/A";
@@ -1261,7 +1261,7 @@ export default function ProviderLimits() {
                       title={
                         expiringFirst
                           ? "Provider order is disabled while “Expiring first” is on"
-                          : `Drag to move ${providerLabel(conn.provider)} up or down`
+                          : `Drag to move ${providerLabel(conn.provider, conn)} up or down`
                       }
                     />
                     <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
@@ -1276,8 +1276,8 @@ export default function ProviderLimits() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
+                      <h3 className="text-sm font-semibold text-text-primary truncate">
+                        {providerLabel(conn.provider, conn)}
                       </h3>
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">

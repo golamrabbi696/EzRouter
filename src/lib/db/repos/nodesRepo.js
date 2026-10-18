@@ -64,6 +64,8 @@ export async function createProviderNode(data) {
     baseUrl: data.baseUrl,
     clientIdentityProfile: data.clientIdentityProfile,
     clientIdentityHeaders: data.clientIdentityHeaders,
+    quotaEnabled: data.quotaEnabled === true,
+    quotaPath: data.quotaPath || "/credits",
     createdAt: now,
     updatedAt: now,
   };

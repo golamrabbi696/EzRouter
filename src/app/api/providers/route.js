@@ -184,6 +184,8 @@ export async function POST(request) {
         nodeName: node.name,
         clientIdentityProfile: node.clientIdentityProfile || "default",
         clientIdentityHeaders: node.clientIdentityHeaders || {},
+        quotaEnabled: node.quotaEnabled === true,
+        quotaPath: node.quotaPath || "/credits",
       };
     } else if (isAnthropicCompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -196,6 +198,8 @@ export async function POST(request) {
         nodeName: node.name,
         clientIdentityProfile: node.clientIdentityProfile || "default",
         clientIdentityHeaders: node.clientIdentityHeaders || {},
+        quotaEnabled: node.quotaEnabled === true,
+        quotaPath: node.quotaPath || "/credits",
       };
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);
