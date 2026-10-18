@@ -8,12 +8,15 @@ import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-
 import { modelLevelError } from "../services/accountFallback.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+import { commandCodeThreadId, isCommandCodeThreadId } from "../utils/commandCodeSession.js";
 
 /**
  * CommandCodeExecutor — talks to https://api.commandcode.ai
  *
  * Auth: Bearer <user_xxx> API key (stored as the connection's apiKey).
- * Adds the per-request `x-session-id` header, kept stable per client session.
+ * Adds the per-conversation `x-session-id` header expected by CommandCode
+ * upstream — the same id the envelope carries as `threadId`, because the
+ * upstream prompt cache is keyed on it (see utils/commandCodeSession.js).
  *
  * Two surfaces, same gateway:
  *  - Provider API (`/provider/v1/chat/completions`) — documented, OpenAI-shaped
@@ -88,11 +91,18 @@ export class CommandCodeExecutor extends BaseExecutor {
     return body;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, _url = null, _model = null, body = null) {
+    // The header must carry the SAME identity as the envelope `threadId` (which
+    // arrives here as the transformed body) — one conversation, one id, so the
+    // upstream prefix cache can be reused across turns. Never randomize per
+    // request: that is what kept CommandCode cache reads at 0.
+    const sessionId =
+      body && isCommandCodeThreadId(body.threadId) ? body.threadId : commandCodeThreadId(body);
+
     const headers = {
       "Content-Type": "application/json",
       ...(this.config.headers || {}),
-      "x-session-id": sessionIdFor(credentials),
+      "x-session-id": sessionId,
     };
 
     const token = credentials?.apiKey || credentials?.accessToken;
@@ -161,11 +171,15 @@ export class CommandCodeExecutor extends BaseExecutor {
     if (!cliUrl) return null;
 
     const transformedBody = openaiToCommandCodeRequest(model, body, true, credentials);
+    const sessionId =
+      transformedBody && isCommandCodeThreadId(transformedBody.threadId)
+        ? transformedBody.threadId
+        : commandCodeThreadId(transformedBody);
     const headers = {
       "Content-Type": "application/json",
       ...(this.config.headers || {}),
       ...CLI_ONLY_HEADERS,
-      "x-session-id": sessionIdFor(credentials),
+      "x-session-id": sessionId,
       "Accept": "text/event-stream",
     };
     const token = credentials?.apiKey || credentials?.accessToken;

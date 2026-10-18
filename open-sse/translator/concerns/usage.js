@@ -66,11 +66,11 @@ const USAGE_EXTRACTORS = {
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
     const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
-    // inputTokens already counts the cached prefix (verified live: cacheRead(N)
-    // ≈ inputTokens(N-1)), which is exactly inclusive convention —
-    // the cache counters ride along as subsets, not as extra prompt tokens.
+    // AI SDK v5 usage carries the cache read as `cachedInputTokens` (nested
+    // `inputTokenDetails.cacheReadTokens` in some builds). inputTokens already counts
+    // the cached prefix.
     const details = raw.inputTokenDetails;
-    const cachedTokens = details && typeof details.cacheReadTokens === "number" ? details.cacheReadTokens : 0;
+    const cachedTokens = n(raw.cachedInputTokens ?? details?.cacheReadTokens);
     const cacheCreationTokens = details && typeof details.cacheWriteTokens === "number" ? details.cacheWriteTokens : 0;
     return { promptTokens: input, completionTokens: output, totalTokens: total, cachedTokens, cacheCreationTokens };
   },
