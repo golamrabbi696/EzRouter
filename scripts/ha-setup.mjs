@@ -16,7 +16,7 @@ function endpoint(value) {
   return url;
 }
 
-export async function createPair({ first, second, output, firstName = 'Node A', secondName = 'Node B', apiPort = 20128 }) {
+export async function createPair({ first, second, output, firstName = 'Node A', secondName = 'Node B', apiPort = 20126 }) {
   const urls = [endpoint(first), endpoint(second)], names = [firstName, secondName];
   if (urls[0].origin === urls[1].origin) throw new Error('Peer endpoints must be different');
   if (names.some(n => typeof n !== 'string' || !n.trim() || n.length > 80 || /[\x00-\x1f\x7f]/.test(n))) throw new Error('Node names must contain 1–80 printable characters');
@@ -51,9 +51,9 @@ export async function createPair({ first, second, output, firstName = 'Node A', 
   }
   fs.writeFileSync(path.join(root, 'README.txt'), [
     '1. Securely copy node-a/ to the first host and node-b/ to the second host. Keep each folder private.',
-    '2. Set NINEROUTER_HA_CONFIG to the absolute path of that host\'s ha.json in its 9Router service.',
-    `3. Check localApiUrl matches the local 9Router API port (generated: ${apiPort}). Allow each HA listener only from its peer over your private network/VPN.`,
-    '4. Restart both 9Router services. Open Dashboard > High Availability and verify both peer identities and Connected status.',
+    '2. Set EZROUTER_HA_CONFIG to the absolute path of that host\'s ha.json in its EzRouter service.',
+    `3. Check localApiUrl matches the local EzRouter API port (generated: ${apiPort}). Allow each HA listener only from its peer over your private network/VPN.`,
+    '4. Restart both EzRouter services. Open Dashboard > High Availability and verify both peer identities and Connected status.',
     '5. Certificates expire after one year. Replace certificates/trust before expiry; do not rerun setup over existing files.',
     'Use docs/HA.md for backups, OAuth/local provider bindings, client failover and SSH tunnel configurations.',
     '',
@@ -63,12 +63,12 @@ export async function createPair({ first, second, output, firstName = 'Node A', 
 
 async function main() {
   const { values } = parseArgs({ options: {
-    first: { type: 'string' }, second: { type: 'string' }, out: { type: 'string', default: './9router-ha-pair' },
+    first: { type: 'string' }, second: { type: 'string' }, out: { type: 'string', default: './ezrouter-ha-pair' },
     'first-name': { type: 'string', default: 'Node A' }, 'second-name': { type: 'string', default: 'Node B' },
-    'api-port': { type: 'string', default: '20128' }, help: { type: 'boolean' },
+    'api-port': { type: 'string', default: '20126' }, help: { type: 'boolean' },
   } });
   if (values.help) {
-    console.log('Usage: node scripts/ha-setup.mjs --first https://FIRST_PRIVATE_HOST:20130 --second https://SECOND_PRIVATE_HOST:20130 [--out NEW_DIRECTORY] [--first-name NAME] [--second-name NAME] [--api-port 20128]\nOmit --first and --second for interactive prompts. Generates private TLS certificates and matching tokens. Never overwrites an existing directory.');
+    console.log('Usage: node scripts/ha-setup.mjs --first https://FIRST_PRIVATE_HOST:20130 --second https://SECOND_PRIVATE_HOST:20130 [--out NEW_DIRECTORY] [--first-name NAME] [--second-name NAME] [--api-port 20126]\nOmit --first and --second for interactive prompts. Generates private TLS certificates and matching tokens. Never overwrites an existing directory.');
     return;
   }
   let first = values.first, second = values.second;

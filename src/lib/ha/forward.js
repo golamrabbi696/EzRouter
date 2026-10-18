@@ -54,7 +54,7 @@ export async function receiveForward(req, res, config, nodeId, authorizeClient, 
   }
   const payload = await readJson(req, 32 * 1024 * 1024);
   if (!PATHS.has(payload.path) || !payload.body || typeof payload.body !== 'object') throw new Error('Invalid forwarded request');
-  const target = new URL(config.localApiUrl || 'http://127.0.0.1:20128');
+  const target = new URL(config.localApiUrl || 'http://127.0.0.1:20126');
   if (target.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(target.hostname) || target.username || target.password || target.pathname !== '/') throw new Error('Forwarding requires a local API origin');
   const body = JSON.stringify(payload.body);
   const headers = Object.fromEntries(PASSTHROUGH.filter(k => typeof payload.headers?.[k] === 'string').map(k => [k, payload.headers[k]]));
