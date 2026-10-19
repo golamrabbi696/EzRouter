@@ -94,6 +94,7 @@ export function errorResponse(statusCode, message, arg3 = null, arg4 = null) {
  */
 export async function writeStreamError(writer, statusCode, message) {
   const errorBody = buildErrorBody(statusCode, message);
+  errorBody.type = "error";
   const encoder = new TextEncoder();
   await writer.write(encoder.encode(`data: ${JSON.stringify(errorBody)}\n\n`));
 }

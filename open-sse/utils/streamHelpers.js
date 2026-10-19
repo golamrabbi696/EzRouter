@@ -176,7 +176,7 @@ export function buildStreamErrorBytes(statusCode, message, clientFormat) {
 
   const sse = clientFormat === FORMATS.CLAUDE
     ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
-    : formatSSE({ error }, clientFormat) + SSE_DONE;
+    : formatSSE({ type: "error", error }, clientFormat) + SSE_DONE;
 
   return sharedEncoder.encode(sse);
 }
