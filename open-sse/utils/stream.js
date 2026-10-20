@@ -64,6 +64,10 @@ export function createSSEStream(options = {}) {
 
   let buffer = "";
   let usage = null;
+  // Body-size estimate kept apart from the provider-reported usage: it is a
+  // fallback for providers that report no usage at all, never a candidate to
+  // be merged with it (see mergeUsage).
+  let estimatedUsage = null;
 
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -131,11 +135,9 @@ export function createSSEStream(options = {}) {
     let finalUsage = isPassthrough ? usage : state?.usage;
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
-      // Unbuffered: this value is only ever recorded -- logUsage and
-      // onStreamComplete below -- and never sent to the client. The buffer is a
-      // margin for the client's own context arithmetic, so counting it here
-      // reported every estimated turn as BUFFER_TOKENS larger than it was.
-      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat, { buffer: false });
+      // The provider reported no usage at all: fall back to the body-size
+      // estimate, if one was already computed for the finish chunk.
+      finalUsage = estimatedUsage || estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat, { buffer: false });
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
 
@@ -328,7 +330,11 @@ export function createSSEStream(options = {}) {
                   model
                 );
                 output = `data: ${JSON.stringify(parsed)}\n`;
-                usage = mergeUsage(usage, estimated); // never let an estimate replace real usage
+                // Keep the estimate out of the accumulator: a provider that
+                // reports its usage in a trailing chunk (stream_options
+                // include_usage) sends it AFTER this chunk, and merging the
+                // two by max would let the guess outvote the real number.
+                estimatedUsage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
@@ -518,15 +524,15 @@ export function createSSEStream(options = {}) {
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              // state.usage is what gets logged (see the comment on the branch
-              // below); only the emitted item carries the buffer.
               const estimated = estimateUsage(body, totalContentLength, sourceFormat, { buffer: false });
               item.usage = enrichUsageCost(
                 filterUsageForFormat(addBufferToUsage(estimated), sourceFormat),
                 provider,
                 model
               );
-              state.usage = mergeUsage(state.usage, estimated); // never let an estimate replace real usage
+              // Same rule as the passthrough path: the estimate is a fallback,
+              // not something to merge with the provider's own usage.
+              estimatedUsage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);

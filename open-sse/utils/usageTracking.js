@@ -286,6 +286,9 @@ export function canonicalizeUsage(usage) {
   copyNonnegative("cost_in_usd");
   copyNonnegative("cost_in_usd_ticks");
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  // Carry the marker through: an estimated count must not be stored as if it
+  // had been measured by the provider.
+  if (usage.estimated) result.estimated = true;
 
   // Billing-authoritative credit, when the upstream reports it (CodeBuddy /
   // WorkBuddy put `credit` in the final usage chunk). Zero is meaningful here —
@@ -436,8 +439,14 @@ export function extractUsage(chunk) {
 export function mergeUsage(prev, next) {
   if (!prev) return next || null;
   if (!next) return prev;
-  if (prev.estimated && !next.estimated && hasRealInput(next)) return { ...next };
-  if (next.estimated && !prev.estimated && hasValidUsage(prev)) return prev;
+  // An estimate must never outrank a provider-reported value. The max-merge
+  // below exists for Anthropic's split usage events, where "larger" means
+  // "more complete". Between an estimate and a real value that reasoning does
+  // not hold — the request-body estimate is a chars/4 guess that can be orders
+  // of magnitude off — so the authoritative side wins outright.
+  if (Boolean(prev.estimated) !== Boolean(next.estimated)) {
+    return prev.estimated ? next : prev;
+  }
   const merged = { ...prev };
   for (const [k, v] of Object.entries(next)) {
     // typeof NaN === "number" — guard with Number.isFinite so one malformed
