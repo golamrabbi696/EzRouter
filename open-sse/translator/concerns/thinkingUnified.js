@@ -503,6 +503,11 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
     }
     case "step": {
       if (none && canDisable) break;
+      // Step-compatible upstreams define accepted effort levels; preserve explicit intent.
+      if (eff.mode === "level") {
+        body.reasoning_effort = eff.level;
+        break;
+      }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
