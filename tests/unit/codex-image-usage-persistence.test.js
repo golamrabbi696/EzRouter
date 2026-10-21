@@ -17,6 +17,8 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   extractApiKey: () => "client-key",
   resolveClientApiKey: async () => ({ apiKey: "client-key", valid: true }),
   isValidApiKey: vi.fn(),
+  // Handlers resolve the client key across all presented credentials.
+  resolveClientApiKey: async () => ({ apiKey: "client-key", valid: true }),
 }));
 
 vi.mock("@/lib/localDb", () => ({

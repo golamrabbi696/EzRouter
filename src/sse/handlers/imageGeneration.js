@@ -3,8 +3,6 @@ import {
   markAccountUnavailable,
   clearAccountError,
   resolveClientApiKey,
-  extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings } from "@/lib/localDb";
@@ -82,12 +80,7 @@ export async function handleImageGeneration(request) {
   const binaryOutput = url.searchParams.get("response_format") === "binary";
   const modelStr = body.model;
 
-  const extractedKey = typeof extractApiKey === "function" ? extractApiKey(request) : null;
-  const resolvedAuth = typeof resolveClientApiKey === "function"
-    ? await resolveClientApiKey(request)
-    : { apiKey: extractedKey, valid: true };
-  const apiKey = resolvedAuth?.apiKey || extractedKey || null;
-  const apiKeyValid = resolvedAuth?.valid ?? (typeof isValidApiKey === "function" ? await isValidApiKey(apiKey) : true);
+  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
   const settings = await getSettings();
   if (settings.requireApiKey) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");

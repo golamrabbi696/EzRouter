@@ -3,6 +3,7 @@ import { getSettings, validateApiKey, validateGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { AUTH_COOKIE_NAME, verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -152,34 +153,17 @@ function isPublicLlmApi(pathname) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-function extractApiKeyCandidates(request) {
-  const candidates = [];
-  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
-
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7).trim());
-
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) push(apiKeyHeader.trim());
-
-  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) push(googleApiKeyHeader.trim());
-
-  const queryKey = request.nextUrl?.searchParams?.get("key");
-  if (queryKey) push(queryKey.trim());
-
-  return candidates;
-}
-
 function extractApiKey(request) {
   return extractApiKeyCandidates(request)[0] || null;
 }
 
+// Anthropic clients (Claude Code with a claude.ai session or
+// ANTHROPIC_AUTH_TOKEN) send an unrelated Authorization header ALONGSIDE a
+// valid x-api-key, so every presented credential is checked, not just the
+// first one found.
 async function hasValidApiKey(request) {
-  const candidates = extractApiKeyCandidates(request);
-  if (candidates.length === 0) return false;
-  for (const key of candidates) {
-    if (await validateApiKey(key)) return true;
+  for (const apiKey of extractApiKeyCandidates(request)) {
+    if (await validateApiKey(apiKey)) return true;
   }
   return false;
 }

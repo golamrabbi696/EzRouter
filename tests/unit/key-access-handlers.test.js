@@ -56,6 +56,11 @@ vi.mock("@/sse/services/auth.js", () => ({
     return { apiKey: k || null, valid: true };
   },
   isValidApiKey: async () => true,
+  // Handlers resolve the client key across all presented credentials.
+  resolveClientApiKey: async (request) => {
+    const a = request.headers.get("Authorization");
+    return { apiKey: a?.startsWith("Bearer ") ? a.slice(7) : request.headers.get("x-api-key"), valid: true };
+  },
 }));
 vi.mock("@/sse/services/tokenRefresh.js", () => ({
   checkAndRefreshToken: async (_p, c) => c,

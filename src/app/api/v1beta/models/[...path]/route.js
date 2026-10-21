@@ -10,6 +10,7 @@ import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "@/sse/services/keyAccess.js";
+import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -124,19 +125,6 @@ export async function POST(request, { params }) {
   }
 }
 
-// All credentials the client presented, in precedence order — clients can send
-// an unrelated Authorization header alongside a valid x-goog-api-key, so every
-// candidate must be validated (matches src/sse/services/auth.js semantics).
-function extractGeminiClientApiKeyCandidates(request) {
-  const candidates = [];
-  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
-  push(request.headers.get("x-goog-api-key"));
-  push(new URL(request.url).searchParams.get("key"));
-  return candidates;
-}
-
 function normalizeGeminiNativeModel(model) {
   return String(model || "")
     .replace(/^models\//, "")
@@ -184,7 +172,10 @@ async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
   if (!settings.requireApiKey) return null;
 
-  const candidates = extractGeminiClientApiKeyCandidates(request);
+  // Clients can send an unrelated Authorization header alongside a valid
+  // x-goog-api-key, so every presented credential is validated (same
+  // candidates as the middleware and handlers).
+  const candidates = extractApiKeyCandidates(request);
   if (candidates.length === 0) {
     return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
   }
