@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS = {
   oidcClientSecret: "",
   oidcScopes: "openid profile email",
   oidcLoginLabel: "Sign in with OIDC",
+  oidcAllowedSubjects: [],
   samlEntryPoint: "",
   samlIssuer: "urn:ezrouter:sp",
   samlCert: "",
