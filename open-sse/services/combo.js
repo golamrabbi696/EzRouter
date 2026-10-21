@@ -18,6 +18,8 @@ import {
   clearStickyComboSession,
   orderModelsByChoice,
 } from "./systemoneRouter.js";
+import { parseModel } from "./model.js";
+import { SPEED_MODE, getSpeedMode, getModelSpeed, markModelProbed, wasProbedRecently } from "./modelSpeed.js";
 
 const ENDPOINT_COMBO = "/v1/chat/completions";
 
@@ -707,6 +709,71 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, m
   return rotatedModels;
 }
 
+// Tiers for the "fastest" strategy, in the order they are tried.
+const SPEED_TIER = {
+  PROBE: 0,       // unmeasured and not tried recently: gets a test turn
+  MEASURED: 1,    // fastest first, but close speeds keep the combo order
+  PROBED: 2,      // had its test turn but no speed yet (short reply or error)
+  UNRESOLVED: 3,  // not a provider/model (e.g. a nested combo)
+};
+const SPEED_TIER_LABEL = { [SPEED_TIER.PROBE]: "unmeasured", [SPEED_TIER.PROBED]: "no speed yet", [SPEED_TIER.UNRESOLVED]: "unknown" };
+
+// Speeds within this fraction of the fastest count as a tie, and the combo order
+// breaks it. Small gaps are measuring noise, so a lower-listed model only jumps
+// ahead when it is clearly faster.
+const SPEED_CLOSE_MARGIN = 0.2;
+
+// Measured models are in combo order. Repeatedly take the highest-listed model
+// within the margin of the fastest one left.
+function orderMeasuredBySpeed(measured) {
+  const left = [...measured];
+  const ordered = [];
+  while (left.length > 0) {
+    const fastest = Math.max(...left.map((r) => r.tps));
+    const next = left.findIndex((r) => r.tps >= fastest * (1 - SPEED_CLOSE_MARGIN));
+    ordered.push(...left.splice(next, 1));
+  }
+  return ordered;
+}
+
+/**
+ * Order models for the "fastest" strategy. Never drops a model (fallback intact).
+ * Also reserves the test turn of the first untested model (see below).
+ * @param {string[]} models - Array of model strings
+ * @param {Function} [resolveModel] - (modelStr) => {provider, model} (sync or async)
+ * @param {string} [mode] - SPEED_MODE of the request; only speeds of that mode are compared
+ * @returns {Promise<{ model: string, tps: number|null, tier: number, info: Object|null }[]>}
+ */
+export async function rankModelsBySpeed(models, resolveModel = parseModel, mode = SPEED_MODE.STREAM) {
+  if (!Array.isArray(models)) return [];
+
+  // Promise.all keeps combo order.
+  const infos = await Promise.all(models.map(async (model) => {
+    try { return await resolveModel(model); } catch { return null; }
+  }));
+
+  // No await from here until the reservation: parallel requests can't both see
+  // the same untested model as free, so each one tests a different model.
+  const ranked = models.map((model, i) => {
+    const info = infos[i];
+    if (!info?.provider || !info?.model) return { model, tier: SPEED_TIER.UNRESOLVED, tps: null, info: null };
+    const tps = getModelSpeed(info.provider, info.model, mode);
+    let tier = SPEED_TIER.MEASURED;
+    if (tps === null) tier = wasProbedRecently(info.provider, info.model, mode) ? SPEED_TIER.PROBED : SPEED_TIER.PROBE;
+    return { model, tier, tps, info };
+  });
+  const probe = ranked.find((r) => r.tier === SPEED_TIER.PROBE);
+  if (probe) markModelProbed(probe.info.provider, probe.info.model, mode);
+
+  const inTier = (tier) => ranked.filter((r) => r.tier === tier);
+  return [
+    ...inTier(SPEED_TIER.PROBE),
+    ...orderMeasuredBySpeed(inTier(SPEED_TIER.MEASURED)),
+    ...inTier(SPEED_TIER.PROBED),
+    ...inTier(SPEED_TIER.UNRESOLVED),
+  ];
+}
+
 /**
  * Reset in-memory rotation state when combo/settings change
  * @param {string} [comboName] - Combo name to reset; omit to clear all
@@ -746,8 +813,10 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback" | "round-robin" | "weighted" | "fusion"
+ * @param {string} [options.comboStrategy] - Strategy: "fallback" | "round-robin" | "fastest" | "smart" | "weighted" | "fusion"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Function} [options.resolveModel] - (modelStr) => {provider, model}, used by "fastest"
+ * @param {string} [options.speedMode] - SPEED_MODE of the request, used by "fastest"; defaults to getSpeedMode(body)
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -767,6 +836,8 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  resolveModel,
+  speedMode,
 }) {
   // Normalize members: if provided use them, else derive from models
   const normMembers = normalizeMembers(members, models);
@@ -774,8 +845,15 @@ export async function handleComboChat({
   const sticky = policy?.sticky ?? comboStickyLimit;
   let rotatedModels = effectiveModels;
   let activeStickyModel = null;
+  const probes = new Map();
+  const mode = speedMode || getSpeedMode(body);
 
-  if (comboStrategy === "smart") {
+  if (comboStrategy === "fastest") {
+    const ranked = await rankModelsBySpeed(effectiveModels, resolveModel, mode);
+    rotatedModels = ranked.map((r) => r.model);
+    for (const r of ranked) if (r.tier === SPEED_TIER.PROBE) probes.set(r.model, r.info);
+    log.info("COMBO", `fastest order (${mode}): ${ranked.map((r) => `${r.model} (${r.tps === null ? SPEED_TIER_LABEL[r.tier] : `${Math.round(r.tps)} tok/s`})`).join(", ")}`);
+  } else if (comboStrategy === "smart") {
     const sp = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
     const isPerTurn = sp === "per-turn" || sessionSticky === false;
     const isStrict = sp === "strict";
@@ -893,6 +971,9 @@ export async function handleComboChat({
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+
+    const probe = probes.get(modelStr);
+    if (probe) markModelProbed(probe.provider, probe.model, mode);
 
     try {
       const result = await handleSingleModel(body, modelStr);
