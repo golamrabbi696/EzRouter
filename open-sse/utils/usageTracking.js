@@ -249,17 +249,15 @@ export function canonicalizeUsage(usage) {
   // Guard on the absence of `cached_tokens`: our own canonical output always
   // sets that key (even to 0), so re-running canonicalizeUsage on an already-
   // folded result takes the passthrough branch instead of folding again.
-  // Also skip when prompt_tokens already equals input_tokens + cache: the
-  // claude-to-openai stream translator stores that folded shape in state.usage
-  // while keeping the Claude cache field names.
   const cacheRead = num(usage.cache_read_input_tokens);
-  const alreadyFolded = typeof usage.input_tokens === "number" &&
-    usage.prompt_tokens !== undefined &&
-    prompt === num(usage.input_tokens) + cacheRead + cacheCreation;
   if (usage.cached_tokens === undefined &&
       (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined)) {
     cached = cacheRead;
-    if (!alreadyFolded) prompt = prompt + cached + cacheCreation;
+    // Fold onto the cache-exclusive input_tokens when present. Translated
+    // usage (claude-to-openai) carries prompt_tokens ALREADY folded plus the
+    // separate cache fields; folding onto prompt_tokens counted cache twice.
+    const base = usage.input_tokens !== undefined ? num(usage.input_tokens) : prompt;
+    prompt = base + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
     // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
