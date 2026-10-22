@@ -28,7 +28,15 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel, withDeclaredCapabilities, aggregateComboCapabilities, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
+import {
+  capabilitiesFromServiceKind,
+  getCapabilitiesForModel,
+  withDeclaredCapabilities,
+  aggregateComboCapabilities,
+  DEFAULT_CAPABILITIES,
+  comboContextWindow,
+  comboWindowSetting,
+} from "open-sse/providers/capabilities.js";
 import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 import { findCustomModelCaps } from "@/lib/customModelCaps.js";
 
@@ -272,7 +280,7 @@ function comboMatchesKinds(combo, kindFilter) {
 // treated as a literal model and publishes the 200k floor. Expand nested
 // names (cycle-guarded) so the published window is the true min across the
 // whole chain.
-export function comboSeatLimits(combo, combosByName, activeConnectionByProvider = null, visiting = new Set()) {
+export function comboSeatLimits(combo, combosByName, activeConnectionByProvider = null, comboStrategies = {}, visiting = new Set()) {
   const name = typeof combo?.name === "string" ? combo.name : null;
   if (name) {
     if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
@@ -294,7 +302,7 @@ export function comboSeatLimits(combo, combosByName, activeConnectionByProvider 
   const activeSeats = hasActiveFilter ? seats.filter(isSeatActive) : seats;
   const candidateSeats = activeSeats.length > 0 ? activeSeats : seats;
 
-  let contextWindow = Infinity;
+  const seatWindows = [];
   let maxOutput = Infinity;
   try {
     for (const seat of candidateSeats) {
@@ -303,27 +311,34 @@ export function comboSeatLimits(combo, combosByName, activeConnectionByProvider 
       if (slash <= 0) {
         const nested = combosByName?.get(seat);
         if (nested) {
-          const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, visiting);
-          if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
+          // A nested combo is one seat: it contributes the window it publishes for
+          // itself, i.e. its own override already applied.
+          const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, comboStrategies, visiting);
+          if (Number.isFinite(nestedLimits.contextWindow)) seatWindows.push(nestedLimits.contextWindow);
           if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
           continue;
         }
       }
       const caps = comboSeatCapabilities(seat) || getCapabilitiesForModel(null, seat);
-      if (Number.isFinite(caps?.contextWindow)) contextWindow = Math.min(contextWindow, caps.contextWindow);
+      if (Number.isFinite(caps?.contextWindow)) seatWindows.push(caps.contextWindow);
       if (Number.isFinite(caps?.maxOutput)) maxOutput = Math.min(maxOutput, caps.maxOutput);
     }
   } finally {
     if (name) visiting.delete(name);
   }
 
+  // What the combo promises is its own decision: min (every seat), max (the chain
+  // via rollover), or an explicit number. See comboContextWindow.
+  const { mode, custom } = comboWindowSetting(comboStrategies?.[name]);
   return {
-    contextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
+    contextWindow: comboContextWindow(seatWindows, mode, custom),
+    seatMinWindow: seatWindows.length ? Math.min(...seatWindows) : undefined,
+    seatMaxWindow: seatWindows.length ? Math.max(...seatWindows) : undefined,
     maxOutput: Number.isFinite(maxOutput) ? maxOutput : undefined,
   };
 }
 
-function comboToEntry(combo, comboByName, combosByName, activeConnectionByProvider = null) {
+function comboToEntry(combo, comboByName, combosByName, activeConnectionByProvider = null, comboStrategies = {}) {
   const entry = {
     id: combo.name,
     object: "model",
@@ -339,8 +354,13 @@ function comboToEntry(combo, comboByName, combosByName, activeConnectionByProvid
     // its smallest. Combo entries were the only models on this endpoint that
     // published no limits at all, which leaves a client to guess from the name —
     // and it guesses high (see the snake_case note on the per-provider path).
-    const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, activeConnectionByProvider);
-    if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
+    const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, activeConnectionByProvider, comboStrategies);
+    if (Number.isFinite(contextWindow)) {
+      entry.context_length = contextWindow;
+      // capabilities is the min/max union from aggregateComboCapabilities; keep its
+      // window in step with the published limit so a client reading either agrees.
+      if (entry.capabilities) entry.capabilities.contextWindow = contextWindow;
+    }
     if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
   }
   return entry;
@@ -419,12 +439,21 @@ export async function buildModelsList(kindFilter, options = {}) {
     const comboOnlyModels = [];
     for (const combo of combos) {
       if (!comboMatchesKinds(combo, kindFilter)) continue;
-      const entry = comboToEntry(combo, comboByName, combosByName);
+      const entry = comboToEntry(combo, comboByName, combosByName, null, comboStrategies);
       if (seenModelIds.has(entry.id)) continue;
       seenModelIds.add(entry.id);
       comboOnlyModels.push(entry);
     }
     return comboOnlyModels;
+  }
+
+  // Per-combo presentation settings live in settings.comboStrategies[name] next to
+  // fallbackStrategy/judgeModel. A combo's published context window is one of them.
+  let comboStrategies = {};
+  try {
+    comboStrategies = (await getSettings())?.comboStrategies || {};
+  } catch (e) {
+    console.log("Could not fetch combo strategies");
   }
 
   let customModels = [];
@@ -512,7 +541,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
-    const entry = comboToEntry(combo, comboByName, combosByName, activeConnectionByProvider);
+    const entry = comboToEntry(combo, comboByName, combosByName, activeConnectionByProvider, comboStrategies);
     models.push(entry);
   }
 

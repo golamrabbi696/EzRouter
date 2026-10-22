@@ -822,6 +822,49 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
 }
 
 /**
+ * Resolve the context window a combo publishes for itself.
+ *
+ * `aggregateComboCapabilities` uses min, which is the honest answer for a panel:
+ * every seat sees the whole request. A fallback chain is not a panel — a request
+ * too large for a seat moves to the next one, so the window the chain can actually
+ * serve is its *largest* seat's. Rather than guess, the combo says which it means:
+ *
+ *   min    (default) — smallest seat window; what every seat can serve
+ *   max              — largest seat window; what the chain can serve via rollover
+ *   custom           — an explicit number (e.g. one seat's window, or a safety margin
+ *                      below the largest so a client compacts before the last wall)
+ *
+ * @param {number[]} seatWindows context window per seat, nested combos already resolved
+ * @param {"min"|"max"|"custom"} [mode]
+ * @param {number|null} [custom]
+ * @returns {number|undefined}
+ */
+export function comboContextWindow(seatWindows, mode = "min", custom = null) {
+  const windows = (Array.isArray(seatWindows) ? seatWindows : [])
+    .filter((v) => Number.isFinite(v) && v > 0);
+  if (mode === "custom") {
+    const n = Number(custom);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  if (!windows.length) return undefined;
+  return mode === "max" ? Math.max(...windows) : Math.min(...windows);
+}
+
+/**
+ * Read the per-combo context-window setting out of settings.comboStrategies[name].
+ * Anything unrecognised falls back to "min", i.e. the pre-existing behaviour.
+ *
+ * @param {object|null|undefined} comboStrategy
+ * @returns {{mode: "min"|"max"|"custom", custom: number|null}}
+ */
+export function comboWindowSetting(comboStrategy) {
+  const raw = comboStrategy?.contextWindowMode;
+  const mode = raw === "max" || raw === "custom" ? raw : "min";
+  const n = Number(comboStrategy?.contextWindow);
+  return { mode, custom: Number.isFinite(n) && n > 0 ? Math.floor(n) : null };
+}
+
+/**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
  *
