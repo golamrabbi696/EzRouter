@@ -589,14 +589,6 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     }
   }, [stats, tableView, sortBy, sortOrder]);
 
-  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
-
-  const spinner = (
-    <div className="flex items-center justify-center py-12 text-text-muted">
-      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
-    </div>
-  );
-
   // Map all models per active provider (combining static registry models + recorded usage)
   const providersWithModels = useMemo(() => {
     const usedModelMap = {};
@@ -642,7 +634,15 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
       return { ...p, models };
     });
-  }, [topologyProviders, stats?.byModel]);
+  }, [topologyProviders, stats]);
+
+  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+
+  const spinner = (
+    <div className="flex items-center justify-center py-12 text-text-muted">
+      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
+    </div>
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
