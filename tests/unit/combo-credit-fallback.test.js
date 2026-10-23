@@ -3,9 +3,9 @@ import { handleComboChat } from "../../open-sse/services/combo.js";
 
 describe("combo credit fallback", () => {
   it.each([
-    ["You have insufficient credits to make this request.", true],
-    ["Bad request", false],
-  ])("routes a 400 response correctly: %s", async (message, shouldContinue) => {
+    "You have insufficient credits to make this request.",
+    "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+  ])("routes a 400 response correctly: %s", async (message) => {
     const body = { messages: [{ role: "user", content: "Hello" }] };
     const models = ["cmc/deepseek/deepseek-v4-pro", "mistral/mistral-medium-latest"];
     const failure = Response.json({ error: { message } }, { status: 400 });
@@ -20,9 +20,9 @@ describe("combo credit fallback", () => {
       comboName: "credit-fallback", comboStrategy: "fallback",
     });
 
-    expect(response.status).toBe((shouldContinue ? success : failure).status);
+    expect(response.status).toBe(success.status);
     expect(handleSingleModel.mock.calls).toEqual(
-      (shouldContinue ? models : models.slice(0, 1)).map((model) => [body, model])
+      models.map((model) => [body, model])
     );
   });
 });

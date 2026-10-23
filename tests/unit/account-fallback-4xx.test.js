@@ -61,6 +61,8 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     "You have insufficient credits to make this request. Please purchase more credits to continue using the service.",
     "INSUFFICIENT CREDITS",
     "Insufficient credit balance",
+    "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+    "CREDIT BALANCE IS TOO LOW",
   ])("falls back with backoff for a 400 credit error: %s", (message) => {
     expect(checkFallbackError(400, message)).toEqual({
       shouldFallback: true, cooldownMs: 2000, newBackoffLevel: 1,
@@ -80,7 +82,6 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     const result = checkFallbackError(400, "Unsupported model mimo-auto");
     expect(result).toEqual({ shouldFallback: false, cooldownMs: 0, advanceChain: true, requestScoped: true });
   });
-
   it("keeps the transient cooldown for unmatched server errors", () => {
     const result = checkFallbackError(503, "upstream exploded");
 

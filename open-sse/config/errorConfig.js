@@ -208,6 +208,7 @@ export const ERROR_RULES = [
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
   { text: "insufficient credit",      backoff: true },
+  { text: "credit balance is too low", backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
   // Model-level serving restriction (e.g. Meta's Geographic Use Policy): the key
