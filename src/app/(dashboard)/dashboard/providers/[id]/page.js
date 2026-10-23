@@ -118,6 +118,9 @@ export default function ProviderDetailPage() {
   const [importingNousModels, setImportingNousModels] = useState(false);
   const [showImportModels, setShowImportModels] = useState(false);
   const [importSupportedFor, setImportSupportedFor] = useState(null);
+  const [codexFastMode, setCodexFastMode] = useState(false);
+  const [savingCodexFastMode, setSavingCodexFastMode] = useState(false);
+  const [codexFastModeError, setCodexFastModeError] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -396,6 +399,7 @@ export default function ProviderDetailPage() {
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {}, schedules: apCfg.schedules || {} });
+      setCodexFastMode(settingsData.codexFastMode === true);
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -583,6 +587,29 @@ export default function ProviderDetailPage() {
       connections: { ...autoPing.connections, [connectionId]: reactive },
       schedules: { ...autoPing.schedules, [connectionId]: schedule },
     });
+  };
+
+  const handleCodexFastModeChange = async (enabled) => {
+    setCodexFastMode(enabled);
+    setSavingCodexFastMode(true);
+    setCodexFastModeError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codexFastMode: enabled }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update fast mode setting");
+      }
+    } catch (error) {
+      console.log("Error saving codex fast mode setting:", error);
+      setCodexFastMode(!enabled);
+      setCodexFastModeError(error.message || "Failed to update fast mode setting");
+    } finally {
+      setSavingCodexFastMode(false);
+    }
   };
 
   useEffect(() => {

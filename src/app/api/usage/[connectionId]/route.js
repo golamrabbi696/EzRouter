@@ -175,7 +175,7 @@ export async function GET(request, { params }) {
     // generic apikey providers persist "apikey" — accept both spellings here.
     const normalizedAuth = String(connection.authType || "").toLowerCase().replace(/[-_]/g, "");
     const isOAuth = normalizedAuth === "oauth" || normalizedAuth === "accesstoken";
-      (normalizedAuth === "apikey") && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
+    const isApikeyEligible = (normalizedAuth === "apikey") && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
     const isCustomQuota = customQuotaNode?.quotaEnabled === true;
 
     if (!isOAuth && !isApikeyEligible && !isCustomQuota) {

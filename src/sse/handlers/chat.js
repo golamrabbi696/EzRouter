@@ -98,9 +98,14 @@ function comboStrategyFor(settings, comboName, comboConfig = null) {
 }
 
 export function applyCodexFastMode(body, provider, model, settings, credentials = null) {
+  const isFastEnabled =
+    settings?.codexFastMode === true ||
+    credentials?.providerSpecificData?.codexFastMode === true ||
+    credentials?.providerSpecificData?.fastMode === true;
+
   if (
     provider !== "codex" ||
-    (settings?.codexFastMode !== true && credentials?.providerSpecificData?.codexFastMode !== true) ||
+    !isFastEnabled ||
     body.service_tier
   ) return body;
 

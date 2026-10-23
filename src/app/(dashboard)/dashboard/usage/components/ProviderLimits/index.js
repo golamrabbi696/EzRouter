@@ -517,7 +517,12 @@ export default function ProviderLimits() {
       const response = await fetch(`/api/providers/${connection.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerSpecificData: { fastMode: enabled } }),
+        body: JSON.stringify({
+          providerSpecificData: {
+            fastMode: enabled,
+            ...(connection.provider === "codex" ? { codexFastMode: enabled } : {}),
+          },
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Failed to save fast mode");
@@ -527,6 +532,7 @@ export default function ProviderLimits() {
         providerSpecificData: {
           ...item.providerSpecificData,
           fastMode: enabled,
+          ...(connection.provider === "codex" ? { codexFastMode: enabled } : {}),
         },
       } : item));
     } catch (error) {
@@ -1450,20 +1456,23 @@ export default function ProviderLimits() {
                     {isCodex && (
                       <Tooltip
                         text={
-                          conn.providerSpecificData?.codexFastMode === true
+                          (conn.providerSpecificData?.codexFastMode === true || conn.providerSpecificData?.fastMode === true)
                             ? "Fast mode ON — Codex requests on this account use the priority tier. Click to disable."
                             : "Force fast mode — Codex requests on this account use the priority tier."
                         }
                       >
                         <button
                           type="button"
-                          onClick={() => handleToggleFastMode(conn)}
+                          onClick={() => {
+                            const current = conn.providerSpecificData?.codexFastMode === true || conn.providerSpecificData?.fastMode === true;
+                            handleToggleFastMode(conn, !current);
+                          }}
                           disabled={rowBusy}
                           aria-label="Toggle fast mode"
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${conn.providerSpecificData?.codexFastMode === true ? "text-primary" : "text-text-muted"}`}
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${(conn.providerSpecificData?.codexFastMode === true || conn.providerSpecificData?.fastMode === true) ? "text-primary" : "text-text-muted"}`}
                         >
-                          <span className={`material-symbols-outlined text-[18px] ${fastModeId === conn.id ? "animate-spin" : ""}`}>
-                            {fastModeId === conn.id ? "progress_activity" : "speed"}
+                          <span className={`material-symbols-outlined text-[18px] ${isUpdatingFastMode ? "animate-spin" : ""}`}>
+                            {isUpdatingFastMode ? "progress_activity" : "speed"}
                           </span>
                         </button>
                       </Tooltip>

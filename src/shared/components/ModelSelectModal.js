@@ -11,7 +11,16 @@ import { modelSupportsCap } from "@/shared/utils/modelCapMatch";
 import { selectConnectableProviders, selectNoAuthProviderIds } from "@/shared/utils/modelSelectorProviders";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
-import { OAUTH_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import {
+  OAUTH_PROVIDERS,
+  FREE_PROVIDERS,
+  FREE_TIER_PROVIDERS,
+  APIKEY_PROVIDERS,
+  AI_PROVIDERS,
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+  getProviderAlias,
+} from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
