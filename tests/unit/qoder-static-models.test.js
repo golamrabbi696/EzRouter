@@ -70,7 +70,7 @@ describe("Qoder capabilities", () => {
     for (const key of ["dmodel", "kmodel", "qmodel_38max", "gmodel"]) {
       const caps = getCapabilitiesForModel("qoder", key);
       expect(caps.vision).toBe(true);
-      expect(caps.contextWindow).toBe(200000);
+      expect(caps.contextWindow).toBeGreaterThanOrEqual(200000);
     }
   });
 

@@ -434,6 +434,8 @@ export async function buildModelsList(kindFilter, options = {}) {
   } catch (e) {
     console.log("Could not fetch settings, using defaults");
   }
+  const comboStrategies = settings?.comboStrategies || {};
+
   if (settings.exposeComboOnly) {
     const seenModelIds = new Set();
     const comboOnlyModels = [];
@@ -445,15 +447,6 @@ export async function buildModelsList(kindFilter, options = {}) {
       comboOnlyModels.push(entry);
     }
     return comboOnlyModels;
-  }
-
-  // Per-combo presentation settings live in settings.comboStrategies[name] next to
-  // fallbackStrategy/judgeModel. A combo's published context window is one of them.
-  let comboStrategies = {};
-  try {
-    comboStrategies = (await getSettings())?.comboStrategies || {};
-  } catch (e) {
-    console.log("Could not fetch combo strategies");
   }
 
   let customModels = [];

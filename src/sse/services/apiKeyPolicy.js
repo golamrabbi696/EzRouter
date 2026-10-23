@@ -22,9 +22,10 @@ function cappedBody(body, outputTokens) {
 
 export async function authorizeApiKeyRequest(request, { model, body, reserveTokens = false } = {}) {
   const settings = await getSettings();
-  const { apiKey, valid: apiKeyValid } = typeof resolveClientApiKey === "function"
+  const resolved = typeof resolveClientApiKey === "function"
     ? await resolveClientApiKey(request)
     : { apiKey: extractApiKey(request), valid: true };
+  const { apiKey, valid: apiKeyValid } = resolved || {};
   if (!apiKey) {
     if (settings.requireApiKey) return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key") };
     return { apiKey: null, body };

@@ -276,7 +276,6 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   } else {
     if (typeof arg6 === "number") keepaliveMs = arg6;
     if (typeof arg7 === "number") ttftTimeoutMs = arg7;
-    if (arg8) pingBytes = arg8;
     if (typeof arg9 === "number") pingIntervalMs = arg9;
   }
 

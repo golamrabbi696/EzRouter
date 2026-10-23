@@ -155,6 +155,11 @@ function openAIThinkingDisplay(body) {
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
 function resolveFormat(targetFormat, model, provider) {
+  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) {
+    const caps = getCapabilitiesForModel(provider, model);
+    if (caps.thinkingFormat === "step") return "step";
+    return "openai";
+  }
   if (targetFormat === "commandcode") return "commandcode";
   // Command Code's provider surface (the registry default) takes
   // reasoning_effort top-level, the same as any OpenAI body; only the CLI

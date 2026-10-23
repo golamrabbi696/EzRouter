@@ -103,7 +103,7 @@ describe("Codex image Responses model", () => {
     expect(result.success).toBe(true);
     expect((await result.response.json()).data).toEqual([{ b64_json: "image" }]);
     const body = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(body.model).toBe("gpt-5.6-luna");
+    expect(body.model).toBe("gpt-5.6-terra");
     expect(body.tools[0]).toMatchObject({ model, action: "generate" });
   });
 
@@ -118,7 +118,7 @@ describe("Codex image Responses model", () => {
 
   it("uses the default for a whitespace-only setting", () => {
     vi.stubEnv("CODEX_IMAGE_RESPONSES_MODEL", "  ");
-    expect(codexAdapter.buildBody("gpt-image-2.5", { prompt: "Draw" }).model).toBe("gpt-5.6-luna");
+    expect(codexAdapter.buildBody("gpt-image-2.5", { prompt: "Draw" }).model).toBe("gpt-5.6-terra");
   });
 
   it("keeps explicit Responses image aliases independent of the setting", () => {
@@ -129,7 +129,7 @@ describe("Codex image Responses model", () => {
   });
 
   it("tries another account without locking the image model for a main-model rejection", async () => {
-    fetch.mockResolvedValueOnce(unsupportedModel("gpt-5.6-luna"));
+    fetch.mockResolvedValueOnce(unsupportedModel("gpt-5.6-terra"));
     const response = await handleImageGeneration(imageRequest());
     expect(response.status).toBe(200);
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -138,10 +138,10 @@ describe("Codex image Responses model", () => {
   });
 
   it("returns the upstream error after exhausting accounts without persisting an image cooldown", async () => {
-    fetch.mockImplementation(async () => unsupportedModel("gpt-5.6-luna"));
+    fetch.mockImplementation(async () => unsupportedModel("gpt-5.6-terra"));
     const response = await handleImageGeneration(imageRequest());
     expect(response.status).toBe(400);
-    expect(await response.text()).toContain("gpt-5.6-luna");
+    expect(await response.text()).toContain("gpt-5.6-terra");
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(3);
     expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();

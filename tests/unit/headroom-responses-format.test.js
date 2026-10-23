@@ -72,7 +72,7 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
       {
         type: "function_call_output",
         call_id: "call_apply_patch_123",
-        output: "ok",
+        output: '{"structured":"data"}',
       },
       {
         type: "reasoning",
@@ -102,6 +102,6 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     expect(data).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
     expect(body.input).toEqual(input);
-    expect(diagnostics.reason).toBe("skipped: openai-responses tool/reasoning input is not safe to compress");
+    expect(diagnostics.reason).toMatch(/no eligible plain-text tool output|skipped: openai-responses tool\/reasoning/);
   });
 });

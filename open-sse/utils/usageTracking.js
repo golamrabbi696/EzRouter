@@ -443,7 +443,12 @@ export function mergeUsage(prev, next) {
   // not hold — the request-body estimate is a chars/4 guess that can be orders
   // of magnitude off — so the authoritative side wins outright.
   if (Boolean(prev.estimated) !== Boolean(next.estimated)) {
-    return prev.estimated ? next : prev;
+    const real = prev.estimated ? next : prev;
+    const est = prev.estimated ? prev : next;
+    if ((typeof real.prompt_tokens !== "number" || real.prompt_tokens === 0) && typeof est.prompt_tokens === "number" && est.prompt_tokens > 0) {
+      return { ...real, prompt_tokens: est.prompt_tokens, total_tokens: (real.completion_tokens || 0) + est.prompt_tokens };
+    }
+    return real;
   }
   const merged = { ...prev };
   for (const [k, v] of Object.entries(next)) {

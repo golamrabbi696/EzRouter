@@ -528,6 +528,9 @@ export const PROVIDER_CAPABILITIES = {
   // listed: `lite` rejects image parts upstream (HTTP 400) and auto/efficient
   // resolve to a variable target, so all three keep the text-only default.
   "qoder": {
+    "auto":           { contextWindow: 200000, maxOutput: 32768 },
+    "efficient":      { contextWindow: 200000, maxOutput: 32768 },
+    "lite":           { contextWindow: 200000, maxOutput: 32768 },
     "ultimate":       { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Opus 5
     "performance":    { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Sonnet 5
     "dmodel":         { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Pro
@@ -541,6 +544,8 @@ export const PROVIDER_CAPABILITIES = {
     "qmodel":         { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Plus
     "qfmodel":        { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.8-Flash
     "qmodel_38max":   { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Qwen3.8-Max
+    "smodel":         { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
+    "cmodel":         { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
   },
   // Nous Research Portal free-tier models (probed live against https://inference-api.nousresearch.com/v1/models).
   "nous": {
@@ -553,37 +558,6 @@ export const PROVIDER_CAPABILITIES = {
     "poolside/laguna-xs-2.1:free":      { tools: true, reasoning: true, thinkingFormat: "nous", contextWindow: 262144, maxOutput: 32768 },
     "stealth/missingno":                { tools: true, reasoning: true, thinkingFormat: "nous", contextWindow: 262144, maxOutput: 131072 },
   },
-};
-
-// Qoder model capability table. The model ids are opaque (`dmodel`, `kmodel`,
-// `qmodel_38max`), so the name heuristics in PATTERN_CAPABILITIES match none of
-// them — without this table every Qoder model is reported text-only and an
-// image sent by a client is replaced by a placeholder before it ever reaches
-// the model. Context/output limits mirror what /algo/api/v2/model/list reports.
-PROVIDER_CAPABILITIES["qoder"] = {
-  // Tier aliases resolve to a variable target upstream; keep them text-only and
-  // on the default window rather than guessing.
-  "auto":         { contextWindow: 200000, maxOutput: 32768 },
-  "efficient":    { contextWindow: 200000, maxOutput: 32768 },
-  "lite":         { contextWindow: 200000, maxOutput: 32768 },
-  // Concrete ids read images back, so they are vision-capable.
-  "ultimate":     { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "performance":  { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "qmodel_38max": { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "qmodel_latest":{ vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "qmodel":       { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "qfmodel":      { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "kmodel_latest":{ vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "kmodel":       { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "gmodel":       { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "gfmodel":      { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "dmodel":       { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "dfmodel":      { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "mmodel":       { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  // Frontier reasoning pair; absent from many per-account catalogs, so they are
-  // routed through a static model_config (see shared/qoder/constants.js).
-  "smodel":       { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
-  "cmodel":       { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
 };
 
 // Qoder CN serves the identical model catalog from the CN gateway, so it shares
