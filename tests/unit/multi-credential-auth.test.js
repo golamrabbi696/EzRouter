@@ -30,6 +30,7 @@ vi.mock("@/lib/auth/dashboardSession", () => ({ verifyDashboardAuthToken: async 
 vi.mock("@/lib/localDb", () => ({
   getSettings: async () => fx.settings,
   validateApiKey: async (k) => fx.keys[k]?.isActive === true,
+  getApiKeyByValue: async (k) => fx.keys[k] || null,
   getModelAliases: async () => ({}),
   getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
   getProviderNodes: async () => [],
