@@ -579,6 +579,42 @@ export function GenericExampleCard({ providerId, kind }) {
                 onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               />
+            ) : f.type === "image" ? (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={extraValues[f.key] ?? ""}
+                  placeholder="https://… or click Upload"
+                  onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                />
+                <label className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-border rounded-lg bg-background hover:bg-accent cursor-pointer transition-colors">
+                  <span className="material-symbols-outlined text-[16px]">upload</span>
+                  Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => setExtraValues((s) => ({ ...s, [f.key]: String(reader.result || "") }));
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+              </div>
+            ) : f.type === "boolean" ? (
+              <label className="inline-flex items-center gap-2 text-sm text-text-main">
+                <input
+                  type="checkbox"
+                  checked={extraValues[f.key] === true}
+                  onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.checked }))}
+                  className="size-4 accent-primary"
+                />
+                {extraValues[f.key] ? "Enabled" : "Disabled"}
+              </label>
             ) : (
               <input
                 type="number"
