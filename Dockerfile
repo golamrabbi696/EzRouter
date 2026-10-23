@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG NODE_IMAGE=node:22-alpine
+ARG NODE_IMAGE=node:22.23.4-alpine
 ARG BUN_IMAGE=oven/bun:1.4-alpine
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
