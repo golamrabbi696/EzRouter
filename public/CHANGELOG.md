@@ -1,3 +1,29 @@
+# v0.6.25 (2026-10-23)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #5010 - #5127)
+- **Security Audit & Invariant Enforcement**:
+  - **Preserved Default Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`) across all configurations, Next.js server actions, CLI bundles, and tests.
+  - **Docker Security Patch (`#5123`)**: Pinned Node 22.23.4 on Alpine 3.22 in Dockerfile to remediate critical October 2026 Node/Alpine CVEs.
+  - **Database Null-Byte Protection**: Added null-byte parameter sanitization (`src/lib/db/helpers/nullBytes.js`) to prevent CWE-158 string truncation attacks in SQLite queries.
+  - **Mass-Assignment Guard Alignment**: Balanced CWE-915 protection on `/api/settings` to secure credentials while preserving configurable OIDC, SAML, and outbound proxy settings.
+  - **Proxy TLS SNI Hardening**: Correctly set servername on TLS connections during HTTPS proxying.
+- **Combo Engine & Failover**:
+  - **Empty Streaming Failover (`#5097`)**: Detects upstream 200 OK responses with empty or stalled SSE bodies, immediately triggering failover to the next combo candidate instead of failing the client request.
+  - **Fastest Combo Strategy (`#5083`)**: Opt-in `fastest` strategy tracking live tokens/second output speed per model/provider to route traffic to the highest-throughput upstream.
+  - **Request-Scoped Fallback & Transient Gateway Handling (`#5104`, `#5115`)**: Improved transient 502/503/504 gateway error retry without prematurely marking long-term accounts unavailable.
+- **Provider & Protocol Updates**:
+  - **SenseNova Provider (`#5035`)**: Added SenseNova provider integration (`sensenova.cn`) with full streaming and API key auth.
+  - **Codex Speech-to-Text (STT) (`#5026`, `#5030`, `#5047`)**: Added `/v1/audio/transcriptions` support via Codex STT pipeline with automatic token refresh and dashboard UI playback.
+  - **Qoder Protocol Queue (`#5056`, `#5072`)**: Added client-side queuing to prevent 429 rate limit errors on Qoder endpoints, and updated model capability tables (`smodel`, `cmodel`, `dmodel`).
+  - **GitHub Copilot Token Preflight (`#5067`)**: Added preflight token estimation via Copilot `/messages/count_tokens`.
+  - **OpenCode Free Tier & MiMo Reasoning (`#5051`, `#5062`)**: Restored fingerprint headers and added support for Xiaomi MiMo reasoning models.
+- **Token Saver & RTK**:
+  - **User-Authored Custom System Prompt (`#5095`)**: Added customizable system prompt injection independent of Ponytail/Caveman savers across OpenAI, Claude, Gemini, and Responses formats.
+  - **Headroom & Tool Output Preservation (`#5048`, `#5075`)**: Preserved structured tool call IDs and output formats during token compression.
+- **Architectural Integrity & Rejections**:
+  - **REJECTED PR #5122**: Strictly rejected the experimental Go rewrite to maintain EzRouter's unified, high-performance Node/Next.js architecture with full plugin, MCP, and custom provider support.
+  - **SKIPPED Redundant Upstream CI**: Excluded upstream Docker/publish scripts that leak port 20128.
+
 # v0.6.24 (2026-10-18)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #4889 - #5010)
