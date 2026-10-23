@@ -40,6 +40,12 @@ export const SEARCH_LIST_TOTAL_DIR_MAX = 20;
 export const SMART_TRUNCATE_MAX_LINES = 300;   // line budget (engine truncate MAX_LINES)
 export const SMART_TRUNCATE_MIN_LINES = 300;   // autodetect gate (matches the line budget)
 
+// Test-runner filters (tsc / vitest / phpunit)
+export const TSC_MESSAGE_MAX_CHARS = 120;       // per-diagnostic message cap
+export const VITEST_MAX_FAILURES = 5;           // compact view failure cap
+export const PHPUNIT_MAX_FAILURES = 10;         // failure blocks shown
+export const PHPUNIT_MAX_DETAIL_LINES = 2;      // detail lines kept per failure
+
 // readNumbered (files with "  N|content" lines, e.g. Cursor read_file)
 export const READ_NUMBERED_MIN_HIT_RATIO = 0.7;
 export const READ_NUMBERED_HEAD = 120;          // lines kept from top
@@ -59,5 +65,8 @@ export const FILTERS = {
   SMART_TRUNCATE: "smart-truncate",
   READ_NUMBERED: "read-numbered",
   SEARCH_LIST: "search-list",
-  BUILD_OUTPUT: "build-output"
+  BUILD_OUTPUT: "build-output",
+  TSC: "tsc",
+  VITEST: "vitest",
+  PHPUNIT: "phpunit"
 };

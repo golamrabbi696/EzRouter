@@ -1,6 +1,7 @@
-// Port of auto_detect_filter (rtk/src/cmds/system/pipe_cmd.rs:132-188) + JS extras
-// Detection order: git-log → git-diff → git-status → build-output → grep → find → tree → ls → search-list
-//                  → read-numbered → dedup-log → smart-truncate → null
+// Port of auto_detect_filter (rtk/src/cmds/system/pipe_cmd.rs) + JS extras
+// Detection order: git-log → git-diff → git-status → tsc → vitest → phpunit → build-output
+//                  → grep → find → tree → ls → search-list → read-numbered → dedup-log
+//                  → smart-truncate → null
 import { DETECT_WINDOW, READ_NUMBERED_MIN_HIT_RATIO, READ_NUMBERED_MIN_LINES, SMART_TRUNCATE_MIN_LINES } from "./constants.js";
 import { gitDiff } from "./filters/gitDiff.js";
 import { gitStatus } from "./filters/gitStatus.js";
@@ -14,6 +15,9 @@ import { tree } from "./filters/tree.js";
 import { smartTruncate } from "./filters/smartTruncate.js";
 import { readNumbered, READ_NUMBERED_LINE_RE } from "./filters/readNumbered.js";
 import { searchList, SEARCH_LIST_HEADER_RE } from "./filters/searchList.js";
+import { tsc } from "./filters/tsc.js";
+import { vitest } from "./filters/vitest.js";
+import { phpunit } from "./filters/phpunit.js";
 
 // Unified (`diff --git`) and combined (`diff --cc` / `diff --combined`) headers
 const RE_GIT_DIFF = /^diff --(git|cc|combined) /m;
@@ -23,6 +27,15 @@ const RE_GIT_STATUS = /^On branch |^nothing to commit|^Changes (not |to be )|^Un
 const RE_GIT_LOG = /^[*|/\\ ]*commit [0-9a-f]{7,40}$/m;
 const RE_PORCELAIN = /^[ MADRCU?!][ MADRCU?!] \S/m;
 const RE_BUILD_OUTPUT = /^(npm (warn|error|ERR!)|yarn (warn|error)|\s*Compiling\s+\S+|\s*Downloading\s+\S+|added \d+ package|\[ERROR\]|BUILD (SUCCESS|FAILED)|\s*Finished\s+|Successfully (installed|built)|ERROR:)/im;
+// Test runners: tsc diagnostics, vitest/jest JSON or summary line, PHPUnit banner/counts
+// Leading `-`/`+` is excluded so a diff body excerpt is not read as diagnostics.
+const RE_TSC =
+  /^(?![-+])(.+?)\(\d+,\d+\):\s+(error|warning)\s+TS\d+:|^(?![-+])(.+?):\d+:\d+\s+-\s+(error|warning)\s+TS\d+:|^(error|warning)\s+TS\d+:/m;
+const RE_VITEST_JSON = /"(numTotalTests|testResults)"\s*:/;
+const RE_VITEST_TEXT = /^\s*Tests\s+(?:\d+\s+failed\s+\|\s+)?\d+\s+passed/m;
+const RE_PHPUNIT_BANNER = /^PHPUnit \d/m;
+const RE_PHPUNIT_COUNTS = /^Tests:\s+\d+,\s+Assertions:\s+\d+/m;
+const RE_PHPUNIT_OK = /^OK \(\d+ tests?, \d+ assertions?\)/m;
 const RE_TREE_GLYPH = /[├└]──|│  /;
 const RE_LS_ROW = /^[-dlbcps][rwx-]{9}/m;
 const RE_LS_TOTAL = /^total \d+$/m;
@@ -34,6 +47,14 @@ export function autoDetectFilter(text) {
   if (RE_GIT_LOG.test(head)) return gitLog;
   if (RE_GIT_DIFF.test(head) || RE_GIT_DIFF_HUNK.test(head) || RE_GIT_DIFF_HUNK_COMBINED.test(head)) return gitDiff;
   if (RE_GIT_STATUS.test(head)) return gitStatus;
+
+  // Test-runner banners before build-output: their failure text can contain
+  // "ERROR:", and their summaries are far more specific than the build rules.
+  if (RE_TSC.test(head)) return tsc;
+  if (RE_VITEST_JSON.test(head) || RE_VITEST_TEXT.test(head)) return vitest;
+  if (RE_PHPUNIT_BANNER.test(head) || RE_PHPUNIT_COUNTS.test(head) || RE_PHPUNIT_OK.test(head)) {
+    return phpunit;
+  }
 
   // Build output BEFORE porcelain check: prevents cargo "Compiling" misdetection as git-status
   if (RE_BUILD_OUTPUT.test(head)) return buildOutput;
