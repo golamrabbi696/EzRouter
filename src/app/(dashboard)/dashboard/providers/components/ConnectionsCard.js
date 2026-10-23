@@ -9,6 +9,13 @@ import { Card, Badge, Button, Input, Modal, Select, Toggle, EditConnectionModal,
 import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 import { getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 
+// How requests pick among this provider's accounts (mirrors the combo strategy select).
+const PROVIDER_STRATEGY_OPTIONS = [
+  { value: "fill-first", label: "Fallback — try in order" },
+  { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "cache-affinity", label: "Cache Affinity — prompt cache sticky" },
+];
+
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
   const [remaining, setRemaining] = useState("");
@@ -439,6 +446,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
+  const [globalStrategy, setGlobalStrategy] = useState("fill-first");
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
 
@@ -456,6 +464,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       if (proxyRes.ok) setProxyPools(proxyData.proxyPools || []);
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
+      setGlobalStrategy(settingsData.fallbackStrategy === "round-robin" ? "round-robin" : "fill-first");
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
     } catch (e) { console.log("ConnectionsCard fetch error:", e); }
     finally { setLoading(false); }
@@ -553,17 +562,24 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-text-muted font-medium">Round Robin</span>
-            <Toggle
-              checked={providerStrategy === "round-robin"}
-              onChange={(enabled) => {
-                const strategy = enabled ? "round-robin" : null;
-                setProviderStrategy(strategy);
-                if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
-                saveStrategy(strategy, enabled ? (providerStickyLimit || "1") : providerStickyLimit);
-              }}
-            />
-            {providerStrategy === "round-robin" && (
+            <span className="text-xs text-text-muted font-medium">Strategy</span>
+            <div className="w-[230px]">
+              <Select
+                options={PROVIDER_STRATEGY_OPTIONS}
+                value={providerStrategy || globalStrategy}
+                onChange={(e) => {
+                  // Picking the global strategy clears the override, so the provider keeps following it.
+                  const value = e.target.value;
+                  const strategy = value === globalStrategy ? null : value;
+                  const roundRobin = value === "round-robin";
+                  setProviderStrategy(strategy);
+                  if (roundRobin && !providerStickyLimit) setProviderStickyLimit("1");
+                  saveStrategy(strategy, roundRobin ? (providerStickyLimit || "1") : providerStickyLimit);
+                }}
+                selectClassName="py-1.5 text-xs"
+              />
+            </div>
+            {(providerStrategy || globalStrategy) === "round-robin" && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-text-muted">Sticky:</span>
                 <input
