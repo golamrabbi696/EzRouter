@@ -1,4 +1,4 @@
-// Codex (ChatGPT Plus/Pro) image generation via Responses API + SSE
+// Codex (paid ChatGPT plans: Go/Plus/Pro/...) image generation via Responses API + SSE
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
@@ -18,7 +18,6 @@ const CODEX_VERSION = CODEX_CLI_VERSION;
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";
-
 const CODEX_TOOL_IMAGE_MODELS = new Set([
   "gpt-image-1.5",
   "gpt-image-2",
@@ -27,6 +26,30 @@ const CODEX_TOOL_IMAGE_MODELS = new Set([
   "gpt-image-2.5-sunburst",
 ]);
 
+function decodeOpenAIAuthClaims(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = (4 - (b64.length % 4)) % 4;
+    const payload = JSON.parse(Buffer.from(b64 + "=".repeat(pad), "base64").toString("utf8"));
+    return payload?.["https://api.openai.com/auth"] || null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeAccountId(idToken) {
+  return decodeOpenAIAuthClaims(idToken)?.chatgpt_account_id || null;
+}
+
+// Token claims first: the stored chatgptPlanType is only set at OAuth/import time and goes stale on plan changes.
+function resolveChatgptPlanType(creds) {
+  return decodeOpenAIAuthClaims(creds?.accessToken)?.chatgpt_plan_type
+    || decodeOpenAIAuthClaims(creds?.idToken)?.chatgpt_plan_type
+    || creds?.providerSpecificData?.chatgptPlanType
+    || null;
+}
 function stripImageSuffix(model) {
   return model.endsWith(CODEX_MODEL_SUFFIX) ? model.slice(0, -CODEX_MODEL_SUFFIX.length) : model;
 }
@@ -234,6 +257,10 @@ function buildSseResponse(providerResponse, log, onSuccess, onUsage) {
 
 export default {
   stream: true,
+  // ChatGPT Free accounts have the image_generation tool stripped server-side
+  // (upstream returns 400 "Tool choice 'image_generation' must be specified with 'tools' parameter").
+  // Unknown plan is allowed so accounts without plan claims keep working.
+  canUseCredentials: (creds) => resolveChatgptPlanType(creds) !== "free",
   buildUrl: () => CODEX_RESPONSES_URL,
   buildHeaders: (creds) => {
     const accountId = resolveCodexAccountId(creds?.providerSpecificData, creds?.idToken);

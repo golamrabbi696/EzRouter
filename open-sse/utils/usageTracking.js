@@ -249,17 +249,15 @@ export function canonicalizeUsage(usage) {
   // Guard on the absence of `cached_tokens`: our own canonical output always
   // sets that key (even to 0), so re-running canonicalizeUsage on an already-
   // folded result takes the passthrough branch instead of folding again.
-  // Also skip when prompt_tokens already equals input_tokens + cache: the
-  // claude-to-openai stream translator stores that folded shape in state.usage
-  // while keeping the Claude cache field names.
   const cacheRead = num(usage.cache_read_input_tokens);
-  const alreadyFolded = typeof usage.input_tokens === "number" &&
-    usage.prompt_tokens !== undefined &&
-    prompt === num(usage.input_tokens) + cacheRead + cacheCreation;
   if (usage.cached_tokens === undefined &&
       (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined)) {
     cached = cacheRead;
-    if (!alreadyFolded) prompt = prompt + cached + cacheCreation;
+    // Fold onto the cache-exclusive input_tokens when present. Translated
+    // usage (claude-to-openai) carries prompt_tokens ALREADY folded plus the
+    // separate cache fields; folding onto prompt_tokens counted cache twice.
+    const base = usage.input_tokens !== undefined ? num(usage.input_tokens) : prompt;
+    prompt = base + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
     // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
@@ -286,6 +284,9 @@ export function canonicalizeUsage(usage) {
   copyNonnegative("cost_in_usd");
   copyNonnegative("cost_in_usd_ticks");
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  // Carry the marker through: an estimated count must not be stored as if it
+  // had been measured by the provider.
+  if (usage.estimated) result.estimated = true;
 
   // Billing-authoritative credit, when the upstream reports it (CodeBuddy /
   // WorkBuddy put `credit` in the final usage chunk). Zero is meaningful here —
@@ -436,8 +437,19 @@ export function extractUsage(chunk) {
 export function mergeUsage(prev, next) {
   if (!prev) return next || null;
   if (!next) return prev;
-  if (prev.estimated && !next.estimated && hasRealInput(next)) return { ...next };
-  if (next.estimated && !prev.estimated && hasValidUsage(prev)) return prev;
+  // An estimate must never outrank a provider-reported value. The max-merge
+  // below exists for Anthropic's split usage events, where "larger" means
+  // "more complete". Between an estimate and a real value that reasoning does
+  // not hold — the request-body estimate is a chars/4 guess that can be orders
+  // of magnitude off — so the authoritative side wins outright.
+  if (Boolean(prev.estimated) !== Boolean(next.estimated)) {
+    const real = prev.estimated ? next : prev;
+    const est = prev.estimated ? prev : next;
+    if ((typeof real.prompt_tokens !== "number" || real.prompt_tokens === 0) && typeof est.prompt_tokens === "number" && est.prompt_tokens > 0) {
+      return { ...real, prompt_tokens: est.prompt_tokens, total_tokens: (real.completion_tokens || 0) + est.prompt_tokens };
+    }
+    return real;
+  }
   const merged = { ...prev };
   for (const [k, v] of Object.entries(next)) {
     // typeof NaN === "number" — guard with Number.isFinite so one malformed

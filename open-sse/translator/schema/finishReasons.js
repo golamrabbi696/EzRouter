@@ -22,12 +22,17 @@ export const CLAUDE_STOP = {
   REFUSAL: "refusal",
 };
 
-// OpenAI Responses API incomplete_details.reason values. The Responses API has no
-// finish reason: a cut-short turn ends with response.incomplete carrying one of these.
-export const RESPONSES_INCOMPLETE = {
+// OpenAI Responses API terminal statuses and response.incomplete_details.reason values.
+export const RESPONSES_STATUS = {
+  COMPLETED: "completed",
+  INCOMPLETE: "incomplete",
+  FAILED: "failed",
+};
+export const RESPONSES_INCOMPLETE_REASON = {
   MAX_OUTPUT_TOKENS: "max_output_tokens",
   CONTENT_FILTER: "content_filter",
 };
+export const RESPONSES_INCOMPLETE = RESPONSES_INCOMPLETE_REASON;
 
 // Gemini finishReason values.
 export const GEMINI_FINISH = {
@@ -72,3 +77,8 @@ export const GEMINI_CONTENT_FILTER_FINISH_REASONS = new Set([
   GEMINI_FINISH.IMAGE_SAFETY,
   GEMINI_FINISH.PROHIBITED_CONTENT,
 ]);
+
+// Client-format (post-translation) finish_reasons whose empty output is LEGITIMATE and would
+// recur on every candidate — so an empty stream ending in one of these must NOT be retried.
+// The empty-content failover retries every other content-less finish by default (fail-open).
+export const NO_RETRY_EMPTY_FINISH = new Set([OPENAI_FINISH.CONTENT_FILTER]);

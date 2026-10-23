@@ -439,7 +439,7 @@ describe("App-layer custom transport resolution (stt.js)", () => {
       vi.doMock(AUTH, () => ({
         extractApiKey: () => null,
         isValidApiKey: async () => true,
-        resolveClientApiKey: () => null,
+        resolveClientApiKey: async () => ({ apiKey: null, valid: true }),
         getProviderCredentials: async () => ({
           apiKey: "AIza-TEST", connectionId: "c1", connectionName: "t", providerSpecificData: {},
         }),

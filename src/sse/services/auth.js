@@ -10,6 +10,7 @@ import { evaluateQuota } from "./quotaGuard.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import { pickByCacheAffinity } from "./cacheAffinity.js";
 import * as log from "../utils/logger.js";
+import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -686,6 +687,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
 }
 
 /**
+/**
  * Clear project-resolution error state on connection when a valid project ID is set
  */
 export async function clearProjectResolutionError(connectionId) {
@@ -706,26 +708,15 @@ export function extractApiKey(request) {
   return extractApiKeyCandidates(request)[0] || null;
 }
 
-/**
- * All credentials the client presented, in precedence order.
- * Anthropic clients (e.g. Claude Code with an active claude.ai session or
- * ANTHROPIC_AUTH_TOKEN set) can send an unrelated Authorization header
- * ALONGSIDE a valid x-api-key — api.anthropic.com still authenticates on
- * x-api-key, so every presented credential must be checked.
- */
-export function extractApiKeyCandidates(request) {
-  const candidates = [];
-  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
-  push(request.headers.get("x-api-key"));
-  // Check Gemini CLI header (native /v1beta path sends the client key here)
-  push(request.headers.get("x-goog-api-key"));
-  return candidates;
-}
+// Every presented credential, read by the shared helper that the middleware
+// and the key-access engine also use.
+export { extractApiKeyCandidates };
 
 /**
  * Resolve the client's API key against the apiKeys table.
+ * Anthropic clients (e.g. Claude Code with an active claude.ai session or
+ * ANTHROPIC_AUTH_TOKEN set) can send an unrelated Authorization header
+ * ALONGSIDE a valid x-api-key, so every presented credential is checked.
  * Returns { apiKey, valid }: when valid, apiKey is the credential that
  * actually validated (use it for usage attribution); otherwise apiKey is the
  * first presented credential (or null if none).

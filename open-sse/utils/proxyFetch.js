@@ -1,5 +1,5 @@
 import { Readable } from "stream";
-import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
+import { MEMORY_CONFIG, ALLOW_INSECURE_TLS_FALLBACK } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 import { createProxyDispatcher } from "./proxyDispatcher.js";
 
@@ -159,6 +159,15 @@ const TLS_CERT_ERRORS = new Set([
 function isTlsCertError(err) {
   const code = err?.cause?.code || err?.code;
   return TLS_CERT_ERRORS.has(code);
+}
+
+// Origin only, for logs: the full URL can carry a credential (e.g. Gemini's ?key=).
+function logSafeOrigin(url) {
+  try {
+    return new URL(typeof url === "string" ? url : url.toString()).origin;
+  } catch {
+    return "<unparseable url>";
+  }
 }
 const MITM_BYPASS_HOSTS = [
   "cloudcode-pa.googleapis.com",
@@ -352,6 +361,9 @@ async function getDispatcher(proxyUrl, insecure = false) {
 async function fetchWithTlsFallback(url, options, proxyUrl) {
   const targetUrl = typeof url === "string" ? url : url.toString();
   try {
+    // Protocol adapters may need Node's HTTP/1 transport on the direct path.
+    // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
+    if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
     if (proxyUrl) {
       const dispatcher = await getDispatcher(proxyUrl);
       return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
@@ -367,17 +379,21 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
       return await originalFetch(url, { ...directOptions, headers: retryHeaders });
     }
   } catch (err) {
-    const isStrictSsl = process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
-    if (!isStrictSsl && isTlsCertError(err)) {
-      if (options.body && typeof options.body.getReader === "function" && options.body.locked) {
-        throw err;
-      }
-      // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
-      console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
-      const insecureDispatcher = await getDispatcher(proxyUrl, true);
-      return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
+    if (!isTlsCertError(err)) throw err;
+    const code = err.cause?.code || err.code;
+    // Fail closed by default: retrying without verification would send the request
+    // (provider API key included) to whoever presented the certificate.
+    if (!ALLOW_INSECURE_TLS_FALLBACK || options.strictTls === true) {
+      console.warn(`[ProxyFetch] TLS cert verification failed (${code}) for ${logSafeOrigin(url)}; not retrying without verification. Trust the issuing CA via NODE_EXTRA_CA_CERTS, or set ALLOW_INSECURE_TLS_FALLBACK=true to opt in to the insecure retry.`);
+      throw err;
     }
-    throw err;
+    if (options.body && typeof options.body.getReader === "function" && options.body.locked) {
+      throw err;
+    }
+    // Opt-in: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
+    console.warn(`[ProxyFetch] TLS cert verification failed (${code}), retrying with insecure TLS (ALLOW_INSECURE_TLS_FALLBACK=true): ${logSafeOrigin(url)}`);
+    const insecureDispatcher = await getDispatcher(proxyUrl, true);
+    return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
   }
 }
 

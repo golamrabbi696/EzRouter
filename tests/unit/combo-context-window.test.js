@@ -1,104 +1,41 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import {
-  handleComboChat,
-  selectContextEligibleModels,
-} from "../../open-sse/services/combo.js";
+import { comboContextWindow, comboWindowSetting } from "../../open-sse/providers/capabilities.js";
 
-const CAPABILITIES = {
-  "small/model": { contextWindow: 100000 },
-  "large/model": { contextWindow: 300000 },
-};
+// A fallback chain does not serve the request with every seat, so the window it can
+// promise is the seat that ends up serving it — which is why the operator picks one
+// of the seat values rather than an aggregate. These pin the pure resolver.
+describe("combo context window", () => {
+  const seats = [1000000, 350000, 128000]; // big first seat, smaller middle seat, small tail
 
-const resolveCapabilities = (provider, model) => CAPABILITIES[`${provider}/${model}`] ?? null;
-const estimateTokens = () => 120000;
-
-describe("selectContextEligibleModels", () => {
-  it("drops known undersized members and preserves eligible order", () => {
-    const result = selectContextEligibleModels(
-      ["small/model", "large/model", "unknown/model"],
-      { max_output_tokens: 10000 },
-      { resolveCapabilities, estimateTokens, bufferTokens: 2000 },
-    );
-
-    expect(result).toEqual({
-      models: ["large/model", "unknown/model"],
-      skipped: [{ model: "small/model", contextWindow: 100000 }],
-      requiredTokens: 132000,
-    });
+  it("defaults to the smallest seat window", () => {
+    expect(comboContextWindow(seats, undefined, null)).toBe(128000);
+    expect(comboContextWindow(seats, "min", null)).toBe(128000);
   });
 
-  it("uses a conservative default output allowance when no output limit is requested", () => {
-    const result = selectContextEligibleModels(
-      ["small/model", "large/model"],
-      {},
-      { resolveCapabilities, estimateTokens: () => 95000, bufferTokens: 2000 },
-    );
-
-    expect(result.requiredTokens).toBe(101096);
-    expect(result.models).toEqual(["large/model"]);
+  it("pins any value a seat actually has, including one from the middle of the chain", () => {
+    expect(comboContextWindow(seats, "custom", 350000)).toBe(350000);
+    expect(comboContextWindow(seats, "custom", 1000000)).toBe(1000000);
   });
 
-  it("preserves compatibility when request size cannot be estimated", () => {
-    const models = ["small/model", "large/model"];
-    const result = selectContextEligibleModels(
-      models,
-      {},
-      { resolveCapabilities, estimateTokens: () => 0 },
-    );
-
-    expect(result).toEqual({
-      models,
-      skipped: [],
-      requiredTokens: null,
-    });
-  });
-});
-
-describe("handleComboChat context eligibility", () => {
-  const log = {
-    info: vi.fn(),
-    warn: vi.fn(),
-  };
-
-  it("never dispatches a request to a known undersized member", async () => {
-    const handleSingleModel = vi.fn(async () => Response.json({ ok: true }));
-
-    const response = await handleComboChat({
-      body: { messages: [{ role: "user", content: "large prompt" }], max_tokens: 10000 },
-      models: ["small/model", "large/model"],
-      handleSingleModel,
-      log,
-      resolveCapabilities,
-      estimateTokens,
-    });
-
-    expect(response.ok).toBe(true);
-    expect(handleSingleModel).toHaveBeenCalledTimes(1);
-    expect(handleSingleModel).toHaveBeenCalledWith(expect.any(Object), "large/model");
+  it("reports the largest seat for max, which is not necessarily the last seat", () => {
+    expect(comboContextWindow([200000, 1000000, 128000], "max", null)).toBe(1000000);
   });
 
-  it("returns a typed client error without provider dispatch when every known member is undersized", async () => {
-    const handleSingleModel = vi.fn();
+  it("ignores unusable entries and empty chains", () => {
+    expect(comboContextWindow([0, NaN, 200000], "min", null)).toBe(200000);
+    expect(comboContextWindow([], "custom", 0)).toBeUndefined();
+    expect(comboContextWindow([], "min")).toBeUndefined();
+    expect(comboContextWindow(null, "max")).toBeUndefined();
+  });
 
-    const response = await handleComboChat({
-      body: { messages: [{ role: "user", content: "large prompt" }], max_tokens: 10000 },
-      models: ["small/model"],
-      handleSingleModel,
-      log,
-      resolveCapabilities,
-      estimateTokens,
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      error: {
-        code: "combo_context_window_exceeded",
-        message: "No Combo member has a known context window large enough for this request.",
-        required_tokens_estimate: 132000,
-        largest_context_window: 100000,
-      },
-    });
-    expect(handleSingleModel).not.toHaveBeenCalled();
+  it("reads the per-combo setting and defaults to min for anything unrecognised", () => {
+    expect(comboWindowSetting(undefined)).toEqual({ mode: "min", custom: null });
+    expect(comboWindowSetting({ fallbackStrategy: "round-robin" })).toEqual({ mode: "min", custom: null });
+    expect(comboWindowSetting({ contextWindowMode: "max" })).toEqual({ mode: "max", custom: null });
+    expect(comboWindowSetting({ contextWindowMode: "custom", contextWindow: 900000 }))
+      .toEqual({ mode: "custom", custom: 900000 });
+    expect(comboWindowSetting({ contextWindowMode: "bogus", contextWindow: -5 }))
+      .toEqual({ mode: "min", custom: null });
   });
 });

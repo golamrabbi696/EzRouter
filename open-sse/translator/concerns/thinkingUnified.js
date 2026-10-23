@@ -155,7 +155,11 @@ function openAIThinkingDisplay(body) {
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
 function resolveFormat(targetFormat, model, provider) {
-  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) return "openai";
+  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) {
+    const caps = getCapabilitiesForModel(provider, model);
+    if (caps.thinkingFormat === "step") return "step";
+    return "openai";
+  }
   if (targetFormat === "commandcode") return "commandcode";
   // Command Code's provider surface (the registry default) takes
   // reasoning_effort top-level, the same as any OpenAI body; only the CLI
@@ -461,9 +465,9 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
       // — clamp to high when the declared levels exclude it.
       const level = toLevel(eff);
       const want = level === "xhigh" || level === "max" ? "max"
-        : (level === "low" || level === "minimal") && supportsThinkingLevel(provider, model, "low") ? "low"
+        : (level === "low" || level === "minimal") && supportedLevels?.includes("low") ? "low"
         : "high";
-      body.reasoning_effort = want === "max" && !supportsThinkingLevel(provider, model, "max") ? "high" : want;
+      body.reasoning_effort = want === "max" && supportedLevels && !supportedLevels.includes("max") ? "high" : want;
       break;
     }
     case "kimi": {
@@ -503,6 +507,11 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
     }
     case "step": {
       if (none && canDisable) break;
+      // Step-compatible upstreams define accepted effort levels; preserve explicit intent.
+      if (eff.mode === "level") {
+        body.reasoning_effort = eff.level;
+        break;
+      }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;

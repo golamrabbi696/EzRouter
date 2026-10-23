@@ -87,6 +87,13 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
+  "sensenova-6.8-flash-lite": {
+    vision: true,
+    reasoning: true,
+    thinkingFormat: "openai",
+    contextWindow: 1000000,
+    maxOutput: 131072,
+  },
   // Claude Fable 5.1, Opus 5.5/5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "claude-fable-5-1": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
   // Claude Opus 5.5 — thinking is always on; thinking "disabled" and forced tool_choice (any/tool) return 400.
@@ -335,6 +342,22 @@ export const PROVIDER_CAPABILITIES = {
     // catalog overlay, so maxOutput must be stated here too).
     "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   },
+  // OpenCode Free (oc) — the free lane's MiMo route is OpenRouter-backed and takes
+  // the plain OpenAI reasoning_effort enum verbatim (live probe on
+  // oc/mimo-v2.6-flash-free: none|minimal|low|medium|high|xhigh|max all 200, any
+  // other value 400 "Invalid option"; "none" really drops thinking — empty
+  // reasoning_content and reasoning_tokens 0). The global *mimo*v2.6* pattern
+  // describes Xiaomi's own API (DeepSeek-shaped `thinking` object, always on),
+  // which this lane ignores: `thinking.type:disabled` still streamed reasoning.
+  // Limits repeat the family pattern deliberately: the synced catalog carries no
+  // `opencode` limit delta for this id, so 1M/131k is what the lane already
+  // published before this override — but the override short-circuits the catalog
+  // overlay, so models.dev's free-lane listing (200000/32000) has to be applied
+  // here if a probe ever pins the lane's real window (a 200k `max_tokens` is
+  // accepted, so the 32k figure is not enforced at request validation).
+  "opencode": {
+    "mimo-v2.6-flash-free": { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1048576, maxOutput: 131072 },
+  },
   "commandcode": {
     // The generic commandcode fallback (1M/384k for every unlisted model) happened
     // to give haiku-5-5 the right context by accident. Pin it to the catalog values:
@@ -505,6 +528,9 @@ export const PROVIDER_CAPABILITIES = {
   // listed: `lite` rejects image parts upstream (HTTP 400) and auto/efficient
   // resolve to a variable target, so all three keep the text-only default.
   "qoder": {
+    "auto":           { contextWindow: 200000, maxOutput: 32768 },
+    "efficient":      { contextWindow: 200000, maxOutput: 32768 },
+    "lite":           { contextWindow: 200000, maxOutput: 32768 },
     "ultimate":       { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Opus 5
     "performance":    { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Sonnet 5
     "dmodel":         { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Pro
@@ -518,6 +544,8 @@ export const PROVIDER_CAPABILITIES = {
     "qmodel":         { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Plus
     "qfmodel":        { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.8-Flash
     "qmodel_38max":   { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Qwen3.8-Max
+    "smodel":         { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
+    "cmodel":         { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
   },
   // Nous Research Portal free-tier models (probed live against https://inference-api.nousresearch.com/v1/models).
   "nous": {
@@ -634,6 +662,9 @@ export const PATTERN_CAPABILITIES = [
   // ── Grok (vision + Live Search) ──────────────────────────────────
   { pattern: "*grok*image*",    caps: { imageOutput: true } },
   { pattern: "*grok-code*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 256000 } },
+  // Grok 4.7: 500k context, same envelope as 4.6. Without its own row it fell to the
+  // `*grok-4*` catch-all (256k), and stripHistoryForContext() trims at 80% of that.
+  { pattern: "*grok-4.7*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 500000 } },
   // Grok 4.6: 500k context, no text output limit (docs.x.ai/developers/grok-4-6)
   { pattern: "*grok-4.6*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 500000 } },
   // Grok 4.5 (Grok CLI / Grok Build): 500k context per cli-chat-proxy /v1/models
@@ -822,6 +853,49 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
 }
 
 /**
+ * Resolve the context window a combo publishes for itself.
+ *
+ * `aggregateComboCapabilities` uses min, which is the honest answer for a panel:
+ * every seat sees the whole request. A fallback chain is not a panel — a request
+ * too large for a seat moves to the next one, so the window the chain can actually
+ * serve is its *largest* seat's. Rather than guess, the combo says which it means:
+ *
+ *   min    (default) — smallest seat window; what every seat can serve
+ *   max              — largest seat window; what the chain can serve via rollover
+ *   custom           — an explicit number (e.g. one seat's window, or a safety margin
+ *                      below the largest so a client compacts before the last wall)
+ *
+ * @param {number[]} seatWindows context window per seat, nested combos already resolved
+ * @param {"min"|"max"|"custom"} [mode]
+ * @param {number|null} [custom]
+ * @returns {number|undefined}
+ */
+export function comboContextWindow(seatWindows, mode = "min", custom = null) {
+  const windows = (Array.isArray(seatWindows) ? seatWindows : [])
+    .filter((v) => Number.isFinite(v) && v > 0);
+  if (mode === "custom") {
+    const n = Number(custom);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  if (!windows.length) return undefined;
+  return mode === "max" ? Math.max(...windows) : Math.min(...windows);
+}
+
+/**
+ * Read the per-combo context-window setting out of settings.comboStrategies[name].
+ * Anything unrecognised falls back to "min", i.e. the pre-existing behaviour.
+ *
+ * @param {object|null|undefined} comboStrategy
+ * @returns {{mode: "min"|"max"|"custom", custom: number|null}}
+ */
+export function comboWindowSetting(comboStrategy) {
+  const raw = comboStrategy?.contextWindowMode;
+  const mode = raw === "max" || raw === "custom" ? raw : "min";
+  const n = Number(comboStrategy?.contextWindow);
+  return { mode, custom: Number.isFinite(n) && n > 0 ? Math.floor(n) : null };
+}
+
+/**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
  *
@@ -830,6 +904,14 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
  * @returns {object} full capabilities object
  */
 const MODALITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
+const LIMIT_KEYS = ["contextWindow", "maxOutput"];
+
+function mergeWithLimitSources(base, label, sources) {
+  if (sources) {
+    for (const key of LIMIT_KEYS) sources[key] = Object.hasOwn(base || {}, key) ? label : "default";
+  }
+  return { ...DEFAULT_CAPABILITIES, ...base };
+}
 
 // Catalog lookups, installed by the server at startup. Left as no-ops in the
 // browser bundle, where there is no file to read.
@@ -859,8 +941,8 @@ function getCatalogSource() {
 // Apply the synced catalog + name heuristic on top of a table-resolved result.
 // Strictly additive: a capability already true stays true, and a false one only
 // flips when an outside source positively declares support.
-function refine(base, provider, model) {
-  const result = { ...DEFAULT_CAPABILITIES, ...base };
+function refine(base, provider, model, sources, label) {
+  const result = mergeWithLimitSources(base, label, sources);
 
   const source = getCatalogSource();
   if (source) {
@@ -873,8 +955,12 @@ function refine(base, provider, model) {
 
     const limits = source.getLimits(provider, model);
     if (limits) {
-      if (limits.contextWindow > 0) result.contextWindow = limits.contextWindow;
-      if (limits.maxOutput > 0) result.maxOutput = limits.maxOutput;
+      for (const key of LIMIT_KEYS) {
+        if (limits[key] > 0) {
+          result[key] = limits[key];
+          if (sources) sources[key] = `catalog:${provider ? `${provider}/` : ""}${model}`;
+        }
+      }
     }
   }
 
@@ -922,7 +1008,20 @@ function isCommandCodeTextOnly(model) {
 }
 
 export function getCapabilitiesForModel(provider, model) {
-  if (!model) return { ...DEFAULT_CAPABILITIES };
+  return resolveCapabilities(provider, model);
+}
+
+// Same resolver, with per-limit provenance for diagnostic API consumers.
+// builtin: canonical exact entry; override: provider table; provider: wire-wide
+// defaults; pattern: first matching glob; catalog: synced overlay; default: floor.
+export function getCapabilitiesWithSource(provider, model) {
+  const capsSource = {};
+  const caps = resolveCapabilities(provider, model, capsSource);
+  return { caps, capsSource };
+}
+
+function resolveCapabilities(provider, model, sources = null) {
+  if (!model) return mergeWithLimitSources(null, "default", sources);
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
@@ -931,40 +1030,39 @@ export function getCapabilitiesForModel(provider, model) {
   // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
   if (provider === "commandcode" || provider === "cmc") {
     const providerCaps = PROVIDER_CAPABILITIES.commandcode;
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
-    return {
-      ...DEFAULT_CAPABILITIES,
+    if (providerCaps?.[model]) return mergeWithLimitSources(providerCaps[model], "override:commandcode", sources);
+    if (providerCaps?.[baseModel]) return mergeWithLimitSources(providerCaps[baseModel], "override:commandcode", sources);
+    return mergeWithLimitSources({
       reasoning: true,
       thinkingFormat: "commandcode",
       thinkingEffortSupported: true,
       vision: !isCommandCodeTextOnly(model),
       contextWindow: 1000000,
       maxOutput: 384000,
-    };
+    }, "provider:commandcode", sources);
   }
 
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    if (providerCaps?.[model]) return mergeWithLimitSources(providerCaps[model], `override:${provider}`, sources);
+    if (providerCaps?.[baseModel]) return mergeWithLimitSources(providerCaps[baseModel], `override:${provider}`, sources);
   }
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
   //    deltas still apply. Step 1 above still short-circuits.
-  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model);
-  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model);
+  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model, sources, `builtin:${baseModel}`);
+  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model, sources, `builtin:${model}`);
 
   // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return refine(caps, provider, model);
+      return refine(caps, provider, model, sources, `pattern:${pattern}`);
     }
   }
 
   // 4. Floor
-  return refine(null, provider, model);
+  return refine(null, provider, model, sources, "default");
 }
 
 export function supportsThinkingLevel(provider, model, level) {

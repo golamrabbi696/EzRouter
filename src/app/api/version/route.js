@@ -67,7 +67,13 @@ async function getLatestVersionCached() {
 }
 
 export async function GET() {
-  const [latestVersion, currentVersion] = await Promise.all([getLatestVersionCached(), getCurrentVersion()]);
+  // The CLI exports this when it was started with --skip-update, so the flag
+  // silences the dashboard notice too, not only the CLI's own check.
+  const skipUpdate = process.env.NINEROUTER_SKIP_UPDATE === "1" || process.env.EZROUTER_SKIP_UPDATE === "1";
+  const [latestVersion, currentVersion] = await Promise.all([
+    skipUpdate ? Promise.resolve(null) : getLatestVersionCached(),
+    getCurrentVersion()
+  ]);
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
   return Response.json({ currentVersion, latestVersion, hasUpdate });

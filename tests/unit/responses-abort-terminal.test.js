@@ -171,8 +171,8 @@ describe("buildStreamErrorBytes", () => {
   it("emits error frame then [DONE] for OpenAI clients", () => {
     const out = textOf(buildStreamErrorBytes(504, "stream stall timeout", FORMATS.OPENAI));
 
-    expect(out).toContain('data: {"error"');
-    expect(out.indexOf("data: [DONE]")).toBeGreaterThan(out.indexOf('data: {"error"'));
+    expect(out).toMatch(/data: \{"(type":"error",")?error"/);
+    expect(out.indexOf("data: [DONE]")).toBeGreaterThan(out.indexOf('data: {'));
 
     expect(jsonOf(out).error).toEqual({
       message: "stream stall timeout",

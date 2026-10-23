@@ -1,9 +1,11 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { extractReasoningText } from "../translator/concerns/reasoning.js";
+import { PROVIDERS } from "../config/providers.js";
+import { extractReasoningText, liftReasoningAliases } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, enrichUsageCost, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds } from "./streamHelpers.js";
+import { restoreToolNames } from "./opencodeFingerprint.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -64,6 +66,16 @@ export function createSSEStream(options = {}) {
 
   let buffer = "";
   let usage = null;
+  // Body-size estimate kept apart from the provider-reported usage: it is a
+  // fallback for providers that report no usage at all, never a candidate to
+  // be merged with it (see mergeUsage).
+  let estimatedUsage = null;
+
+  // Tool-call ids already sent to the client, keyed by the tool-call index.
+  // A late fragment that opens a NEW index without an id must not reach the
+  // client as-is: strict OpenAI-compatible SDKs abort the turn on a
+  // tool_call without a string id (#4992).
+  const seenToolCallIds = new Map();
 
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -119,6 +131,16 @@ export function createSSEStream(options = {}) {
   let finalized = false;
   let completionFlushTimer = null;
 
+  // Lane quirk: upstream streams thinking under the OpenRouter aliases
+  // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
+  // Free's MiMo route does. Lift it on every passthrough delta so OpenAI-shaped
+  // clients, the thinking accumulation below and usage accounting see the text.
+  const liftAliases = mode === STREAM_MODE.PASSTHROUGH && (
+    !!PROVIDERS[provider]?.quirks?.reasoningAliasFields ||
+    provider === "cline" ||
+    !provider
+  );
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = (meta = {}) => {
@@ -131,11 +153,9 @@ export function createSSEStream(options = {}) {
     let finalUsage = isPassthrough ? usage : state?.usage;
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
-      // Unbuffered: this value is only ever recorded -- logUsage and
-      // onStreamComplete below -- and never sent to the client. The buffer is a
-      // margin for the client's own context arithmetic, so counting it here
-      // reported every estimated turn as BUFFER_TOKENS larger than it was.
-      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat, { buffer: false });
+      // The provider reported no usage at all: fall back to the body-size
+      // estimate, if one was already computed for the finish chunk.
+      finalUsage = estimatedUsage || estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat, { buffer: false });
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
 
@@ -220,18 +240,26 @@ export function createSSEStream(options = {}) {
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
-              const parsed = JSON.parse(trimmed.slice(5).trim());
+              let parsed = JSON.parse(trimmed.slice(5).trim());
 
               const idFixed = fixInvalidId(parsed);
               let fieldsInjected = false;
-              // Cline sends reasoning under delta.reasoning; downstream OpenAI
-              // clients read reasoning_content instead.
-              for (const choice of parsed.choices || []) {
-                const delta = choice?.delta;
-                if (typeof delta?.reasoning === "string" && delta.reasoning) {
-                  delta.reasoning_content = (delta.reasoning_content || "") + delta.reasoning;
-                  delete delta.reasoning;
-                  fieldsInjected = true;
+
+              // A fragment that opens a new tool-call index without an id breaks
+              // strict OpenAI-compatible clients. Mint/reuse one before the
+              // chunk reaches the client.
+              const toolCallIdFixed = ensureStreamToolCallIds(parsed, seenToolCallIds);
+
+              // The fingerprint pass renames a colliding caller tool to an alias
+              // (read -> read_client). On this path nothing restored it, so the
+              // client received a call to a tool it never declared and answered
+              // "Model tried to call unavailable tool 'read_client'" (#4986).
+              let toolNameRestored = false;
+              if (toolNameMap?.size) {
+                const restored = restoreToolNames(parsed, toolNameMap);
+                if (restored !== parsed) {
+                  parsed = restored;
+                  toolNameRestored = true;
                 }
               }
 
@@ -251,6 +279,20 @@ export function createSSEStream(options = {}) {
                   if (choice.content_filter_results !== undefined) {
                     delete choice.content_filter_results;
                     fieldsInjected = true;
+                  }
+                }
+              }
+
+              // Alias lanes: expose thinking as reasoning_content (additive) before
+              // the valuable-content check, so reasoning-only chunks survive.
+              if (liftAliases && parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice?.delta) {
+                    const lifted = liftReasoningAliases(choice.delta);
+                    if (lifted !== choice.delta) {
+                      choice.delta = lifted;
+                      fieldsInjected = true;
+                    }
                   }
                 }
               }
@@ -328,7 +370,11 @@ export function createSSEStream(options = {}) {
                   model
                 );
                 output = `data: ${JSON.stringify(parsed)}\n`;
-                usage = mergeUsage(usage, estimated); // never let an estimate replace real usage
+                // Keep the estimate out of the accumulator: a provider that
+                // reports its usage in a trailing chunk (stream_options
+                // include_usage) sends it AFTER this chunk, and merging the
+                // two by max would let the guess outvote the real number.
+                estimatedUsage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
@@ -339,7 +385,7 @@ export function createSSEStream(options = {}) {
                 );
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed || fieldsInjected) {
+              } else if (idFixed || fieldsInjected || toolCallIdFixed || toolNameRestored) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
@@ -518,15 +564,15 @@ export function createSSEStream(options = {}) {
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              // state.usage is what gets logged (see the comment on the branch
-              // below); only the emitted item carries the buffer.
               const estimated = estimateUsage(body, totalContentLength, sourceFormat, { buffer: false });
               item.usage = enrichUsageCost(
                 filterUsageForFormat(addBufferToUsage(estimated), sourceFormat),
                 provider,
                 model
               );
-              state.usage = mergeUsage(state.usage, estimated); // never let an estimate replace real usage
+              // Same rule as the passthrough path: the estimate is a fallback,
+              // not something to merge with the provider's own usage.
+              estimatedUsage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
@@ -723,11 +769,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
+    toolNameMap,
     model,
     connectionId,
     body,

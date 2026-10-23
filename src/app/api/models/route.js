@@ -4,7 +4,7 @@ import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getCapsOverrides } from "@/lib/db/index.js";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
-import { getCapabilitiesForModel, pickClientCaps } from "open-sse/providers/capabilities.js";
+import { getCapabilitiesWithSource, pickClientCaps } from "open-sse/providers/capabilities.js";
 import { resolveModelDisplayName } from "@/shared/utils/modelDisplayName";
 
 // GET /api/models - Get models with aliases
@@ -29,13 +29,15 @@ export async function GET() {
         // User overrides (models.dev import / manual edits) win over static caps
         const override = capsOverrides[`${providerAlias}|${m.model}`] || capsOverrides[`${m.provider}|${m.model}`];
         const saved = savedByRouted.get(routedModel);
-        const c = { ...getCapabilitiesForModel(m.provider, m.model), ...(saved?.caps || {}), ...(override || {}) };
+        const { caps: baseCaps, capsSource } = getCapabilitiesWithSource(m.provider, m.model);
+        const c = { ...baseCaps, ...(saved?.caps || {}), ...(override || {}) };
         return {
           ...m,
           name: saved?.name || resolveModelDisplayName(m.model, m.name),
           fullModel,
           routedModel,
           alias: modelAliases[fullModel] || m.model,
+          capsSource,
           caps: {
             ...pickClientCaps(c),
             tools: c.tools,
@@ -66,7 +68,8 @@ export async function GET() {
       const fullModel = `${m.providerAlias}/${m.id}`;
       const providerId = ALIAS_TO_ID[m.providerAlias] || m.providerAlias;
       const override = capsOverrides[`${m.providerAlias}|${m.id}`] || capsOverrides[`${providerId}|${m.id}`];
-      const c = { ...getCapabilitiesForModel(providerId, m.id), ...(m.caps || {}), ...(override || {}) };
+      const { caps: baseCaps, capsSource } = getCapabilitiesWithSource(providerId, m.id);
+      const c = { ...baseCaps, ...(m.caps || {}), ...(override || {}) };
       models.push({
         provider: m.providerAlias,
         model: m.id,
@@ -74,6 +77,11 @@ export async function GET() {
         fullModel,
         routedModel: fullModel,
         alias: modelAliases[fullModel] || m.id,
+        capsSource: {
+          ...capsSource,
+          ...(Object.hasOwn(m.caps || {}, "contextWindow") ? { contextWindow: `custom:${fullModel}` } : {}),
+          ...(Object.hasOwn(m.caps || {}, "maxOutput") ? { maxOutput: `custom:${fullModel}` } : {}),
+        },
         caps: {
           ...pickClientCaps(c),
           tools: c.tools,

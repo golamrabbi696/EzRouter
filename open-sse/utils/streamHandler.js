@@ -1,5 +1,7 @@
 // Stream handler with disconnect detection - shared for all providers
 import { STREAM_STALL_TIMEOUT_MS, SSE_KEEPALIVE_MS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { EMPTY_STREAM_ERROR } from "../config/errorConfig.js";
+import { SSE_DONE } from "./sseConstants.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 import { envMs } from "../config/runtimeConfig.js";
 
@@ -253,7 +255,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, arg6 = SSE_KEEPALIVE_MS, arg7 = STREAM_FIRST_CHUNK_TIMEOUT_MS, arg8 = null, arg9 = 15000) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, arg6 = SSE_KEEPALIVE_MS, arg7 = STREAM_FIRST_CHUNK_TIMEOUT_MS, emptyStreamTerminal = null, arg9 = 15000) {
   let stallTimer = null;
   let keepaliveTimer = null;
   let firstChunkTimer = null;
@@ -274,7 +276,6 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   } else {
     if (typeof arg6 === "number") keepaliveMs = arg6;
     if (typeof arg7 === "number") ttftTimeoutMs = arg7;
-    if (arg8) pingBytes = arg8;
     if (typeof arg9 === "number") pingIntervalMs = arg9;
   }
 
@@ -405,7 +406,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
     .pipeThrough(transformStream)
-    .pipeThrough(emptyStreamGuard);
+    .pipeThrough(createEmptyStreamGuard({ tag, emptyStreamTerminal, stats: () => `upstream chunks=${chunkCount} bytes=${totalBytes}` }));
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
@@ -416,3 +417,78 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   );
 }
 
+// Empty-stream guard.
+//
+// A stream that delivers NOTHING to the client is never a legitimate completion
+// — even an empty answer emits a role delta, a finish_reason and [DONE]. Without
+// this guard that case reaches the caller as HTTP 200 with an empty body (or a
+// bare [DONE]): no content, no error, nothing to branch on. Seen in practice
+// when a Claude account's OAuth had expired while its connection stayed active:
+// callers got 200 with nothing while observability recorded "success".
+//
+// The status line is already committed by the time we know — headers go out
+// before the first chunk — so the honest remedy is an in-band error frame.
+//
+// "Nothing" is not "zero output bytes": the passthrough transform
+// (open-sse/utils/stream.js) always appends `data: [DONE]` on flush, so on the
+// commonest path (OpenAI client → OpenAI-compatible provider) a dead upstream
+// still produces 14 bytes. "Nothing" therefore means: no SSE `data:` payload
+// other than the [DONE] sentinel (keep-alive comments and blank lines are not
+// payloads). Until the first payload, any chunk carrying [DONE] is withheld, so
+// the error frame can be emitted BEFORE the client's terminator; comments still
+// flow through unchanged (keep-alives keep working). After the first payload
+// this is a byte-identical passthrough.
+//
+// It sits AFTER the client-format transform, i.e. inside the Response that
+// handleChatCore returns.
+export function buildDefaultEmptyStreamTerminal(message = EMPTY_STREAM_ERROR.message) {
+  const payload = JSON.stringify({
+    error: { message, type: EMPTY_STREAM_ERROR.type, code: EMPTY_STREAM_ERROR.code },
+  });
+  return new TextEncoder().encode(`data: ${payload}\n\n${SSE_DONE}`);
+}
+
+// True for a line that carries a real payload: an SSE `data:` line other than
+// [DONE], or a bare JSON line (NDJSON clients).
+function isPayloadLine(line) {
+  const s = line.trim();
+  if (s.startsWith("data:")) {
+    const payload = s.slice(5).trim();
+    return payload !== "" && payload !== "[DONE]";
+  }
+  return s.startsWith("{");
+}
+
+export function createEmptyStreamGuard({ tag = "STREAM", emptyStreamTerminal = null, stats = () => "" } = {}) {
+  const decoder = new TextDecoder();
+  let sawPayload = false;
+  let partial = "";
+  let held = [];
+  return new TransformStream({
+    transform(chunk, controller) {
+      if (sawPayload) { controller.enqueue(chunk); return; }
+      const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+      const lines = (partial + text).split("\n");
+      partial = lines.pop() ?? "";
+      if (lines.some(isPayloadLine)) {
+        sawPayload = true;
+        for (const h of held) controller.enqueue(h);
+        held = [];
+        controller.enqueue(chunk);
+        return;
+      }
+      if (text.includes("[DONE]")) held.push(chunk);
+      else controller.enqueue(chunk);
+    },
+    flush(controller) {
+      if (!sawPayload && isPayloadLine(partial)) sawPayload = true;
+      if (sawPayload) {
+        for (const h of held) controller.enqueue(h);
+        return;
+      }
+      dbg(tag, `EMPTY STREAM — ${stats()}; emitting error frame`);
+      const terminal = emptyStreamTerminal ? emptyStreamTerminal(EMPTY_STREAM_ERROR.message) : buildDefaultEmptyStreamTerminal();
+      if (terminal) controller.enqueue(terminal);
+    },
+  });
+}

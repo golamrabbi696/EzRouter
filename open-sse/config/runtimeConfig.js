@@ -41,6 +41,14 @@ export function envMs(name, def) {
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
+// Parse a boolean env flag ("true"/"1" → true, "false"/"0" → false), falling back to a default.
+function envBool(name, def) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (raw === "true" || raw === "1") return true;
+  if (raw === "false" || raw === "0") return false;
+  return def;
+}
+
 function envUrl(name, def) {
   const raw = process.env[name]?.trim();
   return raw || def;
@@ -72,6 +80,18 @@ export const SSE_KEEPALIVE_MS = (() => {
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n >= 0 ? n : 10 * 1000;
 })();
+
+// Outbound TLS. Provider calls always verify certificates. On a certificate error the
+// request fails, unless ALLOW_INSECURE_TLS_FALLBACK=true opts in to one retry with
+// verification OFF (for a TLS-intercepting corporate/antivirus proxy with a self-signed
+// root). Prefer trusting that root instead: NODE_EXTRA_CA_CERTS=/path/to/root-ca.pem.
+// STRICT_SSL=true always wins and keeps verification on.
+export const ALLOW_INSECURE_TLS_FALLBACK = envBool("ALLOW_INSECURE_TLS_FALLBACK", false) && !envBool("STRICT_SSL", false);
+
+// Combo empty-content failover: how long a 2xx stream may be held while waiting for its first
+// content-bearing frame before committing to that model (fail-open on expiry).
+// Env: EMPTY_PEEK_DEADLINE_MS.
+export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000);
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);

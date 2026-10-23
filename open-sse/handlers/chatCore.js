@@ -29,6 +29,7 @@ import { disclosureTools } from "../utils/toolDisclosure.js";
 import { takeRenamedToolNames } from "../utils/opencodeFingerprint.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectCustomPrompt } from "../rtk/customPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -63,7 +64,7 @@ export function requestLineThinkingIntent(translatedBody, provider, upstreamMode
     || (provider === "codex" ? parseSuffix(upstreamModel).override || extractThinking(originalBody) : null);
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, toolRankEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, toolHistoryPruning, translationCache, sourceFormatOverride, providerThinking, toolDisclosure, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onEmptyStream, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, toolRankEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, toolHistoryPruning, translationCache, sourceFormatOverride, providerThinking, toolDisclosure, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -98,7 +99,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
-
   // Native passthrough: CLI tool and provider are the same ecosystem
   // Skip all translation/normalization — only model and Bearer are swapped
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
@@ -439,6 +439,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (tokenSaverEnabled && ponytailEnabled && ponytailLevel && !hasMediaBlocks(translatedBody)) {
       injectPonytail(translatedBody, finalFormat, ponytailLevel);
       xf.push(`PONYTAIL:${ponytailLevel}`);
+    }
+
+    // Custom prompt: user-authored instruction, independent of the savers above
+    if (customPromptEnabled && injectCustomPrompt(translatedBody, finalFormat, customPrompt)) {
+      xf.push(`CUSTOMPROMPT:${customPrompt.trim().length}c`);
     }
 
     // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch

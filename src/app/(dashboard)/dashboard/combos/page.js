@@ -57,6 +57,7 @@ const STRATEGY_OPTIONS = [
   { value: "weighted", label: "Weighted — random by weight" },
   { value: "fusion", label: "Fusion — panel + judge" },
   { value: "smart", label: "Smart — Jev complexity routing" },
+  { value: "fastest", label: "Fastest — by tokens/s" },
 ];
 
 function getPolicyBadgeLabel(strategy = {}) {
@@ -69,6 +70,44 @@ function getPolicyBadgeLabel(strategy = {}) {
     return `Custom (≥${pct || 80}%)`;
   }
   return "Smart (≥80%)";
+}
+
+// What context window this combo advertises to clients. A fallback chain can only
+// serve as much as the seats *up to and including* the one that serves the request,
+// so seat order matters and the largest seat is not automatically the right answer:
+// pick the value you want from the windows the seats actually have. "min" stays
+// dynamic (tracks the smallest seat as seats change); picking a number pins it.
+function formatWindow(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return "—";
+  if (v >= 1000000) return `${(v / 1000000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  return `${Math.round(v / 1000)}k`;
+}
+
+function shortModelName(id) {
+  const s = String(id || "");
+  const slash = s.lastIndexOf("/");
+  return slash === -1 ? s : s.slice(slash + 1);
+}
+
+// One option per distinct seat window, labelled with the seats that have it.
+function contextWindowOptions(seatEntries, seatMin, customValue) {
+  const opts = [{ value: "min", label: `min — ${formatWindow(seatMin)} (dynamic)` }];
+  const groups = new Map();
+  for (const { model, window } of seatEntries) {
+    if (!groups.has(window)) groups.set(window, []);
+    groups.get(window).push(shortModelName(model));
+  }
+  for (const window of [...groups.keys()].sort((a, b) => a - b)) {
+    const names = groups.get(window);
+    const suffix = names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0];
+    opts.push({ value: `w:${window}`, label: `${formatWindow(window)} — ${suffix}` });
+  }
+  if (Number.isFinite(customValue) && customValue > 0 && !groups.has(customValue)) {
+    opts.push({ value: `w:${customValue}`, label: `${formatWindow(customValue)} — pinned` });
+  }
+  opts.push({ value: "custom", label: "custom…" });
+  return opts;
 }
 
 export default function CombosPage() {
@@ -232,14 +271,43 @@ export default function CombosPage() {
     }
   };
 
+  // The context-window choice belongs to settings.comboStrategies[name], so it is
+  // written after the combo itself is stored (create) or renamed (update).
+  const applyWindowSetting = async (name, mode, value, prevName = null) => {
+    if (!name) return;
+    const updated = { ...comboStrategies };
+    const source = prevName && prevName !== name ? updated[prevName] : updated[name];
+    const entry = { ...(source || {}) };
+    if (prevName && prevName !== name) delete updated[prevName];
+
+    if (mode === "custom" && Number(value) > 0) {
+      entry.contextWindowMode = "custom";
+      entry.contextWindow = Number(value);
+    } else {
+      delete entry.contextWindowMode;
+      delete entry.contextWindow;
+    }
+
+    const keep = entry.contextWindowMode
+      || entry.judgeModel
+      || (entry.fallbackStrategy && entry.fallbackStrategy !== "fallback");
+    if (keep) updated[name] = entry;
+    else delete updated[name];
+
+    await persistComboStrategies(updated);
+  };
+
   const handleCreate = async (data) => {
     try {
+      const { contextWindowMode, contextWindow, ...combo } = data;
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(combo),
       });
       if (res.ok) {
+        const created = await res.json();
+        await applyWindowSetting(created?.name || combo.name, contextWindowMode, contextWindow);
         await fetchData();
         setShowCreateModal(false);
       } else {
@@ -253,12 +321,15 @@ export default function CombosPage() {
 
   const handleUpdate = async (id, data) => {
     try {
+      const prevName = combos.find((c) => c.id === id)?.name || null;
+      const { contextWindowMode, contextWindow, ...combo } = data;
       const res = await fetch(`/api/combos/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(combo),
       });
       if (res.ok) {
+        await applyWindowSetting(combo.name, contextWindowMode, contextWindow, prevName);
         await fetchData();
         setEditingCombo(null);
       } else {
@@ -347,7 +418,24 @@ export default function CombosPage() {
   // An explicit fallback must override the global strategy; only Inherit removes it.
   const handleSetComboStrategy = async (comboName, patch) => {
     try {
-      await persistComboStrategies(updateComboStrategy(comboStrategies, comboName, patch));
+      const updated = { ...comboStrategies };
+      const next = { ...(updated[comboName] || {}), ...patch };
+      // Prune to keep settings clean: default fallback with no extras = no entry.
+      // A context-window choice or smart policy is an extra, keeping the entry alive.
+      const hasWindowChoice = next.contextWindowMode === "max" || next.contextWindowMode === "custom";
+      const hasSmartExtras = !!(next.smartPolicy || next.customRules || next.judgeModel);
+      if (patch.fallbackStrategy === "inherit" || ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") && !hasWindowChoice && !hasSmartExtras)) {
+        if (!hasWindowChoice && !hasSmartExtras) {
+          delete updated[comboName];
+        } else {
+          delete next.fallbackStrategy;
+          updated[comboName] = next;
+        }
+      } else {
+        updated[comboName] = next;
+      }
+
+      await persistComboStrategies(updated);
     } catch (error) {
       console.log("Error updating combo strategy:", error);
     }
@@ -393,6 +481,7 @@ export default function CombosPage() {
             <li><span className="font-medium text-text-main">Auto Router</span> — classifies request complexity and selects one configured tier before normal routing</li>
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
             <li><span className="font-medium text-text-main">Smart</span> — uses a System One classifier to pick the lead model by task complexity, then falls back normally</li>
+            <li><span className="font-medium text-text-main">Fastest</span> — sends each request to the model with the best measured speed (tokens/s); close speeds keep your order</li>
           </ul>
           <p className="hidden text-xs text-text-muted mt-3 max-w-2xl">
             <span className="font-medium text-text-main">Cursor / Claude Default</span> create combos named exactly like those clients&apos; model IDs (e.g. <code className="font-mono">composer-2.5</code>, <code className="font-mono">opus</code>), seeded with the matching <code className="font-mono">cu/…</code> or <code className="font-mono">cc/…</code> route so traffic can hit EzRouter without the prefix.
@@ -600,6 +689,8 @@ export default function CombosPage() {
           onSave={handleCreate}
           onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
+          comboByName={Object.fromEntries(combos.map((c) => [c.name, c.models]))}
+          getCaps={getCaps}
         />
       )}
 
@@ -612,6 +703,9 @@ export default function CombosPage() {
           onSave={(data) => handleUpdate(editingCombo.id, data)}
           onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
+          strategy={comboStrategies[editingCombo.name] || {}}
+          comboByName={Object.fromEntries(combos.map((c) => [c.name, c.models]))}
+          getCaps={getCaps}
         />
       )}
 
@@ -682,6 +776,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   // generic patterns and under-report the limits. getCaps carries the server's
   // answer for /api/models.
   const comboCaps = aggregateComboCapabilities(combo.models, comboByName, getCaps);
+
 
   return (
     <Card padding="sm" className={`group ${selected ? "ring-1 ring-primary/40 bg-primary/[0.03]" : ""}`}>
@@ -1209,7 +1304,7 @@ function ModelItem({ id, index, model, weight = 1, isFirst, isLast, onEdit, onWe
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activeProviders, kindFilter = null, strategy = {}, comboByName = {}, getCaps = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const initialMembers = combo?.members?.length ? combo.members : (combo?.models || []).map((id) => ({ id, weight: 1 }));
@@ -1222,6 +1317,22 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
   const [advPolicy, setAdvPolicy] = useState(() => combo?.policy || combo?.config?.policy || {});
   const [advFusion, setAdvFusion] = useState(() => combo?.fusion || combo?.config?.fusion || {});
 
+  // Advertised context window. Persisted in settings.comboStrategies[name], not on
+  // the combo row, so switching it never rewrites the combo itself.
+  const initialWindow = Number(strategy.contextWindow);
+  const hasPinnedWindow = strategy.contextWindowMode === "custom" && Number.isFinite(initialWindow) && initialWindow > 0;
+  const [windowChoice, setWindowChoice] = useState(hasPinnedWindow ? `w:${initialWindow}` : "min");
+  const [windowInput, setWindowInput] = useState(hasPinnedWindow ? String(initialWindow) : "");
+
+  // Seat windows follow the model list as it is edited, so the choices offered are
+  // always the windows this combo can actually reach.
+  const models = members.map((m) => m.id);
+  const seatEntries = (models || [])
+    .map((m) => ({ model: m, window: aggregateComboCapabilities([m], comboByName, getCaps)?.contextWindow }))
+    .filter((e) => Number.isFinite(e.window) && e.window > 0);
+  const seatWindows = seatEntries.map((e) => e.window);
+  const seatMin = seatWindows.length ? Math.min(...seatWindows) : undefined;
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -1229,7 +1340,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
   const modelItems = members.map((m, i) => ({ uid: `item-${i}`, id: m.id, weight: m.weight }));
-  const models = members.map((m) => m.id);
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -1317,7 +1427,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
     setSaving(true);
     const models = members.map((m) => m.id);
     const hasWeights = members.some((m) => (m.weight || 1) !== 1);
-    const payload = { name: name.trim(), models };
+    const payload = {
+      name: name.trim(),
+      models,
+      contextWindowMode: windowChoice === "min" ? "min" : "custom",
+      contextWindow: windowChoice === "min" ? null : (Number(windowInput) > 0 ? Number(windowInput) : null),
+    };
     if (hasWeights || Object.keys(advPolicy).length || Object.keys(advFusion).length) {
       payload.members = members;
       const cfg = {};
@@ -1432,6 +1547,42 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activePro
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Advertised context window */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Context Window</label>
+            <Select
+              options={contextWindowOptions(seatEntries, seatMin, NaN)}
+              value={windowChoice}
+              onChange={(e) => {
+                const v = e.target.value;
+                setWindowChoice(v);
+                // A seat value carries its own number; "min" tracks the smallest seat;
+                // "custom…" clears the box so the value can be typed.
+                setWindowInput(v.startsWith("w:") ? v.slice(2) : "");
+              }}
+              selectClassName="py-1.5 text-xs"
+            />
+            {windowChoice === "custom" && (
+              <input
+                type="number"
+                min="1000"
+                step="1000"
+                value={windowInput}
+                placeholder={seatMin ? String(seatMin) : "tokens"}
+                onChange={(e) => setWindowInput(e.target.value)}
+                className="mt-2 w-full rounded border border-gray-300 bg-transparent px-2 py-1.5 text-xs dark:border-white/15"
+                aria-label="Advertised context window"
+              />
+            )}
+            <p className="text-[10px] text-text-muted mt-1">
+              {windowChoice === "min"
+                ? `Advertises ${formatWindow(seatMin)} — the smallest seat, tracked as seats change.`
+                : windowChoice === "custom"
+                  ? "Advertises the number above."
+                  : `Advertises ${formatWindow(Number(windowInput))} — that seat's own window.`}
+            </p>
           </div>
 
           {/* Actions */}

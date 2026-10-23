@@ -4,8 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  resolveClientApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { buildCacheAffinityKey } from "../services/cacheAffinity.js";
@@ -18,11 +17,12 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse, createErrorResult, clientStatusForUpstream, clientStatusForBreakerOpen } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, createErrorResult, clientStatusForUpstream, clientStatusForBreakerOpen, authErrorResponse } from "open-sse/utils/error.js";
 import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities, reorderModelsForTier } from "open-sse/services/combo.js";
 import { classifyTier } from "open-sse/services/jevClassifier.js";
 import { handleSystemone } from "./systemone.js";
+import { getSpeedMode } from "open-sse/services/modelSpeed.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -37,6 +37,7 @@ import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../s
 import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { parseJsonBody } from "@/shared/utils/parseJsonBody.js";
 
 async function handleAutoRouterCombo({ body, comboName, models, settings, autoRouterPath = new Set(), handleSelectedTarget }) {
   let decision;
@@ -119,7 +120,7 @@ export function applyCodexFastMode(body, provider, model, settings, credentials 
 export async function handleChat(request, clientRawRequest = null, translationCache = null) {
   let body;
   try {
-    body = await request.json();
+    body = await parseJsonBody(request);
   } catch {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
@@ -152,12 +153,12 @@ export async function handleChat(request, clientRawRequest = null, translationCa
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
-  if (authHeader && apiKey) {
-    const masked = log.maskKey(apiKey);
-    log.debug("AUTH", `API Key: ${masked}`);
+  // Resolve the client API key across all presented credentials
+  // (Authorization + x-api-key + …) — attribution uses the credential that
+  // actually validated. 401s on /v1/messages are Anthropic-shaped.
+  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
+  if (apiKey) {
+    log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}${apiKeyValid ? "" : " (not recognized)"}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
@@ -167,12 +168,11 @@ export async function handleChat(request, clientRawRequest = null, translationCa
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+      return authErrorResponse(clientRawRequest.endpoint, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKeyValid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+      return authErrorResponse(clientRawRequest.endpoint, "Invalid API key");
     }
   }
 
@@ -343,6 +343,8 @@ export async function handleChat(request, clientRawRequest = null, translationCa
             log,
           })
         : null,
+      resolveModel: getModelInfo,
+      speedMode: getSpeedMode(body, clientRawRequest?.headers)
     });
   }
 
@@ -461,6 +463,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               log,
             })
           : null,
+        resolveModel: getModelInfo,
+        speedMode: getSpeedMode(body, clientRawRequest?.headers)
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -583,6 +587,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         cavemanLevel: chatSettings.cavemanLevel || "full",
         ponytailEnabled: !!chatSettings.ponytailEnabled,
         ponytailLevel: chatSettings.ponytailLevel || "full",
+        customPromptEnabled: !!chatSettings.customPromptEnabled || !!chatSettings.customSystemPromptEnabled,
+        customPrompt: chatSettings.customPrompt || chatSettings.customSystemPrompt || "",
         toolRankEnabled: !!chatSettings.toolRankEnabled,
         pxpipeEnabled: !!chatSettings.pxpipeEnabled,
         pxpipeMinChars: chatSettings.pxpipeMinChars,

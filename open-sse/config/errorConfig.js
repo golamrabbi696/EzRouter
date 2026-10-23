@@ -30,6 +30,16 @@ export const DEFAULT_ERROR_MESSAGES = {
   504: "Gateway timeout"
 };
 
+// In-band error sent when a 2xx upstream stream delivers no payload at all (the
+// status line is already committed, so the client gets an error frame instead).
+// `claudeType` is the Anthropic error type used for /v1/messages clients.
+export const EMPTY_STREAM_ERROR = {
+  message: "Upstream returned an empty stream — no content was produced. The provider connection may be unauthenticated or unavailable.",
+  type: "upstream_empty_response",
+  code: "empty_stream",
+  claudeType: "api_error",
+};
+
 // Exponential backoff config for rate limits.
 // `max` is the blind ceiling used only when the provider reports no reset time. The
 // ladder needs ~9 consecutive failures to reach it, so it applies to accounts that are
@@ -198,6 +208,7 @@ export const ERROR_RULES = [
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
   { text: "insufficient credit",      backoff: true },
+  { text: "credit balance is too low", backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
   // Model-level serving restriction (e.g. Meta's Geographic Use Policy): the key

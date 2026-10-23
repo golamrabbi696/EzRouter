@@ -1,5 +1,5 @@
 import { getApiKeyByValue, getSettings, reserveApiKeyTokens, settleApiKeyTokens } from "@/lib/localDb";
-import { extractApiKey } from "./auth.js";
+import { extractApiKey, resolveClientApiKey } from "./auth.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 
@@ -22,7 +22,10 @@ function cappedBody(body, outputTokens) {
 
 export async function authorizeApiKeyRequest(request, { model, body, reserveTokens = false } = {}) {
   const settings = await getSettings();
-  const apiKey = extractApiKey(request);
+  const resolved = typeof resolveClientApiKey === "function"
+    ? await resolveClientApiKey(request)
+    : { apiKey: extractApiKey(request), valid: true };
+  const { apiKey, valid: apiKeyValid } = resolved || {};
   if (!apiKey) {
     if (settings.requireApiKey) return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key") };
     return { apiKey: null, body };
@@ -30,7 +33,7 @@ export async function authorizeApiKeyRequest(request, { model, body, reserveToke
 
   const key = typeof getApiKeyByValue === "function" ? await getApiKeyByValue(apiKey) : null;
   const expired = key?.expiresAt && new Date(key.expiresAt).getTime() <= Date.now();
-  if (!key?.isActive || expired) {
+  if (!apiKeyValid || !key?.isActive || expired) {
     if (!settings.requireApiKey) return { apiKey, body };
     return { error: errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key") };
   }

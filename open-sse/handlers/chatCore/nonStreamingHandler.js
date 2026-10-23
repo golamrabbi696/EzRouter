@@ -17,6 +17,7 @@ import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConv
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail, trackPendingRequest } from "@/lib/usageDb.js";
+import { recordModelSpeed, SPEED_MODE } from "../../services/modelSpeed.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
@@ -484,6 +485,7 @@ export async function handleNonStreamingResponse({
     reqLogger?.logConvertedResponse?.(translatedResponse);
 
     const totalLatency = Date.now() - requestStartTime;
+    recordModelSpeed(provider, model, SPEED_MODE.JSON, usage?.completion_tokens ?? usage?.output_tokens, { total: totalLatency });
     saveRequestDetail(buildRequestDetail({
       provider,
       model: recordedModel,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { normalizeOidcAllowedSubjects } from "@/lib/auth/oidc";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -12,32 +13,7 @@ const SETTINGS_RESPONSE_HEADERS = {
 };
 
 // Secrets must never be mass-assigned from request body (CWE-915)
-// Security-critical settings that must be explicitly handled, not mass-assigned
-const PROTECTED_SETTING_KEYS = [
-  "password",
-  "mitmSudoEncrypted",
-  "wakeupState",
-  "requireLogin",
-  "requireApiKey",
-  "authMode",
-  "ssoType",
-  "oidcIssuerUrl",
-  "oidcClientId",
-  "oidcClientSecret",
-  "oidcScopes",
-  "oidcLoginLabel",
-  "samlEntryPoint",
-  "samlIssuer",
-  "samlCert",
-  "samlLoginLabel",
-  "samlAttributeEmail",
-  "samlAttributeName",
-  "tunnelDashboardAccess",
-  "enableObservability",
-  "outboundProxyEnabled",
-  "outboundProxyUrl",
-  "outboundNoProxy",
-];
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 
 export async function GET() {
   try {
@@ -100,6 +76,29 @@ export async function PATCH(request) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "oidcAllowedSubjects")) {
+      if (
+        !Array.isArray(body.oidcAllowedSubjects)
+        || body.oidcAllowedSubjects.length > 100
+        || body.oidcAllowedSubjects.some((entry) => typeof entry !== "string" || entry.length > 200)
+      ) {
+        return NextResponse.json({ error: "oidcAllowedSubjects must contain at most 100 strings of at most 200 characters" }, { status: 400 });
+      }
+      body.oidcAllowedSubjects = normalizeOidcAllowedSubjects(body.oidcAllowedSubjects);
+    }
+
+    const currentSettings = await getSettings();
+    const nextAuthMode = body.authMode ?? currentSettings.authMode;
+    const nextSsoType = body.ssoType ?? currentSettings.ssoType ?? "oidc";
+    const enablesOidc = nextAuthMode === "oidc"
+      || ((nextAuthMode === "sso" || nextAuthMode === "both") && nextSsoType === "oidc");
+    const allowedSubjects = body.oidcAllowedSubjects ?? currentSettings.oidcAllowedSubjects;
+    const updatesOidcAccess = ["authMode", "ssoType", "oidcAllowedSubjects"]
+      .some((key) => Object.prototype.hasOwnProperty.call(body, key));
+    if (updatesOidcAccess && enablesOidc && normalizeOidcAllowedSubjects(allowedSubjects).length === 0) {
+      return NextResponse.json({ error: "At least one exact OIDC subject or email: prefixed verified email is required" }, { status: 400 });
     }
 
     const settings = await updateSettings(body);

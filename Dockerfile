@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG NODE_IMAGE=node:22-alpine
+ARG NODE_IMAGE=node:22.23.4-alpine
 ARG BUN_IMAGE=oven/bun:1.4-alpine
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
@@ -18,7 +18,7 @@ RUN npm run build
 
 FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
-RUN apk --no-cache add tzdata su-exec wget
+RUN apk --no-cache add tzdata su-exec ffmpeg wget
 
 ENV NODE_ENV=production
 ENV PORT=20126

@@ -18,8 +18,27 @@ import {
   clearStickyComboSession,
   orderModelsByChoice,
 } from "./systemoneRouter.js";
+import { parseModel } from "./model.js";
+import { SPEED_MODE, getSpeedMode, getModelSpeed, markModelProbed, wasProbedRecently } from "./modelSpeed.js";
 
 const ENDPOINT_COMBO = "/v1/chat/completions";
+
+import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
+
+// Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
+// them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
+// where `response` is a faithful replay of the original stream (head buffer + live reader).
+async function peekComboResponse(result, log) {
+  const ct = (result.headers.get("content-type") || "").toLowerCase();
+  if (!result.body || !ct.includes("text/event-stream")) return null;
+  const peeked = await peekStreamForContent(result.body);
+  const response = new Response(reconstructStream(peeked.head, peeked.reader, peeked.pendingRead), {
+    status: result.status,
+    statusText: result.statusText,
+    headers: result.headers,
+  });
+  return { outcome: peeked.outcome, finishReason: peeked.finishReason, timedOut: peeked.timedOut, response };
+}
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -88,192 +107,7 @@ const TOOL_RESULT_PREFIX = "[Tool result: ";
 // or plain JSON — reading those would consume a body the caller still needs.
 const SSE_CONTENT_TYPE = "text/event-stream";
 
-// Byte budget for the empty-stream peek. Bounds how much of a chatty
-// non-content stream is buffered for replay before the guard gives up and
-// passes the stream through. 256 KiB is far above any real preamble.
-const PEEK_MAX_BYTES = 256 * 1024;
 
-// Does an SSE data frame carry output the client can actually render or act on?
-//
-// Deliberately stricter than "is this frame well-formed": role announcements,
-// finish_reason, message envelopes and zero-token usage frames are all things a
-// provider emits *around* an answer. A stream made only of those is precisely
-// the empty stream #3463 is about, so none of them count as content on their own.
-function frameCarriesContent(line) {
-  if (!line.startsWith("data:")) return false;
-  const payload = line.slice(5).trim();
-  if (!payload || payload === "[DONE]") return false;
-
-  let parsed;
-  try {
-    parsed = JSON.parse(payload);
-  } catch {
-    return false;
-  }
-
-  // A usage frame counts only if it reports generated output. A frame carrying
-  // prompt tokens and completion_tokens: 0 is an accounting record, not an answer.
-  if (hasOutputTokens(parsed.usage) || hasOutputTokens(parsed.response?.usage)) return true;
-
-  // OpenAI chat: text, reasoning, or a tool call.
-  const delta = parsed.choices?.[0]?.delta;
-  if (nonEmptyString(delta?.content)) return true;
-  if (nonEmptyString(delta?.reasoning_content) || nonEmptyString(delta?.reasoning)) return true;
-  if (delta?.tool_calls?.length || delta?.function_call) return true;
-
-  // Claude: only the delta events carry payload. message_start/content_block_start
-  // are envelopes; a tool_use block start is the exception, since the tool name
-  // arrives there and the arguments follow as input_json_delta.
-  if (parsed.type === "content_block_delta") {
-    const d = parsed.delta;
-    if (nonEmptyString(d?.text) || nonEmptyString(d?.partial_json) || nonEmptyString(d?.thinking)) return true;
-  }
-  if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") return true;
-
-  // OpenAI Responses API: output_text/function-call argument deltas.
-  if (typeof parsed.type === "string" && parsed.type.endsWith(".delta") && nonEmptyString(parsed.delta)) return true;
-
-  // Gemini: a candidate with a part that actually holds something.
-  const parts = parsed.candidates?.[0]?.content?.parts;
-  if (Array.isArray(parts) && parts.some(p => nonEmptyString(p?.text) || p?.functionCall || p?.inlineData)) return true;
-
-  // Ollama NDJSON.
-  if (nonEmptyString(parsed.message?.content) || nonEmptyString(parsed.response)) return true;
-  if (parsed.message?.tool_calls?.length) return true;
-
-  return false;
-}
-
-function nonEmptyString(v) {
-  return typeof v === "string" && v.length > 0;
-}
-
-// Usage is proof of an answer only when it reports generated tokens. Mirrors the
-// completion/output-token check rather than accepting any usage object, so a
-// prompt-tokens-only record is not mistaken for output.
-function hasOutputTokens(usage) {
-  if (!usage || typeof usage !== "object") return false;
-  const n = Number(
-    usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount ?? 0
-  );
-  return Number.isFinite(n) && n > 0;
-}
-
-/**
- * Read a streaming provider response until the first frame that carries content.
- *
- * A provider can return HTTP 200, open an SSE stream, emit only comments or
- * keepalives, and close cleanly. Deciding success from status alone hands that
- * unusable stream to the client and skips the remaining combo models (#3463).
- *
- * Returns { hasContent, body }. When content is found, `body` replays every byte
- * already pulled off the socket and then continues from the live reader, so
- * nothing is dropped — the same re-assembly qoder.js and codex.js use for their
- * own first-frame peeks. Non-SSE responses are reported as content without the
- * body being touched at all.
- *
- * The wait is bounded by STREAM_FIRST_CHUNK_TIMEOUT_MS: an upstream that streams
- * keepalives indefinitely is reported as having no content, so the combo moves on
- * instead of blocking here forever.
- */
-async function peekStreamForContent(response, timeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS) {
-  const contentType = (response.headers.get("content-type") || "").toLowerCase();
-  if (!contentType.includes(SSE_CONTENT_TYPE) || !response.body) {
-    return { hasContent: true, body: null };
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  // Raw chunks are what gets replayed. Decoded text is used only for scanning:
-  // re-encoding decoded text would rewrite any byte upstream sent that is not
-  // valid UTF-8 into U+FFFD and corrupt the client's stream.
-  const rawChunks = [];
-  let rawBytes = 0;
-  let pending = "";
-  let hasContent = false;
-  let upstreamDone = false;
-
-  const deadline = Date.now() + timeoutMs;
-  let timer = null;
-  const expiry = new Promise(resolve => {
-    timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
-  });
-
-  try {
-    while (!hasContent) {
-      if (Date.now() >= deadline) break;
-      // Race the read against the deadline so a keepalive-only stream cannot pin
-      // this loop open; whichever settles first decides.
-      const next = await Promise.race([reader.read(), expiry]);
-      if (next?.timedOut) break;
-
-      const { done, value } = next;
-      if (done) {
-        upstreamDone = true;
-        // A frame may sit in the tail without a trailing newline.
-        pending += decoder.decode();
-        if (pending.trim() && frameCarriesContent(pending.trim())) hasContent = true;
-        break;
-      }
-
-      rawChunks.push(value);
-      rawBytes += value.byteLength;
-      pending += decoder.decode(value, { stream: true });
-
-      // Only scan complete lines; a JSON frame split across chunks must not be
-      // judged on its first half.
-      let newline;
-      while ((newline = pending.indexOf("\n")) !== -1) {
-        const line = pending.slice(0, newline).trim();
-        pending = pending.slice(newline + 1);
-        if (frameCarriesContent(line)) { hasContent = true; break; }
-      }
-      if (hasContent) break;
-
-      // A provider can stream non-content frames at line rate. Without a byte
-      // budget the buffer would grow for the whole timeout window, so stop
-      // buffering and hand the stream over rather than risk the heap. Deciding
-      // in the client's favour: a chatty stream is passed through, not failed.
-      if (rawBytes >= PEEK_MAX_BYTES) {
-        hasContent = true;
-        break;
-      }
-    }
-  } catch {
-    // Treat a read failure as no content so the combo can try the next model.
-    hasContent = false;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-
-  if (!hasContent) {
-    await reader.cancel().catch(() => {});
-    return { hasContent: false, body: null };
-  }
-
-  const body = new ReadableStream({
-    start(controller) {
-      for (const chunk of rawChunks) controller.enqueue(chunk);
-      rawChunks.length = 0;
-      if (upstreamDone) controller.close();
-    },
-    async pull(controller) {
-      if (upstreamDone) return;
-      try {
-        const { done, value } = await reader.read();
-        if (done) { upstreamDone = true; controller.close(); return; }
-        controller.enqueue(value);
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
-    }
-  });
-
-  return { hasContent: true, body };
-}
 
 /**
  * Detect whether a 2xx JSON response contains zero usable content
@@ -707,6 +541,71 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, m
   return rotatedModels;
 }
 
+// Tiers for the "fastest" strategy, in the order they are tried.
+const SPEED_TIER = {
+  PROBE: 0,       // unmeasured and not tried recently: gets a test turn
+  MEASURED: 1,    // fastest first, but close speeds keep the combo order
+  PROBED: 2,      // had its test turn but no speed yet (short reply or error)
+  UNRESOLVED: 3,  // not a provider/model (e.g. a nested combo)
+};
+const SPEED_TIER_LABEL = { [SPEED_TIER.PROBE]: "unmeasured", [SPEED_TIER.PROBED]: "no speed yet", [SPEED_TIER.UNRESOLVED]: "unknown" };
+
+// Speeds within this fraction of the fastest count as a tie, and the combo order
+// breaks it. Small gaps are measuring noise, so a lower-listed model only jumps
+// ahead when it is clearly faster.
+const SPEED_CLOSE_MARGIN = 0.2;
+
+// Measured models are in combo order. Repeatedly take the highest-listed model
+// within the margin of the fastest one left.
+function orderMeasuredBySpeed(measured) {
+  const left = [...measured];
+  const ordered = [];
+  while (left.length > 0) {
+    const fastest = Math.max(...left.map((r) => r.tps));
+    const next = left.findIndex((r) => r.tps >= fastest * (1 - SPEED_CLOSE_MARGIN));
+    ordered.push(...left.splice(next, 1));
+  }
+  return ordered;
+}
+
+/**
+ * Order models for the "fastest" strategy. Never drops a model (fallback intact).
+ * Also reserves the test turn of the first untested model (see below).
+ * @param {string[]} models - Array of model strings
+ * @param {Function} [resolveModel] - (modelStr) => {provider, model} (sync or async)
+ * @param {string} [mode] - SPEED_MODE of the request; only speeds of that mode are compared
+ * @returns {Promise<{ model: string, tps: number|null, tier: number, info: Object|null }[]>}
+ */
+export async function rankModelsBySpeed(models, resolveModel = parseModel, mode = SPEED_MODE.STREAM) {
+  if (!Array.isArray(models)) return [];
+
+  // Promise.all keeps combo order.
+  const infos = await Promise.all(models.map(async (model) => {
+    try { return await resolveModel(model); } catch { return null; }
+  }));
+
+  // No await from here until the reservation: parallel requests can't both see
+  // the same untested model as free, so each one tests a different model.
+  const ranked = models.map((model, i) => {
+    const info = infos[i];
+    if (!info?.provider || !info?.model) return { model, tier: SPEED_TIER.UNRESOLVED, tps: null, info: null };
+    const tps = getModelSpeed(info.provider, info.model, mode);
+    let tier = SPEED_TIER.MEASURED;
+    if (tps === null) tier = wasProbedRecently(info.provider, info.model, mode) ? SPEED_TIER.PROBED : SPEED_TIER.PROBE;
+    return { model, tier, tps, info };
+  });
+  const probe = ranked.find((r) => r.tier === SPEED_TIER.PROBE);
+  if (probe) markModelProbed(probe.info.provider, probe.info.model, mode);
+
+  const inTier = (tier) => ranked.filter((r) => r.tier === tier);
+  return [
+    ...inTier(SPEED_TIER.PROBE),
+    ...orderMeasuredBySpeed(inTier(SPEED_TIER.MEASURED)),
+    ...inTier(SPEED_TIER.PROBED),
+    ...inTier(SPEED_TIER.UNRESOLVED),
+  ];
+}
+
 /**
  * Reset in-memory rotation state when combo/settings change
  * @param {string} [comboName] - Combo name to reset; omit to clear all
@@ -746,8 +645,10 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback" | "round-robin" | "weighted" | "fusion"
+ * @param {string} [options.comboStrategy] - Strategy: "fallback" | "round-robin" | "fastest" | "smart" | "weighted" | "fusion"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Function} [options.resolveModel] - (modelStr) => {provider, model}, used by "fastest"
+ * @param {string} [options.speedMode] - SPEED_MODE of the request, used by "fastest"; defaults to getSpeedMode(body)
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -767,6 +668,8 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  resolveModel,
+  speedMode,
 }) {
   // Normalize members: if provided use them, else derive from models
   const normMembers = normalizeMembers(members, models);
@@ -774,8 +677,15 @@ export async function handleComboChat({
   const sticky = policy?.sticky ?? comboStickyLimit;
   let rotatedModels = effectiveModels;
   let activeStickyModel = null;
+  const probes = new Map();
+  const mode = speedMode || getSpeedMode(body);
 
-  if (comboStrategy === "smart") {
+  if (comboStrategy === "fastest") {
+    const ranked = await rankModelsBySpeed(effectiveModels, resolveModel, mode);
+    rotatedModels = ranked.map((r) => r.model);
+    for (const r of ranked) if (r.tier === SPEED_TIER.PROBE) probes.set(r.model, r.info);
+    log.info("COMBO", `fastest order (${mode}): ${ranked.map((r) => `${r.model} (${r.tps === null ? SPEED_TIER_LABEL[r.tier] : `${Math.round(r.tps)} tok/s`})`).join(", ")}`);
+  } else if (comboStrategy === "smart") {
     const sp = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
     const isPerTurn = sp === "per-turn" || sessionSticky === false;
     const isStrict = sp === "strict";
@@ -888,70 +798,113 @@ export async function handleComboChat({
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  let requestScopedResult = null;
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
+    const probe = probes.get(modelStr);
+    if (probe) markModelProbed(probe.provider, probe.model, mode);
+
     try {
       const result = await handleSingleModel(body, modelStr);
       if (result.headers?.get(NO_REPLAY_HEADER) === '1') return result;
 
-      // Success (2xx) — but a 200 is not proof of a usable answer. A provider can
+      // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
+      // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
+      // otherwise be delivered as a successful empty answer with no failover.
+      // Peek the stream for real content before committing to this candidate.
       if (result.ok) {
-        // A 2xx with no usable content (empty message / in_progress stop) is a
-        // seat failure, not success — fall through to the next model (#4736).
-        // Only parse JSON bodies: .json() on an SSE stream would consume the
-        // whole stream and kill incremental streaming for the client.
-        const contentType = result.headers?.get?.("content-type") || "";
-        let emptyOk = false;
-        if (contentType.includes("application/json")) {
-          try {
-            const peekBody = await result.clone().json();
-            emptyOk = isZeroContentResponse(peekBody) || isPanelEmptyResult(peekBody);
-          } catch {
-            /* opaque body — trust the 2xx */
+        let peeked = null;
+        try {
+          peeked = await peekComboResponse(result, log);
+        } catch (peekErr) {
+          // peekStreamForContent is written not to throw; if reconstruction/Response
+          // construction ever does, result.body is already locked by getReader() and can no
+          // longer be streamed. Returning `result` would hand the client a locked, unreadable
+          // body. Degrade to a clean, valid (empty) SSE stream instead.
+          log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
+          return new Response("data: [DONE]\n\n", {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          });
+        }
+
+        if (!peeked) {
+          // Non-streaming (or non-SSE) response — not this peek's job. The zero-content
+          // JSON check still applies on a non-final seat.
+          const isLastModel = i === rotatedModels.length - 1;
+          if (!isLastModel) {
+            const contentType = result.headers?.get?.("content-type") || "";
+            if (contentType.includes("application/json")) {
+              try {
+                const peekBody = await result.clone().json();
+                if (isZeroContentResponse(peekBody) || isPanelEmptyResult(peekBody)) {
+                  log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
+                  if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+                    clearStickyComboSession(comboName, sessionId);
+                  }
+                  lastError = "Zero usable content";
+                  lastStatus = 200;
+                  continue;
+                }
+              } catch {
+                // Ignore JSON parse errors
+              }
+            }
           }
-        }
-        if (emptyOk) {
-          log.warn("COMBO", `Model ${modelStr} returned 2xx with no usable content, trying next`);
-          if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
-            clearStickyComboSession(comboName, sessionId);
-          }
-          lastError = "empty response from upstream";
-          // Keep lastStatus null here: a 2xx must not leak into the final
-          // "all models failed" response as a success status.
-          continue;
-        }
 
-        const { hasContent, body: replayBody } = await peekStreamForContent(result);
-        if (!hasContent) {
-          lastError = "provider returned an empty stream";
-          if (!lastStatus) lastStatus = 503;
-          log.warn("COMBO", `Model ${modelStr} returned an empty stream, trying next`);
-          continue;
-        }
-
-        const usableResult = replayBody ? new Response(replayBody, {
-          status: result.status,
-          statusText: result.statusText,
-          headers: result.headers,
-        }) : result;
-
-        const shouldInspect = comboStrategy === "fallback" || (comboStrategy === undefined && requestHasTools(body));
-        const inspected = shouldInspect ? await inspectComboPreaction(usableResult, body) : usableResult;
-        if (inspected) {
           clearModelCooldown(modelStr);
-          log.info("COMBO", `Model ${modelStr} succeeded · ATTEMPT ${i + 1}/${rotatedModels.length}`);
+          log.info("COMBO", `Model ${modelStr} succeeded`);
           return annotateComboResponse({
             comboName: comboName || body?.model,
             selectedModel: modelStr,
             attemptedModels: rotatedModels.slice(0, i + 1),
-          }, inspected);
+          }, result);
         }
-        lastError = "Response ended before its first actionable event";
+
+        if (peeked.outcome === "content") {
+          const usableResult = peeked.response;
+          const shouldInspect = comboStrategy === "fallback" || (comboStrategy === undefined && requestHasTools(body));
+          const inspected = shouldInspect ? await inspectComboPreaction(usableResult, body) : usableResult;
+          if (inspected) {
+            clearModelCooldown(modelStr);
+            log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""} · ATTEMPT ${i + 1}/${rotatedModels.length}`);
+            return annotateComboResponse({
+              comboName: comboName || body?.model,
+              selectedModel: modelStr,
+              attemptedModels: rotatedModels.slice(0, i + 1),
+            }, inspected);
+          }
+          lastError = "Response ended before its first actionable event";
+          if (!lastStatus) lastStatus = 502;
+          log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
+          continue;
+        }
+
+        // Empty generation. Fall through to the next candidate unless this is a legitimately
+        // empty class (content filter) or the last candidate — in which case return the
+        // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
+        const reasonLabel = peeked.finishReason || "no-content";
+        const isLast = i === rotatedModels.length - 1;
+        if (isNoRetryFinish(peeked.finishReason) || isLast) {
+          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
+          return annotateComboResponse({
+            comboName: comboName || body?.model,
+            selectedModel: modelStr,
+            attemptedModels: rotatedModels.slice(0, i + 1),
+          }, peeked.response);
+        }
+
+        log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — falling through to next candidate`);
+        if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+          clearStickyComboSession(comboName, sessionId);
+        }
+        // Drain/close the discarded stream in the background so its usage logging still runs.
+        peeked.response.body?.cancel?.().catch(() => {});
+        lastError = `empty generation (${reasonLabel})`;
         if (!lastStatus) lastStatus = 502;
-        log.warn("COMBO", `Model ${modelStr} produced no action, trying next`);
         continue;
       }
 
@@ -1005,26 +958,23 @@ export async function handleComboChat({
         }, result);
       }
 
-      if (policy || currentMember) {
-        const { shouldFallback, advanceChain } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
-        if (!shouldFallback && !advanceChain) {
-          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-          return annotateComboResponse({
-            comboName: comboName || body?.model,
-            selectedModel: modelStr,
-            attemptedModels: rotatedModels.slice(0, i + 1),
-          }, result);
-        }
-      } else {
-        const { shouldFallback, advanceChain } = checkFallbackError(result.status, errorText);
-        if (!shouldFallback && !advanceChain) {
-          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-          return annotateComboResponse({
-            comboName: comboName || body?.model,
-            selectedModel: modelStr,
-            attemptedModels: rotatedModels.slice(0, i + 1),
-          }, result);
-        }
+      const fallbackCheck = (policy || currentMember)
+        ? shouldFallbackWithPolicy(result.status, errorText, policy, currentMember)
+        : checkFallbackError(result.status, errorText);
+
+      const isRequestScoped = Boolean(fallbackCheck.advanceChain || fallbackCheck.requestScoped);
+
+      if (!fallbackCheck.shouldFallback && !isRequestScoped) {
+        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        return annotateComboResponse({
+          comboName: comboName || body?.model,
+          selectedModel: modelStr,
+          attemptedModels: rotatedModels.slice(0, i + 1),
+        }, result);
+      }
+
+      if (isRequestScoped && !requestScopedResult) {
+        requestScopedResult = result;
       }
 
       // Fallback to next model immediately with zero artificial delay.
@@ -1064,6 +1014,16 @@ export async function handleComboChat({
       lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
+  }
+
+  // At least one member rejected the request itself. Hand back that member's own
+  // response — status and body — rather than the synthesized envelope below: the
+  // synthesized one reaches the client as a 200 carrying an error object, which
+  // reads as an empty success, and it buries the member that named the real cause.
+  // This is also what the caller saw before combos advanced on these errors.
+  if (requestScopedResult) {
+    log.warn("COMBO", `No model served the request; returning the first request-scoped failure (${requestScopedResult.status})`);
+    return requestScopedResult;
   }
 
   // All models failed

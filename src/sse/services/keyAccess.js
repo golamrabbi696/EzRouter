@@ -22,6 +22,13 @@
 // does not grant calling a member directly by name — that needs its own entry.
 // The check runs before any credential lookup, so a denied request never
 // touches a provider account.
+//
+// Identity: a request may present several credentials (Claude Code sends a
+// foreign Bearer alongside its x-api-key, and the request is authenticated if
+// ANY of them is a valid key). Access follows the same rule:
+// only presented keys that are known AND active count; none → unrestricted
+// (no-key behaviour, gated by the middleware / requireApiKey); any unrestricted
+// → unrestricted; otherwise restricted to the UNION of their allow lists.
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
@@ -35,56 +42,64 @@ import {
 } from "@/shared/constants/keyAccess.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
+import { normalizeAllowList } from "@/shared/utils/keyAccess.js";
 import * as log from "../utils/logger.js";
 
 const lower = (s) => String(s).toLowerCase();
 const canonicalModel = (provider, model) => lower(`${provider}/${model}`);
 
 /**
- * The client key, read from the same places and in the same order as the
- * middleware (src/dashboardGuard.js) reads the key it authorizes a remote
- * /v1 call with: Bearer, x-api-key, x-goog-api-key, ?key=. Handlers' own
- * extractApiKey() only reads the first two, so using it here would let a
- * restricted key sent as x-goog-api-key look like "no key" (= unrestricted).
+ * The first client credential, read by the shared helper the middleware and the
+ * handlers use (src/shared/utils/apiKeyCandidates.js). Kept for callers that
+ * only log; access decisions use every candidate (getKeyAccessContext).
  */
 export function extractClientApiKey(request) {
-  const headers = request?.headers;
-  if (!headers?.get) return null;
-  const auth = headers.get("Authorization");
-  if (auth?.startsWith("Bearer ")) return auth.slice(7);
-  const xApiKey = headers.get("x-api-key");
-  if (xApiKey) return xApiKey;
-  const googKey = headers.get("x-goog-api-key");
-  if (googKey) return googKey;
-  try {
-    return new URL(request.url).searchParams.get("key") || null;
-  } catch {
-    return null;
-  }
+  return extractApiKeyCandidates(request)[0] || null;
 }
 
 /**
- * Access context for the request's key, or null when the request is
- * unrestricted (no key, unknown key, or a key whose access is unrestricted).
- * Keys are only authenticated elsewhere (middleware / requireApiKey); this only
- * decides what an identified key may call.
+ * Access context for the request, or null when the request is unrestricted.
+ *
+ * Every presented credential is a candidate (Bearer, x-api-key, x-goog-api-key,
+ * ?key=); only those that are known, ACTIVE keys count:
+ *   - none            → null (unrestricted, exactly the no-key behaviour; whether
+ *                       such a request may run at all is the middleware's and
+ *                       requireApiKey's decision, not this one)
+ *   - any unrestricted → null
+ *   - otherwise        → restricted to the UNION of their allow lists.
+ * So a junk or foreign Bearer in front of a restricted x-api-key can never make
+ * the request unrestricted, and an inactive key never contributes.
+ * Keys are only authenticated elsewhere; this only decides what may be called.
  */
 export async function getKeyAccessContext(request) {
-  const apiKey = extractClientApiKey(request);
-  if (!apiKey) return null;
-  const record = await getApiKeyByKey(apiKey);
-  if (!record) return null;
-  const policies = process.env.NINEROUTER_HA_CONFIG
-    ? (await getAdapter()).ha?.policies(record.id).filter(p => p.restricted) || []
+  const records = [];
+  for (const candidate of extractApiKeyCandidates(request)) {
+    const record = await getApiKeyByKey(candidate);
+    if (record?.isActive === true) records.push(record);
+  }
+  if (records.length === 0) return null;
+  const haAdapter = process.env.NINEROUTER_HA_CONFIG ? (await getAdapter()).ha : null;
+  const policies = haAdapter
+    ? records.flatMap((r) => haAdapter.policies(r.id)?.filter((p) => p.restricted) || [])
     : [];
-  if (!record.access?.restricted && !policies.length) return null;
+  if (records.some((r) => !r.access?.restricted) && !policies.length) return null;
   return {
-    keyId: record.id,
-    keyName: record.name || record.id,
-    allow: record.access.allow || [],
+    keyId: records.map((r) => r.id).join(","),
+    keyName: records.map((r) => r.name || r.id).join(","),
+    allow: normalizeAllowList(records.flatMap((r) => r.access?.allow || [])),
     haPolicies: policies,
+    endpoint: requestPathname(request),
     _sets: null,
   };
+}
+
+function requestPathname(request) {
+  try {
+    return request?.nextUrl?.pathname || new URL(request.url).pathname;
+  } catch {
+    return null;
+  }
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
@@ -139,9 +154,19 @@ async function isModelStringAllowed(ctx, requested) {
   return isResolvedModelAllowed(sets, info.provider, info.model);
 }
 
+// On the Anthropic Messages API the 403 uses Anthropic's error envelope (as the
+// 401s do, see authErrorResponse), so Claude Code and the anthropic SDKs
+// surface the message. Every other endpoint keeps the OpenAI shape.
 export function keyAccessDeniedResponse(ctx, requested) {
   log.warn("AUTH", `key-access: key "${ctx.keyName}" denied "${requested}"`);
-  return errorResponse(HTTP_STATUS.FORBIDDEN, keyAccessDeniedMessage(requested));
+  const message = keyAccessDeniedMessage(requested);
+  if (ctx.endpoint?.includes("/v1/messages")) {
+    return new Response(
+      JSON.stringify({ type: "error", error: { type: "permission_error", message } }),
+      { status: HTTP_STATUS.FORBIDDEN, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+    );
+  }
+  return errorResponse(HTTP_STATUS.FORBIDDEN, message);
 }
 
 /**
