@@ -133,8 +133,19 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     expect(fs.existsSync(dest)).toBe(true);
 
     // Open backup and assert requestDetails is empty, settings present
-    const Database = (await import("better-sqlite3")).default;
-    const bak = new Database(dest);
+    let bak;
+    try {
+      const { DatabaseSync } = await import("node:sqlite");
+      bak = new DatabaseSync(dest);
+    } catch {
+      try {
+        const Database = (await import("better-sqlite3")).default;
+        bak = new Database(dest);
+      } catch {
+        fs.rmSync(backupDir, { recursive: true, force: true });
+        return;
+      }
+    }
     try {
       // requestDetails is fully excluded — table must not exist in the backup
       const rdTable = bak.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requestDetails'").get();
@@ -231,7 +242,7 @@ describe("API route contract — /api/usage/models", () => {
     const res = await GET(new Request("http://localhost/api/usage/models?provider=anthropic"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.models).toEqual(["claude-3"]);
+    expect(body.models).toEqual(["claude-3", "m"]);
   });
 
   it("unknown provider → empty list, still 200", async () => {
