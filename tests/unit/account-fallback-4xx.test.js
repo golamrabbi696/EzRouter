@@ -72,13 +72,13 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
 
   it("does not fall back for an ordinary bad request", () => {
     expect(checkFallbackError(400, "Bad request")).toEqual({
-      shouldFallback: false, cooldownMs: 0, advanceChain: true,
+      shouldFallback: false, cooldownMs: 0, advanceChain: true, requestScoped: true,
     });
   });
 
   it("marks request-scoped 400s advanceChain for combos without cooling (#4683)", () => {
     const result = checkFallbackError(400, "Unsupported model mimo-auto");
-    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0, advanceChain: true });
+    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0, advanceChain: true, requestScoped: true });
   });
 
   it("keeps the transient cooldown for unmatched server errors", () => {

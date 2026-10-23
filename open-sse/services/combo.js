@@ -888,6 +888,7 @@ export async function handleComboChat({
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  let requestScopedResult = null;
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -1005,26 +1006,23 @@ export async function handleComboChat({
         }, result);
       }
 
-      if (policy || currentMember) {
-        const { shouldFallback, advanceChain } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
-        if (!shouldFallback && !advanceChain) {
-          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-          return annotateComboResponse({
-            comboName: comboName || body?.model,
-            selectedModel: modelStr,
-            attemptedModels: rotatedModels.slice(0, i + 1),
-          }, result);
-        }
-      } else {
-        const { shouldFallback, advanceChain } = checkFallbackError(result.status, errorText);
-        if (!shouldFallback && !advanceChain) {
-          log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-          return annotateComboResponse({
-            comboName: comboName || body?.model,
-            selectedModel: modelStr,
-            attemptedModels: rotatedModels.slice(0, i + 1),
-          }, result);
-        }
+      const fallbackCheck = (policy || currentMember)
+        ? shouldFallbackWithPolicy(result.status, errorText, policy, currentMember)
+        : checkFallbackError(result.status, errorText);
+
+      const isRequestScoped = Boolean(fallbackCheck.advanceChain || fallbackCheck.requestScoped);
+
+      if (!fallbackCheck.shouldFallback && !isRequestScoped) {
+        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        return annotateComboResponse({
+          comboName: comboName || body?.model,
+          selectedModel: modelStr,
+          attemptedModels: rotatedModels.slice(0, i + 1),
+        }, result);
+      }
+
+      if (isRequestScoped && !requestScopedResult) {
+        requestScopedResult = result;
       }
 
       // Fallback to next model immediately with zero artificial delay.
@@ -1064,6 +1062,16 @@ export async function handleComboChat({
       lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
+  }
+
+  // At least one member rejected the request itself. Hand back that member's own
+  // response — status and body — rather than the synthesized envelope below: the
+  // synthesized one reaches the client as a 200 carrying an error object, which
+  // reads as an empty success, and it buries the member that named the real cause.
+  // This is also what the caller saw before combos advanced on these errors.
+  if (requestScopedResult) {
+    log.warn("COMBO", `No model served the request; returning the first request-scoped failure (${requestScopedResult.status})`);
+    return requestScopedResult;
   }
 
   // All models failed

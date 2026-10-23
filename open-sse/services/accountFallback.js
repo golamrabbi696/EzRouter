@@ -69,7 +69,13 @@ export function resolveCooldownMs(newLevel, errorText) {
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
- * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
+ * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number, requestScoped?: boolean }}
+ *
+ * `shouldFallback` answers "is the CREDENTIAL at fault?" (account rotation).
+ * `requestScoped` answers "is the REQUEST itself what this member rejected?"
+ * (combo rotation). They are different questions: a context overflow or a
+ * validation 400 means the credential is healthy but this member cannot serve
+ * this request, so combo rotation must still try the next member.
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0, provider = null) {
   const lowerError = toLowerError(errorText);
@@ -142,7 +148,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
     // to try the remaining seats and surface the LAST seat's error (#4683
     // reproduction A); account fallback ignores it and keeps the conservative
     // no-cooling behavior.
-    return { shouldFallback: false, cooldownMs: 0, advanceChain: true };
+    return { shouldFallback: false, cooldownMs: 0, advanceChain: true, requestScoped: true };
   }
 
   // Default fallback for unhandled errors (30s transient cooldown)
