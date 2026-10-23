@@ -460,9 +460,9 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
       // — clamp to high when the declared levels exclude it.
       const level = toLevel(eff);
       const want = level === "xhigh" || level === "max" ? "max"
-        : (level === "low" || level === "minimal") && supportsThinkingLevel(provider, model, "low") ? "low"
+        : (level === "low" || level === "minimal") && supportedLevels?.includes("low") ? "low"
         : "high";
-      body.reasoning_effort = want === "max" && !supportsThinkingLevel(provider, model, "max") ? "high" : want;
+      body.reasoning_effort = want === "max" && supportedLevels && !supportedLevels.includes("max") ? "high" : want;
       break;
     }
     case "kimi": {
