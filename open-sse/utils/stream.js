@@ -68,7 +68,7 @@ export function createSSEStream(options = {}) {
   let usage = null;
   // Body-size estimate kept apart from the provider-reported usage: it is a
   // fallback for providers that report no usage at all, never a candidate to
-  // be merged with it (see mergeUsage).
+  // be merged with it (see mergeUsage and #5056).
   let estimatedUsage = null;
 
   // Tool-call ids already sent to the client, keyed by the tool-call index.
@@ -151,6 +151,12 @@ export function createSSEStream(options = {}) {
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
+
+    // A stream that ended on an injected estimate falls back to that estimate,
+    // but only when the provider never reported authoritative usage (#5056).
+    if (!hasValidUsage(finalUsage)) {
+      finalUsage = (isPassthrough ? estimatedUsage : state?.estimatedUsage) || null;
+    }
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
       // The provider reported no usage at all: fall back to the body-size
@@ -373,7 +379,7 @@ export function createSSEStream(options = {}) {
                 // Keep the estimate out of the accumulator: a provider that
                 // reports its usage in a trailing chunk (stream_options
                 // include_usage) sends it AFTER this chunk, and merging the
-                // two by max would let the guess outvote the real number.
+                // two by max would let the guess outvote the real number (#5056).
                 estimatedUsage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
@@ -571,8 +577,9 @@ export function createSSEStream(options = {}) {
                 model
               );
               // Same rule as the passthrough path: the estimate is a fallback,
-              // not something to merge with the provider's own usage.
+              // not something to merge with the provider's own usage (#5056).
               estimatedUsage = estimated;
+              if (state) state.estimatedUsage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
