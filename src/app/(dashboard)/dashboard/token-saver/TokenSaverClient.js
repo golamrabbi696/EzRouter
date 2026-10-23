@@ -45,8 +45,8 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
-  const [customSystemPromptEnabled, setCustomSystemPromptEnabled] = useState(false);
-  const [customSystemPrompt, setCustomSystemPrompt] = useState("");
+  const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
   const [toolRankEnabled, setToolRankEnabled] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [toolDisclosureEnabled, setToolDisclosureEnabled] = useState(false);
@@ -371,17 +371,20 @@ export default function TokenSaverClient() {
     setPonytailLevel(level);
     patchSetting({ ponytailLevel: level });
   };
-  const handleCustomSystemPromptEnabled = (value) => {
-    setCustomSystemPromptEnabled(value);
-    patchSetting({ customSystemPromptEnabled: value });
-  };
-  const handleCustomSystemPromptBlur = () => {
-    patchSetting({ customSystemPrompt });
-  };
+
 
   const handleToolRankEnabled = (value) => {
     setToolRankEnabled(value);
     patchSetting({ toolRankEnabled: value });
+  };
+
+  const handleCustomPromptEnabled = (value) => {
+    setCustomPromptEnabled(value);
+    patchSetting({ customPromptEnabled: value });
+  };
+
+  const handleCustomPromptBlur = () => {
+    patchSetting({ customPrompt });
   };
 
   const refreshPxpipeStatus = useCallback(async () => {
@@ -480,8 +483,8 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
-          setCustomSystemPromptEnabled(!!data.customSystemPromptEnabled);
-          setCustomSystemPrompt(data.customSystemPrompt || "");
+          setCustomPromptEnabled(!!(data.customPromptEnabled ?? data.customSystemPromptEnabled));
+          setCustomPrompt(data.customPrompt ?? data.customSystemPrompt ?? "");
           setToolRankEnabled(!!data.toolRankEnabled);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
@@ -798,35 +801,37 @@ export default function TokenSaverClient() {
             />
           </div>
         </div>
-        {/* Custom user-defined system prompt */}
-        <div className="flex items-start justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Custom system prompt
-            </p>
+            <p className="font-medium">Custom system prompt</p>
             <p className="text-sm text-text-muted">
-              Inject your own text into the system message of every request
+              Appends your own instruction to every request, independently of
+              the savers above
             </p>
           </div>
-          <div className="flex flex-col items-end gap-2 shrink-0 min-w-[300px]">
-            {customSystemPromptEnabled && (
-              <textarea
-                value={customSystemPrompt}
-                onChange={(e) => setCustomSystemPrompt(e.target.value)}
-                onBlur={handleCustomSystemPromptBlur}
-                placeholder="Enter your custom system prompt here..."
-                rows={3}
-                className="w-full px-3 py-2 rounded text-sm border border-border bg-surface-2 text-text placeholder:text-text-muted resize-y focus:outline-none focus:border-primary"
-              />
-            )}
-            <div className="flex items-center gap-3 shrink-0">
-              <Toggle
-                checked={customSystemPromptEnabled}
-                onChange={() => handleCustomSystemPromptEnabled(!customSystemPromptEnabled)}
-              />
-            </div>
-          </div>
+          <Toggle
+            checked={customPromptEnabled}
+            onChange={() => handleCustomPromptEnabled(!customPromptEnabled)}
+          />
         </div>
+        {customPromptEnabled && (
+          <div className="pt-3">
+            <textarea
+              id="custom-prompt"
+              aria-label="Custom system prompt"
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              onBlur={handleCustomPromptBlur}
+              rows={4}
+              placeholder="e.g. Prefer editing existing files over creating new ones."
+              className="w-full rounded border border-border bg-transparent p-2 text-xs"
+            />
+            <p className="text-xs text-text-muted mt-1">
+              Applied to every provider and model. Sent as-is to upstream; an
+              empty prompt injects nothing.
+            </p>
+          </div>
+        )}
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">Tool relevance ranking</p>
@@ -877,6 +882,9 @@ export default function TokenSaverClient() {
             />
             <p className="text-xs text-text-muted">
               BM25 runs when the tool count exceeds this threshold; top-K are kept.
+            </p>
+          </div>
+        )}
             </p>
           </div>
         )}

@@ -62,8 +62,9 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: true,
   ponytailLevel: "full",
-  customSystemPromptEnabled: false,
-  customSystemPrompt: "",
+  // User-authored system prompt, injected independently of the built-in savers.
+  customPromptEnabled: false,
+  customPrompt: "",
   toolRankEnabled: false,
   pxpipeEnabled: false,
   pxpipeAutoInstall: false,
