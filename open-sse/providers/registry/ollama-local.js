@@ -25,7 +25,14 @@ export default {
     { id: "embeddinggemma", name: "EmbeddingGemma", kind: "embedding" },
     { id: "nomic-embed-text", name: "Nomic Embed Text", kind: "embedding" },
     { id: "bge-m3", name: "BGE M3", kind: "embedding" },
+    { id: "clef", name: "Clef", kind: "systemone" },
+    { id: "clef-flash", name: "Clef Flash", kind: "systemone" },
   ],
-  serviceKinds: ["llm", "embedding"],
+  serviceKinds: ["llm", "embedding", "systemone"],
   embeddingConfig: { baseUrl: "http://localhost:11434/v1/embeddings", authType: "none" },
+  systemoneConfig: {
+    baseUrl: "http://localhost:11434/v1/systemone",
+    // Saved host (providerSpecificData.baseUrl) is joined with this path.
+    path: "/v1/systemone",
+  },
 };
