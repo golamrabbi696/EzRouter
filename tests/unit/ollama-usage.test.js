@@ -237,6 +237,69 @@ describe("getUsageForProvider(ollama)", () => {
     expect(usage.message).toMatch(/api key/i);
     expect(proxyAwareFetch).not.toHaveBeenCalled();
   });
+
+  it("handles legacy session and weekly windows from /api/balance", async () => {
+    const usage = await fetchOllamaUsage({
+      included: {
+        session: {
+          remaining_percent: 85.5,
+          resets_at: "2026-10-19T18:00:00Z",
+        },
+        weekly: {
+          remaining_percent: 92,
+          resets_at: "2026-10-25T00:00:00Z",
+        },
+      },
+    }, { Plan: "pro" });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("Pro");
+    expect(usage.quotas["Session (5h)"]).toEqual({
+      used: 14,
+      total: 100,
+      remainingPercentage: 86,
+      resetAt: "2026-10-19T18:00:00Z",
+      unlimited: false,
+    });
+    expect(usage.quotas["Weekly (7d)"]).toEqual({
+      used: 8,
+      total: 100,
+      remainingPercentage: 92,
+      resetAt: "2026-10-25T00:00:00Z",
+      unlimited: false,
+    });
+  });
+
+  it("handles allowance and purchased credits from /api/balance", async () => {
+    const usage = await fetchOllamaUsage({
+      included: {
+        allowance_usd: "2.50",
+        balance_usd: "1.25",
+        period: { until: "2026-11-01T00:00:00Z" },
+      },
+      purchased: {
+        balance_usd: "10.00",
+      },
+    }, { Plan: "free" });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("Free");
+    expect(usage.quotas["Monthly"]).toEqual({
+      used: 50,
+      total: 100,
+      remainingPercentage: 50,
+      resetAt: "2026-11-01T00:00:00Z",
+      unlimited: false,
+    });
+    expect(usage.quotas["Purchased (USD)"]).toEqual({
+      used: 0,
+      total: 10,
+      isCreditBalance: true,
+      currency: "USD",
+      resetAt: null,
+      unlimited: false,
+    });
+  });
 });
 
 describe("parseQuotaData(ollama)", () => {
@@ -294,6 +357,46 @@ describe("parseQuotaData(ollama)", () => {
       total: 25,
       isCreditBalance: true,
       currency: "USD",
+    });
+  });
+
+  it("forwards isCreditBalance, currency, and unit for dashboard display", () => {
+    const rows = parseQuotaData("ollama", {
+      plan: "Free",
+      quotas: {
+        "Allowance ($)": {
+          used: 1.25,
+          total: 2.5,
+          remainingPercentage: 50,
+          resetAt: "2026-11-01T00:00:00Z",
+          unlimited: false,
+          unit: "USD",
+        },
+        "Purchased Credits": {
+          used: 0,
+          total: 10,
+          remainingPercentage: 100,
+          isCreditBalance: true,
+          currency: "$",
+        },
+      },
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      name: "Allowance ($)",
+      used: 1.25,
+      total: 2.5,
+      remainingPercentage: 50,
+      unit: "USD",
+    });
+    expect(rows[1]).toMatchObject({
+      name: "Purchased Credits",
+      used: 0,
+      total: 10,
+      remainingPercentage: 100,
+      isCreditBalance: true,
+      currency: "$",
     });
   });
 });

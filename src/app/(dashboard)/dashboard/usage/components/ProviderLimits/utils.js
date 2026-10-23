@@ -860,6 +860,8 @@ export function parseQuotaData(provider, data) {
               remainingPercentage: quota.remainingPercentage,
               isCreditBalance: quota.isCreditBalance,
               currency: quota.currency,
+              unit: quota.unit,
+              unlimited: quota.unlimited,
             });
           });
         }
