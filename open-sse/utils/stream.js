@@ -1,6 +1,7 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { extractReasoningText } from "../translator/concerns/reasoning.js";
+import { PROVIDERS } from "../config/providers.js";
+import { extractReasoningText, liftReasoningAliases } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, enrichUsageCost, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
@@ -123,6 +124,16 @@ export function createSSEStream(options = {}) {
   let finalized = false;
   let completionFlushTimer = null;
 
+  // Lane quirk: upstream streams thinking under the OpenRouter aliases
+  // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
+  // Free's MiMo route does. Lift it on every passthrough delta so OpenAI-shaped
+  // clients, the thinking accumulation below and usage accounting see the text.
+  const liftAliases = mode === STREAM_MODE.PASSTHROUGH && (
+    !!PROVIDERS[provider]?.quirks?.reasoningAliasFields ||
+    provider === "cline" ||
+    !provider
+  );
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = (meta = {}) => {
@@ -226,16 +237,6 @@ export function createSSEStream(options = {}) {
 
               const idFixed = fixInvalidId(parsed);
               let fieldsInjected = false;
-              // Cline sends reasoning under delta.reasoning; downstream OpenAI
-              // clients read reasoning_content instead.
-              for (const choice of parsed.choices || []) {
-                const delta = choice?.delta;
-                if (typeof delta?.reasoning === "string" && delta.reasoning) {
-                  delta.reasoning_content = (delta.reasoning_content || "") + delta.reasoning;
-                  delete delta.reasoning;
-                  fieldsInjected = true;
-                }
-              }
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               if (parsed.choices !== undefined) {
@@ -253,6 +254,20 @@ export function createSSEStream(options = {}) {
                   if (choice.content_filter_results !== undefined) {
                     delete choice.content_filter_results;
                     fieldsInjected = true;
+                  }
+                }
+              }
+
+              // Alias lanes: expose thinking as reasoning_content (additive) before
+              // the valuable-content check, so reasoning-only chunks survive.
+              if (liftAliases && parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice?.delta) {
+                    const lifted = liftReasoningAliases(choice.delta);
+                    if (lifted !== choice.delta) {
+                      choice.delta = lifted;
+                      fieldsInjected = true;
+                    }
                   }
                 }
               }
