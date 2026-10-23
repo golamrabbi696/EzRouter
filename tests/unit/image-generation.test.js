@@ -419,7 +419,7 @@ describe("handleImageGenerationCore", () => {
     expect(result.success).toBe(true);
     const fetchCall = global.fetch.mock.calls[0];
     const requestBody = JSON.parse(fetchCall[1].body);
-    expect(requestBody.model).toBe("gpt-5.6-luna");
+    expect(requestBody.model).toBe("gpt-5.6-terra");
     expect(requestBody.tools).toEqual([
       { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
     ]);
@@ -465,7 +465,7 @@ describe("handleImageGenerationCore", () => {
 
     expect(result.success).toBe(true);
     const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(requestBody.model).toBe("gpt-5.6-luna");
+    expect(requestBody.model).toBe("gpt-5.6-terra");
     expect(requestBody.tools).toEqual([{
       type: "image_generation",
       action: "edit",
