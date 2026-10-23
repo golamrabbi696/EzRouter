@@ -20,6 +20,13 @@
 - **Token Saver & RTK**:
   - **User-Authored Custom System Prompt (`#5095`)**: Added customizable system prompt injection independent of Ponytail/Caveman savers across OpenAI, Claude, Gemini, and Responses formats.
   - **Headroom & Tool Output Preservation (`#5048`, `#5075`)**: Preserved structured tool call IDs and output formats during token compression.
+- **Bug Fixes & Internal Stability**:
+  - **React Rules of Hooks Compliance**: Corrected unconditional Hook order and memoization in `UsageStats.js`.
+  - **Dashboard Build Fixes**: Cleaned syntax anomalies in combos manager and token-saver dashboard.
+  - **API Key Policy Safeguard**: Handled graceful destructuring when `resolveClientApiKey` returns undefined or null.
+  - **Models Route Strategy Reference**: Fixed TDZ ReferenceError when `exposeComboOnly` is enabled.
+  - **Stream Disconnect Handling**: Fixed argument indexing in `pipeWithDisconnect`.
+  - **Usage Token Merging**: Accurately combined estimated prompt tokens with provider-reported output-only token usage.
 - **Architectural Integrity & Rejections**:
   - **REJECTED PR #5122**: Strictly rejected the experimental Go rewrite to maintain EzRouter's unified, high-performance Node/Next.js architecture with full plugin, MCP, and custom provider support.
   - **SKIPPED Redundant Upstream CI**: Excluded upstream Docker/publish scripts that leak port 20128.
