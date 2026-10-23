@@ -99,7 +99,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = runtimeTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
-
   // Native passthrough: CLI tool and provider are the same ecosystem
   // Skip all translation/normalization — only model and Bearer are swapped
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
