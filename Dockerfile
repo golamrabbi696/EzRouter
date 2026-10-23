@@ -18,7 +18,7 @@ RUN npm run build
 
 FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
-RUN apk --no-cache add tzdata su-exec wget
+RUN apk --no-cache add tzdata su-exec ffmpeg wget
 
 ENV NODE_ENV=production
 ENV PORT=20126

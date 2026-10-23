@@ -361,6 +361,9 @@ async function getDispatcher(proxyUrl, insecure = false) {
 async function fetchWithTlsFallback(url, options, proxyUrl) {
   const targetUrl = typeof url === "string" ? url : url.toString();
   try {
+    // Protocol adapters may need Node's HTTP/1 transport on the direct path.
+    // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
+    if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
     if (proxyUrl) {
       const dispatcher = await getDispatcher(proxyUrl);
       return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
@@ -380,7 +383,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
     const code = err.cause?.code || err.code;
     // Fail closed by default: retrying without verification would send the request
     // (provider API key included) to whoever presented the certificate.
-    if (!ALLOW_INSECURE_TLS_FALLBACK) {
+    if (!ALLOW_INSECURE_TLS_FALLBACK || options.strictTls === true) {
       console.warn(`[ProxyFetch] TLS cert verification failed (${code}) for ${logSafeOrigin(url)}; not retrying without verification. Trust the issuing CA via NODE_EXTRA_CA_CERTS, or set ALLOW_INSECURE_TLS_FALLBACK=true to opt in to the insecure retry.`);
       throw err;
     }
