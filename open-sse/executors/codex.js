@@ -128,14 +128,23 @@ function hoistClientInstructions(body) {
 
 // Grok Build (cli-chat-proxy) reasoning items carry UUID-shaped ids; OpenAI's are rs_<hex> without dashes.
 const FOREIGN_REASONING_ID = /^rs_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// OpenAI seals encrypted_content as a Fernet token (version byte 0x80), so its base64 always opens with
+// "gAAAAA". Clients that replay with store=false often drop the item id, so the blob itself has to tell.
+const OPENAI_SEALED_REASONING = /^gAAAAA/;
+
+function isForeignReasoningItem(item) {
+  if (!item || item.type !== "reasoning") return false;
+  if (typeof item.id === "string" && FOREIGN_REASONING_ID.test(item.id)) return true;
+  return typeof item.encrypted_content === "string" && item.encrypted_content !== ""
+    && !OPENAI_SEALED_REASONING.test(item.encrypted_content);
+}
 
 // Drop reasoning items another provider encrypted (a combo that fell back to Grok, or a client that
 // switched models mid-conversation). OpenAI cannot decrypt them and rejects the whole request with
 // 400 invalid_encrypted_content, so every later turn of that conversation would fail on Codex.
 export function dropForeignReasoningItems(body) {
   if (!Array.isArray(body?.input)) return;
-  body.input = body.input.filter((item) => !(item && item.type === "reasoning"
-    && typeof item.id === "string" && FOREIGN_REASONING_ID.test(item.id)));
+  body.input = body.input.filter((item) => !isForeignReasoningItem(item));
 }
 
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
