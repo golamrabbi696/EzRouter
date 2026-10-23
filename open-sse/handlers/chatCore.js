@@ -426,7 +426,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
-<<<<<<< HEAD
     // Caveman: inject terse-style system prompt
     if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
       injectCaveman(translatedBody, finalFormat, cavemanLevel);

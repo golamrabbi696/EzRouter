@@ -392,7 +392,7 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         setDiagnostic(diagnostics, "no eligible plain-text tool output");
         return null;
       }
-      const data = await callCompress(url, toolOutputs.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      const data = await callCompress(url, toolOutputs.messages, model, timeoutMs, compressUserMessages, diagnostics || {}, token);
       if (!data || !applyToolOutputText(toolOutputs, data.messages, diagnostics)) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
