@@ -126,6 +126,18 @@ function hoistClientInstructions(body) {
   return text;
 }
 
+// Grok Build (cli-chat-proxy) reasoning items carry UUID-shaped ids; OpenAI's are rs_<hex> without dashes.
+const FOREIGN_REASONING_ID = /^rs_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Drop reasoning items another provider encrypted (a combo that fell back to Grok, or a client that
+// switched models mid-conversation). OpenAI cannot decrypt them and rejects the whole request with
+// 400 invalid_encrypted_content, so every later turn of that conversation would fail on Codex.
+export function dropForeignReasoningItems(body) {
+  if (!Array.isArray(body?.input)) return;
+  body.input = body.input.filter((item) => !(item && item.type === "reasoning"
+    && typeof item.id === "string" && FOREIGN_REASONING_ID.test(item.id)));
+}
+
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
 function stripStoredItemReferences(body, preserveLitePrefix = false) {
   if (!Array.isArray(body.input)) return;
@@ -624,6 +636,8 @@ export class CodexExecutor extends BaseExecutor {
 
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
+    // Before the id strip below, which would erase the ids that tell foreign reasoning apart
+    dropForeignReasoningItems(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body, responsesLite);
     // Flatten function tools + drop unsupported types
