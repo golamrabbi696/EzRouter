@@ -135,9 +135,9 @@ export function isBillingBlock(inner) {
   try {
     const parsed = typeof inner === "object" ? inner : JSON.parse(str);
     const code = String(parsed?.code ?? "");
-    if (code === "110" || code === "112" || code === "10605") return true;
+    if (code === "110" || code === "112") return true;
   } catch { /* not JSON */ }
-  return /"code"\s*:\s*"(110|112|10605)"/.test(str);
+  return /"code"\s*:\s*"(110|112)"/.test(str);
 }
 
 async function peekFirstQoderFrame(reader, decoder) {
