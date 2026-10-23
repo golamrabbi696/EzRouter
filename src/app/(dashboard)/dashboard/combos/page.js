@@ -109,7 +109,6 @@ function contextWindowOptions(seatEntries, seatMin, customValue) {
   opts.push({ value: "custom", label: "custom…" });
   return opts;
 }
-}
 
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);

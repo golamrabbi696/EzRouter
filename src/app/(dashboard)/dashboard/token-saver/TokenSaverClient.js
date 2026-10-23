@@ -885,9 +885,6 @@ export default function TokenSaverClient() {
             </p>
           </div>
         )}
-            </p>
-          </div>
-        )}
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">

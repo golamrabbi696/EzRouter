@@ -565,6 +565,26 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    let result;
+    try {
+      result = await handleChatCore({
+        translationCache,
+        body: { ...structuredClone(body), model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: { ...refreshedCredentials, rawHeaders: clientRawRequest?.headers },
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        headroomEnabled: !!chatSettings.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        headroomTimeoutMs: chatSettings.headroomTimeoutMs,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
         ponytailEnabled: !!chatSettings.ponytailEnabled,
         ponytailLevel: chatSettings.ponytailLevel || "full",
         customPromptEnabled: !!chatSettings.customPromptEnabled || !!chatSettings.customSystemPromptEnabled,
