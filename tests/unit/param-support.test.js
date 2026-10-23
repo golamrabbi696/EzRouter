@@ -128,15 +128,6 @@ describe("stripUnsupportedParams", () => {
     expect(body.max_completion_tokens).toBe(4096);
   });
 
-  it("does NOT rename for OpenAI gpt-4o (still uses max_tokens)", () => {
-    const body = { max_tokens: 2048, model: "gpt-4o" };
-
-    stripUnsupportedParams("openai", "gpt-4o", body);
-
-    expect(body.max_tokens).toBe(2048);
-    expect(body.max_completion_tokens).toBeUndefined();
-  });
-
   it("strips reasoning params for xAI grok-composer models", () => {
     const body = {
       reasoning_effort: "medium",
@@ -271,5 +262,29 @@ describe("stripUnsupportedParams", () => {
     stripUnsupportedParams("deepseek", "deepseek-v4-pro", foreign);
     expect(foreign.context_management).toEqual({ edits: [] });
     expect(foreign.output_config).toEqual({ effort: "high" });
+  });
+
+  it("renames max_tokens to max_completion_tokens for the openai provider", () => {
+    const body = { max_tokens: 50, temperature: 1 };
+
+    stripUnsupportedParams("openai", "gpt-6-luna", body);
+
+    expect(body).toEqual({ max_completion_tokens: 50, temperature: 1 });
+  });
+
+  it("keeps an explicit max_completion_tokens when both are sent to openai", () => {
+    const body = { max_tokens: 50, max_completion_tokens: 80 };
+
+    stripUnsupportedParams("openai", "gpt-6-luna", body);
+
+    expect(body).toEqual({ max_completion_tokens: 80 });
+  });
+
+  it("leaves max_tokens untouched for other providers", () => {
+    const body = { max_tokens: 50 };
+
+    stripUnsupportedParams("groq", "qwen/qwen3.6-27b", body);
+
+    expect(body).toEqual({ max_tokens: 50 });
   });
 });
