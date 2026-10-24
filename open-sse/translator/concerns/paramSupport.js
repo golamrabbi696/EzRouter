@@ -7,7 +7,10 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // A param is removed only when it is present (!== undefined).
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
-  { match: /claude/i, drop: ["temperature"] },
+  // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
+  // reasoning_effort is OpenAI-specific and rejected by Anthropic Messages API ("Extra inputs are not permitted").
+  { match: /claude/i, drop: ["temperature", "reasoning_effort"] },
+  { provider: "claude", drop: ["reasoning_effort"] },
   // All Claude models: newer Claude Code clients send a top-level `diagnostics`
   // telemetry field gated behind a beta this provider does not advertise, so
   // Anthropic 400s with `diagnostics: Extra inputs are not permitted`.
