@@ -1110,6 +1110,9 @@ export function isPanelEmptyResult(json) {
   if (!json || typeof json !== "object") return true;
   if (extractPanelText(json)) return false;
 
+  // System One (Jev) decision payload: answers object counts as usable output
+  if (json.answers && typeof json.answers === "object") return false;
+
   // OpenAI chat: tool calls / reasoning content count as usable output
   const msg = json.choices?.[0]?.message;
   if (msg) {

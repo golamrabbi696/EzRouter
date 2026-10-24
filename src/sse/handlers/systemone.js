@@ -107,6 +107,7 @@ export async function handleSystemone(request) {
       comboStickyLimit: settings.comboStickyRoundRobinLimit,
       // Decision payloads are native: no capability detection or chat translation.
       autoSwitch: false,
+      policy: { triggers: { fatal: { texts: ["unsupported question type"] } } },
     });
   }
 
