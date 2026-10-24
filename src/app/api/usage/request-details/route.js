@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
-import { prepareRequestDetailsResponse } from "@/lib/requestDetailsVisibility";
+import { prepareRequestDetailsResponse, shouldShowRequestPayloads } from "@/lib/requestDetailsVisibility";
 import { getApiKeys } from "@/lib/localDb";
+import { isLocalRequest } from "@/dashboardGuard";
+import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -11,7 +13,15 @@ function maskApiKey(key) {
 
 /**
  * GET /api/usage/request-details
- * Query parameters: page, pageSize (1-100), provider, model, connectionId, status, startDate, endDate
+ * Query params:
+ *   - page: number (default: 1)
+ *   - pageSize: number (default: 20)
+ *   - provider: string (optional)
+ *   - model: string (optional)
+ *   - connectionId: string (optional)
+ *   - status: string (optional)
+ *   - startDate: ISO string (optional)
+ *   - endDate: ISO string (optional)
  */
 export async function GET(request) {
   try {
@@ -77,10 +87,23 @@ export async function GET(request) {
       return enriched;
     });
 
-    // Conversation payloads stay redacted by default. Server operators may
-    // explicitly opt in to exposing stored prompts and responses in the
-    // dashboard with SHOW_REQUEST_PAYLOADS=true or ENABLE_PROMPT_LOGGING=true.
-    return NextResponse.json(prepareRequestDetailsResponse({ ...result, details: enrichedDetails }));
+    // Full payloads require EITHER operator opt-in (SHOW_REQUEST_PAYLOADS / ENABLE_PROMPT_LOGGING)
+    // OR local loopback origin AND a valid dashboard JWT session.
+    // Unauthenticated local users or remote/tunnelled callers receive metadata only with redacted content.
+    const token = request.cookies.get("auth_token")?.value;
+    const hasSession = token ? await verifyDashboardAuthToken(token) : false;
+    const canViewPayloads = shouldShowRequestPayloads() || (isLocalRequest(request) && hasSession);
+
+    if (canViewPayloads) {
+      return NextResponse.json({ ...result, details: enrichedDetails });
+    }
+
+    return NextResponse.json(
+      prepareRequestDetailsResponse(
+        { ...result, details: enrichedDetails },
+        { SHOW_REQUEST_PAYLOADS: "false", ENABLE_PROMPT_LOGGING: "false" }
+      )
+    );
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

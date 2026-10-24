@@ -55,15 +55,15 @@ function forwardedHeaders(request, target) {
   return headers;
 }
 
+// Headroom's dashboard hardcodes absolute paths in its HTML, so proxying it
+// under DASHBOARD_PREFIX breaks both its data fetches and its own assets: the
+// browser resolves them against EzRouter's root, where they 404 or redirect to
+// /login (leaving the page unstyled and empty).
 export function rewriteDashboardHtml(html) {
-  return html
-    .replace(
-      /fetch\('(?=\/(?:stats|health|stats-history|settings|transformations\/feed))/g,
-      `fetch('${DASHBOARD_PREFIX}`,
-    )
-    // Static assets and internal links (e.g. src="/dashboard/static/htmx.min.js",
-    // href="/dashboard/settings") must stay under the proxy prefix.
-    .replace(/(src|href)="(?=\/dashboard(?:\/|"))/g, `$1="${DASHBOARD_PREFIX}`);
+  return html.replace(
+    /(fetch\('|src="|href=")(?=\/(?:stats|health|stats-history|stats-lifetime|transformations\/feed|dashboard))/g,
+    `$1${DASHBOARD_PREFIX}`,
+  );
 }
 
 async function proxy(request, { params }) {

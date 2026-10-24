@@ -6,6 +6,7 @@ const fs = require("fs");
 const https = require("https");
 const net = require("net");
 const os = require("os");
+const { processRunsFrom } = require("./src/cli/utils/ownedProcess");
 
 // Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
 function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
@@ -143,6 +144,8 @@ function getDisplayHost() {
   return host === DEFAULT_HOST ? "localhost" : host;
 }
 const MAX_PORT_ATTEMPTS = 10;
+// This install's app directory (standalone Next server). Only a next-server running from it is ours.
+const APP_DIR = path.join(__dirname, "app");
 // Identifiers for killAllAppProcesses - kill ezrouter (and legacy 9router for migration safety)
 const PROCESS_IDENTIFIERS = [
   'ezrouter',
@@ -314,14 +317,15 @@ function killAllAppProcesses(appPort) {
           });
           const lines = output.split("\n").slice(1).filter(l => l.trim());
           lines.forEach(line => {
-            // Whitelist: real node process running ezrouter/cli.js or its next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "ezrouter" in cmdline.
+            // Whitelist: real node process running ezrouter/cli.js, or OUR next-server.
+            // Avoids killing editors/grep/strace/cursor that just have "ezrouter" in cmdline,
+            // and other Next.js apps (every Next server is titled "next-server").
             const cmd = line.toLowerCase();
+            const match = line.match(/^"(\d+)"/);
             const isAppProcess =
-              (cmd.includes("node") && (cmd.includes("ezrouter") || cmd.includes("9router")) && (cmd.includes("cli.js") || cmd.includes("\\ezrouter") || cmd.includes("/ezrouter") || cmd.includes("\\9router") || cmd.includes("/9router") || cmd.includes("server.js") || cmd.includes("custom-server.js"))) ||
-              (cmd.includes("next-server") && (cmd.includes("ezrouter") || cmd.includes("9router")));
+              (cmd.includes("node") && (cmd.includes("ezrouter") || cmd.includes("9router")) && (cmd.includes("cli.js") || cmd.includes("\\ezrouter") || cmd.includes("/ezrouter") || cmd.includes("\\9router") || cmd.includes("/9router") || cmd.includes("server.js") || cmd.includes("custom-server.js")))
+              || (cmd.includes("next-server") && !!match && processRunsFrom(match[1], APP_DIR, { commandLine: line }));
             if (isAppProcess) {
-              const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
                 pids.push(match[1]);
               }
@@ -340,6 +344,10 @@ function killAllAppProcesses(appPort) {
           const lines = output.split('\n');
 
           lines.forEach(line => {
+            // Whitelist: real node process running ezrouter/cli.js, or OUR next-server.
+            // Avoids killing grep/strace/editors/cursor that incidentally match "ezrouter",
+            // and other Next.js apps: every Next server is titled "next-server", so only one
+            // running from this install's app directory is ours.
             const cmd = line.toLowerCase();
             const parts = line.trim().split(/\s+/);
             const pid = parts[1];
@@ -351,16 +359,7 @@ function killAllAppProcesses(appPort) {
             const isCliProcess =
               (cmd.includes("node") && (cmd.includes("ezrouter") || cmd.includes("9router")) && (cmd.includes("cli.js") || cmd.includes("/ezrouter") || cmd.includes("/9router") || cmd.includes("server.js") || cmd.includes("custom-server.js")));
 
-            let isNextServer = false;
-            if (cmd.includes("next-server")) {
-              try {
-                // Verify cwd belongs to ezrouter/9router before killing (protects third-party Next.js apps like Open Design)
-                const cwdOut = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null`, { encoding: 'utf8', timeout: 1000 });
-                if (cwdOut.includes("ezrouter") || cwdOut.includes("9router")) {
-                  isNextServer = true;
-                }
-              } catch {}
-            }
+            const isNextServer = cmd.includes("next-server") && processRunsFrom(pid, APP_DIR);
 
             const isTrayProcess =
               cmd.includes("tray_darwin_release") || cmd.includes("tray_linux_release");

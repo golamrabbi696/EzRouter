@@ -7,7 +7,7 @@ import { resolveSessionId } from "../../utils/sessionManager.js";
 import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
-import { isDeepSeekModel } from "../../providers/models/helpers.js";
+import { isClaudeModel, isDeepSeekModel } from "../../providers/models/helpers.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 import { applyAssistantPrefillPolicy } from "../concerns/assistantPrefillPolicy.js";
 
@@ -341,6 +341,17 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
+  // Strip reasoning_effort from passthrough Claude bodies — Anthropic Messages API rejects it
+  if (body.reasoning_effort !== undefined) {
+    if (!body.thinking && body.reasoning_effort !== "none") {
+      const budgetMap = { low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 64000 };
+      body.thinking = { type: "enabled", budget_tokens: budgetMap[body.reasoning_effort] || 8192 };
+    } else if (body.reasoning_effort === "none" && !body.thinking) {
+      body.thinking = { type: "disabled" };
+    }
+    delete body.reasoning_effort;
+  }
+
   const originalLastRole = Array.isArray(body.messages) ? body.messages[body.messages.length - 1]?.role : undefined;
 
   // 3. Wrap bare content-block objects as one-element arrays before folding.
@@ -383,8 +394,12 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
   // without changing the top-level routing model.
   normalizeClaudeServerToolModels(body.tools);
 
-  // 5. Drop thinking blocks whose signature is not Claude's (combo mixes models,
-  // so foreign signatures leak into history and Anthropic rejects them).
+  // 5. Keep a thinking block only when Anthropic will accept it: a Claude-shaped
+  // signature AND a Claude target model. Native passthrough also covers
+  // anthropic-compatible nodes serving other models (combo fallback); they must not
+  // receive Claude's prior reasoning. Combos also leak foreign signatures into the
+  // history, which Anthropic rejects.
+  const keepsSignedThinking = isClaudeModel(model);
   const thinkingEnabled = body.thinking?.type === "enabled";
   const droppedServerToolUseIds = new Set();
   if (Array.isArray(body.messages)) {
@@ -395,7 +410,7 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
       const kept = [];
       for (const block of msg.content) {
         if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
-          if (isValidClaudeSignature(block.signature)) {
+          if (keepsSignedThinking && isValidClaudeSignature(block.signature)) {
             hasKeptThinking = true;
             kept.push(block);
           }
@@ -447,6 +462,7 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
       return msg.content.length > 0;
     });
     body.messages = ensureTrailingUserTurn(body.messages, originalLastRole);
+    applyAssistantPrefillPolicy(body, rawHeaders);
   }
 
   return body;
@@ -600,6 +616,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.output_config;
   }
 
+  // Anthropic Messages API strictly rejects OpenAI-style reasoning_effort ("Extra inputs are not permitted")
+  delete body.reasoning_effort;
+
   // Claude Code puts a `context_management` block (context-editing strategy) in
   // every request; only Anthropic accepts it — gateways fronting other engines
   // answer 400 "context_management: Extra inputs are not permitted". Same-format
@@ -629,9 +648,20 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // declare a higher maxOutput (e.g. Opus 4.8 / Sonnet 4.6 = 128000) are allowed
   // up to it, so max-effort thinking gets full budget; others fall back to the
   // conservative 64000 default.
-  if (body.max_tokens) {
-    const ceiling = modelCaps.maxOutput || DEFAULT_MAX_TOKENS;
-    if (body.max_tokens > ceiling) body.max_tokens = ceiling;
+  const wasExplicitMaxTokens = body.max_tokens !== undefined;
+  if (!wasExplicitMaxTokens) {
+    // Provider requires max_tokens (e.g., Anthropic) - inject default
+    if (isAnthropicServing) {
+      body.max_tokens = DEFAULT_MAX_TOKENS;
+    }
+  }
+  
+  if (body.max_tokens !== undefined) {
+    const ceiling = modelCaps.maxOutput || (wasExplicitMaxTokens ? undefined : DEFAULT_MAX_TOKENS);
+    // Only clamp if we have a real model ceiling (not the conservative default for unknown models)
+    if (ceiling !== undefined && ceiling !== DEFAULT_MAX_TOKENS && body.max_tokens > ceiling) {
+      body.max_tokens = ceiling;
+    }
 
     // Reconcile against thinking budget. applyThinking (thinkingUnified.js) runs
     // AFTER adjustMaxTokens capped max_tokens, and the claude-budget format maps
@@ -641,7 +671,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // budget alone meets/exceeds the ceiling, cap output and shrink the budget so
     // some tokens remain for the answer.
     if (body.thinking?.type === "enabled" && body.thinking.budget_tokens && body.thinking.budget_tokens >= body.max_tokens) {
-      body.max_tokens = Math.min(body.thinking.budget_tokens + 1024, ceiling);
+      const effectiveCeiling = ceiling !== undefined ? ceiling : DEFAULT_MAX_TOKENS;
+      body.max_tokens = Math.min(body.thinking.budget_tokens + 1024, effectiveCeiling);
       if (body.thinking.budget_tokens >= body.max_tokens) {
         body.thinking.budget_tokens = Math.max(1024, body.max_tokens - 1024);
       }
@@ -690,6 +721,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     filtered = ensureTrailingUserTurn(filtered, originalLastRole);
 
     body.messages = filtered;
+    applyAssistantPrefillPolicy(body, rawHeaders);
+    filtered = body.messages;
 
     // Check if thinking is enabled AND last message is from user
     const lastMessage = filtered[filtered.length - 1];

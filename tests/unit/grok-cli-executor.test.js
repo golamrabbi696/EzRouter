@@ -68,9 +68,8 @@ describe("grok-cli registry", () => {
   });
 
   it("maps effort virtual models to upstream grok-4.5", () => {
-    expect(getModelUpstreamId("gcli", "grok-4.5-high")).toBe("grok-4.5");
-    expect(getModelUpstreamId("gcli", "grok-4.5-medium")).toBe("grok-4.5");
-    expect(getModelUpstreamId("gcli", "grok-4.5-low")).toBe("grok-4.5");
+    // Effort-suffixed ids are no longer listed; the executor strips the suffix generically.
+    expect(getModelUpstreamId("gcli", "grok-4.5")).toBe("grok-4.5");
     expect(getModelUpstreamId("gcli", "grok-4.5")).toBe("grok-4.5");
   });
 });
@@ -343,6 +342,48 @@ describe("GrokCliExecutor", () => {
     expect(out.reasoning).toEqual({ effort: "xhigh", summary: "concise" });
   });
 
+  it("forwards reasoning effort for Grok 4.6 and 4.7, including build-fast", () => {
+    for (const model of ["grok-4.6", "grok-4.7", "grok-4.7-build-fast"]) {
+      expect(supportsGrokCliReasoningEffort(model)).toBe(true);
+      const out = executor.transformRequest(model, {
+        model,
+        input: "hi",
+        reasoning_effort: "low",
+      }, true, { connectionId: `effort-on-${model}` });
+      expect(out.model).toBe(model);
+      expect(out.reasoning).toEqual({ effort: "low", summary: "concise" });
+    }
+  });
+
+  it("turns an effort suffix into reasoning.effort on Grok 4.6 and 4.7 too", () => {
+    for (const [id, model] of [["grok-4.6-low", "grok-4.6"], ["grok-4.7-high", "grok-4.7"]]) {
+      const out = executor.transformRequest(id, { model: id, input: "hi" }, true, { connectionId: `suffix-${id}` });
+      expect(out.model).toBe(model);
+      expect(out.reasoning.effort).toBe(id.split("-").pop());
+    }
+  });
+
+  it("forwards reasoning effort for Grok 4.6 and 4.7, including build-fast", () => {
+    for (const model of ["grok-4.6", "grok-4.7", "grok-4.7-build-fast"]) {
+      expect(supportsGrokCliReasoningEffort(model)).toBe(true);
+      const out = executor.transformRequest(model, {
+        model,
+        input: "hi",
+        reasoning_effort: "low",
+      }, true, { connectionId: `effort-on-${model}` });
+      expect(out.model).toBe(model);
+      expect(out.reasoning).toEqual({ effort: "low", summary: "concise" });
+    }
+  });
+
+  it("turns an effort suffix into reasoning.effort on Grok 4.6 and 4.7 too", () => {
+    for (const [id, model] of [["grok-4.6-low", "grok-4.6"], ["grok-4.7-high", "grok-4.7"]]) {
+      const out = executor.transformRequest(id, { model: id, input: "hi" }, true, { connectionId: `suffix-${id}` });
+      expect(out.model).toBe(model);
+      expect(out.reasoning.effort).toBe(id.split("-").pop());
+    }
+  });
+
   it("omits reasoning effort for models that reject it", () => {
     expect(supportsGrokCliReasoningEffort("grok-4.5")).toBe(true);
     expect(supportsGrokCliReasoningEffort("grok-build")).toBe(false);
@@ -383,13 +424,13 @@ describe("GrokCliExecutor", () => {
     }
   });
 
-  it("keeps the allowlist closed around grok-4.5 / grok-4.6", () => {
-    for (const model of ["grok-4.5", "grok-4.5-xhigh", "grok-4.6", "grok-4.6-xhigh"]) {
+  it("keeps the allowlist closed around grok-4.5 / grok-4.6 / grok-4.7", () => {
+    for (const model of ["grok-4.5", "grok-4.5-xhigh", "grok-4.6", "grok-4.6-xhigh", "grok-4.7", "grok-4.7-build-fast"]) {
       expect(supportsGrokCliReasoningEffort(model)).toBe(true);
     }
     // Non-reasoning models keep receiving no effort (#2538, #2539), and an
     // unseen version stays fail-closed until it is verified against the proxy.
-    for (const model of ["grok-build", "grok-composer-2.5-fast", "grok-code-fast-1", "grok-4.7", "grok-45"]) {
+    for (const model of ["grok-build", "grok-composer-2.5-fast", "grok-code-fast-1", "grok-4.8", "grok-45"]) {
       expect(supportsGrokCliReasoningEffort(model)).toBe(false);
     }
   });

@@ -7,7 +7,10 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // A param is removed only when it is present (!== undefined).
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
-  { match: /claude/i, drop: ["temperature"] },
+  // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
+  // reasoning_effort is OpenAI-specific and rejected by Anthropic Messages API ("Extra inputs are not permitted").
+  { match: /claude/i, drop: ["temperature", "reasoning_effort"] },
+  { provider: "claude", drop: ["reasoning_effort"] },
   // All Claude models: newer Claude Code clients send a top-level `diagnostics`
   // telemetry field gated behind a beta this provider does not advertise, so
   // Anthropic 400s with `diagnostics: Extra inputs are not permitted`.
@@ -66,6 +69,11 @@ const STRIP_RULES = [
   // against /zen/go/v1/chat/completions with one key: 12/12 structured calls 400,
   // 4/4 identical calls without the field 200.
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
+  // DeepSeek's API only documents response_format type json_object; a json_schema
+  // request fails with HTTP 400 \"This response_format type is unavailable now\".
+  // Downgrade json_schema to json_object and move the schema into a system message
+  // so JSON mode is preserved and DeepSeek's \"prompt must mention json\" rule holds.
+  { provider: "deepseek", jsonSchemaToObject: true },
   // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
   // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
   { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
@@ -122,6 +130,25 @@ export function stripUnsupportedParams(provider, model, body) {
       if (body[to] === undefined) body[to] = body[from];
       delete body[from];
     }
+    // Downgrade response_format json_schema -> json_object for providers that
+    // reject json_schema (DeepSeek), preserving JSON mode and carrying the
+    // schema over as a system message.
+    if (
+      rule.jsonSchemaToObject &&
+      body.response_format &&
+      body.response_format.type === "json_schema"
+    ) {
+      const s = body.response_format.json_schema || {};
+      body.response_format = { type: "json_object" };
+      if (Array.isArray(body.messages)) {
+        body.messages.unshift({
+          role: "system",
+          content:
+            "Respond only with a JSON object that matches this JSON schema: " +
+            JSON.stringify(s.schema || s),
+        });
+      }
+    }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }
@@ -165,9 +192,17 @@ export function stripUnsupportedParams(provider, model, body) {
       }
       if (candidates.length > 0) {
         const ceiling = Math.min(...candidates);
-        clampNumber(body, "max_tokens", ceiling);
-        clampNumber(body, "max_completion_tokens", ceiling);
-        clampNumber(body, "max_output_tokens", ceiling);
+        // Only clamp if client value exceeds the known ceiling
+        // Don't silently reduce client values for unknown models
+        if (typeof body.max_tokens === "number" && Number.isFinite(body.max_tokens) && body.max_tokens > ceiling) {
+          body.max_tokens = ceiling;
+        }
+        if (typeof body.max_completion_tokens === "number" && Number.isFinite(body.max_completion_tokens) && body.max_completion_tokens > ceiling) {
+          body.max_completion_tokens = ceiling;
+        }
+        if (typeof body.max_output_tokens === "number" && Number.isFinite(body.max_output_tokens) && body.max_output_tokens > ceiling) {
+          body.max_output_tokens = ceiling;
+        }
       }
     }
   }

@@ -1,3 +1,4 @@
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { classifyHeadroomDiagnostic, compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../../open-sse/rtk/headroom.js";
 
 afterEach(() => {
@@ -91,7 +92,7 @@ describe("compressWithHeadroom", () => {
 
     expect(body.tools).toEqual(originalTools);
     expect(body.messages).toEqual([{ role: "user", content: [{ type: "text", text: "unchanged message" }] }]);
-    expect(body.system).toEqual(expect.arrayContaining([expect.objectContaining({ text: "short system prompt" })]));
+    expect(body.system).toBe("short system prompt");
     expect(isHeadroomPhantomSavings(stats, diagnostics)).toBe(false);
   });
 
@@ -118,7 +119,7 @@ describe("compressWithHeadroom", () => {
         enabled: true, url: "http://localhost:8787", model: "claude-sonnet-4.5", format: "claude", diagnostics,
       });
 
-      expect(body.messages).toEqual([{ role: "user", content: [{ type: "text", text: "x".repeat(900) }] }]);
+      expect(body.messages).toEqual([{ role: "user", content: "x".repeat(900) }]);
       expect(isHeadroomPhantomSavings(stats, diagnostics)).toBe(false);
     }
   );

@@ -1,4 +1,27 @@
-# v0.6.25 (2026-10-23)
+# v0.6.25 (2026-10-24)
+
+## Upstream Synchronization & Core Enhancements (decolua/9router #5127 - #5191)
+- **Security Audit & Invariant Enforcement**:
+  - **Preserved Default Port 20126 & EzRouter Branding**: Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`) across all configurations, Next.js server actions, CLI bundles, and tests.
+  - **Dashboard Token Revocation on Logout (`#5191`)**: Revokes active dashboard session tokens in database on `/api/auth/logout` and invalidates cookies (`AUTH_COOKIE_NAME` and legacy `auth_token`), preventing reuse of stale bearer tokens.
+- **SSE & Streaming Enhancements**:
+  - **Idle SSE Heartbeat Keep-Alive (`#5167`)**: Added `: ping` SSE comment heartbeats on idle streams with automatic keep-alive timer and cancellation on close, preventing reverse proxy and client socket timeouts during long inference generation.
+  - **Stream Model Canonical Echo**: Restored listing-valid model name echo on passthrough streaming responses (`createSSEStream`).
+- **Reasoning, Thinking & Translator Precision**:
+  - **Claude Reasoning Effort Strip & Map (`#5174`)**: Strips client `reasoning_effort` and maps to Claude thinking budget when targeting Anthropic Claude models, preventing Anthropic API 400 parameter rejections.
+  - **Normalize Thinking on Tool-Result Turns (`#5175`)**: Retains thinking configuration across tool-result continuation turns so multi-turn tool calling preserves extended reasoning.
+  - **Claude Tool Cloaking Idempotency (`#5176`)**: Ensures tool cloaking suffix injection is idempotent across turns, eliminating duplicate suffix accumulation.
+  - **Translator Client Explicit `max_tokens` Intent (`#5180`)**: Preserves explicit client-specified `max_tokens` instead of silently overwriting it with upstream provider `maxOutput`.
+  - **Ollama Non-Stream Error Visibility (`#5178`)**: Added loud fail and error diagnostics for unparseable Ollama non-streaming response bodies instead of swallowing failures.
+- **Provider & Model Catalog Updates**:
+  - **Command Code Kimi K3.1 Pro (`#5172`)**: Added `Kimi-K3.1-Pro` with 128k context to the Command Code provider registry catalog.
+  - **DeepSeek Wire ID Mapping (`#5181`)**: Mapped `deepseek-v4.1-flash` to wire ID `deepseek-flash` for native upstream API alignment.
+  - **OpenCode Free Tier DeepSeek Cap (`#5179`)**: Capped `oc/deepseek-v4.1-flash-free` context window at 330k tokens.
+  - **Qoder CN System Prompt Fold (`#5189`)**: Folded system prompts into the first user turn for `qoder-cn` / `qoder-cn-work` endpoints to conform to Chinese endpoint requirements.
+  - **Model Picker Filter (`#5168`)**: Kept hidden registry providers out of the model picker UI.
+  - **System One Combo Handling**: Enabled System One decision payloads with `answers` object to be recognized as valid non-empty responses, and configured fatal triggers for unsupported question types.
+- **Architectural Exclusions & Rejections**:
+  - **SKIPPED PR #5182**: Excluded browser-automation web cookie login worker (`webLoginConfig.js`, `lazyRuntime.js`, `deepseek-pow-worker.mjs`, `deepseek-pow-hash.js`) which depends on unmerged Playwright infrastructure (`#38a0c4490`).
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #5010 - #5127)
 - **Security Audit & Invariant Enforcement**:

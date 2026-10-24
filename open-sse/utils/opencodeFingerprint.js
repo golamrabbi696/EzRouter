@@ -77,8 +77,32 @@ function chatFunctionOf(tool) {
 function isFingerprintDefinition(tool, key) {
   const def = tool && (chatFunctionOf(tool) || tool);
   const want = FINGERPRINT_TOOL_DEFINITIONS[key];
-  return !!def && def.description === want.description
+  return !!def && normalizePlatformSentence(def.description) === want.description
     && JSON.stringify(def.parameters) === JSON.stringify(want.parameters);
+}
+
+// OpenCode ships the same tool with OS-specific wording: "Commands run on Linux
+// using bash." vs "Commands run on Windows using powershell.". The upstream gate
+// compares descriptions verbatim, so a Windows caller's tool must travel with the
+// canonical sentence — otherwise it looks like a foreign tool, gets renamed to
+// `shell_client` and the client rejects the call (#5011).
+const PLATFORM_SENTENCE_RE = /Commands run on (?:Linux using bash|Windows using powershell(?:\.exe)?)\./;
+const CANONICAL_PLATFORM_SENTENCE = "Commands run on Linux using bash.";
+
+function normalizePlatformSentence(text) {
+  return typeof text === "string"
+    ? text.replace(PLATFORM_SENTENCE_RE, CANONICAL_PLATFORM_SENTENCE)
+    : text;
+}
+
+/** Same tool, with the platform sentence rewritten to the canonical wording. */
+function withCanonicalPlatformSentence(tool, key) {
+  const want = FINGERPRINT_TOOL_DEFINITIONS[key];
+  const fn = chatFunctionOf(tool);
+  const target = fn || tool;
+  if (target.description === want.description) return tool;
+  const description = normalizePlatformSentence(target.description);
+  return fn ? { ...tool, function: { ...fn, description } } : { ...tool, description };
 }
 
 function withToolName(tool, name) {
@@ -155,7 +179,7 @@ export function concealFingerprintToolNames(tools) {
     seen.add(key);
 
     if (isFingerprintDefinition(tool, key)) {
-      out.push(tool);
+      out.push(withCanonicalPlatformSentence(tool, key));
       continue;
     }
 

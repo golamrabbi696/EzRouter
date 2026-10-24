@@ -31,6 +31,7 @@ import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 const ASSISTANT_CONTINUATION_PROMPT = "Continue from the assistant response above without repeating it.";
 const INCOMPLETE_TOOL_RESULT = "Tool execution was not completed before this request continued.";
 const PRESERVE_HEADER = "x-9router-assistant-prefill";
+const EZ_PRESERVE_HEADER = "x-ez-assistant-prefill";
 
 function getHeader(headers, name) {
   if (!headers) return null;
@@ -85,7 +86,8 @@ function continuationTurn() {
  */
 export function applyAssistantPrefillPolicy(body, rawHeaders = null) {
   if (!Array.isArray(body?.messages)) return body;
-  if (String(getHeader(rawHeaders, PRESERVE_HEADER) || "").toLowerCase() === "preserve") return body;
+  const optOut = String(getHeader(rawHeaders, EZ_PRESERVE_HEADER) || getHeader(rawHeaders, PRESERVE_HEADER) || "").toLowerCase();
+  if (optOut === "preserve") return body;
 
   while (body.messages.length > 0) {
     const trailingAssistant = body.messages.at(-1);

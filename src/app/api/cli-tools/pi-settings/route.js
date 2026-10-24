@@ -127,65 +127,45 @@ export async function POST(request) {
 
     if (!existing.providers) existing.providers = {};
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    // Existing provider block (may have hand-tuned model metadata we must not erase).
     const existingProvider = existing.providers["ezrouter"] || existing.providers["9router"] || {};
-    // Build a map of existing models keyed by id for O(1) merge.
-    const existingModelsMap = {};
-    for (const em of existingProvider.models || []) {
-      if (em?.id) existingModelsMap[em.id] = em;
-    }
+    const prevModels = new Map(
+      (Array.isArray(existingProvider.models) ? existingProvider.models : [])
+        .map((m) => (typeof m === "string" ? { id: m } : m))
+        .filter((m) => m?.id)
+        .map((m) => [m.id, m])
+    );
 
-    // Normalize an incoming model entry to a Pi model object.
-    // Handles both plain strings and objects from GenericCliToolCard.
-    // Also normalises snake_case keys (context_window, max_tokens) sent by
-    // one frontend branch (GenericCliToolCard.js L291) to camelCase (#4268).
-    const DEFAULT_CONTEXT = 128000;
-    const DEFAULT_MAX_TOKENS = 16384;
-    function normalizeModel(m) {
-      if (typeof m === "string") {
-        // Plain id string — check if we already have richer metadata saved.
-        const existing = existingModelsMap[m];
-        return {
-          ...(existing || {}),
-          id: m,
-          name: (existing?.name) || resolveModelDisplayName(m),
-          contextWindow: existing?.contextWindow || DEFAULT_CONTEXT,
-          maxTokens: existing?.maxTokens || DEFAULT_MAX_TOKENS,
-        };
-      }
-      const id = m.id || "provider/model-id";
-      const prev = existingModelsMap[id] || {};
-      // Accept both camelCase and snake_case from the frontend (#4268).
-      const contextWindow = m.contextWindow || m.context_window || prev.contextWindow || DEFAULT_CONTEXT;
-      const maxTokens = m.maxTokens || m.max_tokens || prev.maxTokens || DEFAULT_MAX_TOKENS;
+    const cap = (v, fallback, max) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
+    };
+
+    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const withDefaults = (m) => {
+      const prev = prevModels.get(m.id) || {};
+      const contextWindow = m.contextWindow ?? m.context_window ?? prev.contextWindow;
+      const maxTokens = m.maxTokens ?? m.max_tokens ?? prev.maxTokens;
       return {
         ...prev,
-        id,
-        name: resolveModelDisplayName(id, m.name || prev.name),
-        contextWindow,
-        maxTokens,
+        ...m,
+        name: resolveModelDisplayName(m.id, m.name || prev.name),
+        contextWindow: cap(contextWindow, 200000, 2000000),
+        maxTokens: cap(maxTokens, 64000, 200000),
       };
-    }
+    };
 
-    let newModels = [];
+    let modelList = [];
     if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
-      newModels = rawBody.models.map(normalizeModel);
+      modelList = rawBody.models.map((m) =>
+        typeof m === "string"
+          ? withDefaults({ id: m })
+          : withDefaults({ ...m, id: m.id || "provider/model-id" })
+      );
     } else {
       const modelId = model || "provider/model-id";
-      newModels = [normalizeModel(modelId)];
+      modelList = [withDefaults({ id: modelId })];
     }
 
-    // Merge: keep existing models not in the new selection, then add/update
-    // the ones the user just selected. This way hand-tuned metadata for
-    // models not touched by this save is never erased (#4268).
-    const newModelIds = new Set(newModels.map((m) => m.id));
-    const keptModels = (existingProvider.models || []).filter(
-      (m) => m?.id && !newModelIds.has(m.id)
-    );
-    const modelList = [...keptModels, ...newModels];
-
-    // Merge into the existing provider block rather than replacing it wholesale.
     const providerConfig = {
       ...existingProvider,
       baseUrl: normalizedBaseUrl,

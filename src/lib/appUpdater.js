@@ -4,8 +4,11 @@ import fs from "fs";
 import os from "os";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { shutdownProcess } from "@/lib/shutdown.js";
+import { processRunsFrom } from "@/lib/ownedProcess";
 
 const KILL_TIMEOUT_MS = 5000;
+// The running server's own app directory: Next's standalone server chdirs into it.
+const APP_DIR = process.cwd();
 const PROCESS_WAIT_MS = 1500;
 
 // Kill MITM server by PID file (MITM may run as admin/sudo)
@@ -50,15 +53,16 @@ function collectAppPids() {
       const lines = output.split("\n").slice(1).filter(l => l.trim());
       lines.forEach(line => {
         const lower = line.toLowerCase();
-        // Match anything running from 9router install dir or wrapper cli.js
+        const match = line.match(/^"(\d+)"/);
+        // Match anything running from ezrouter/9router install dir or wrapper cli.js. A bare
+        // "next-server" is any Next.js app on the machine: only ours (run from our app dir).
         const isAppProcess = lower.includes("ezrouter") ||
           lower.includes("9router") ||
-          lower.includes("next-server") ||
+          (lower.includes("next-server") && !!match && processRunsFrom(match[1], APP_DIR, { commandLine: line })) ||
           lower.includes("\\bin\\app\\") ||
           lower.includes("/bin/app/") ||
           lower.includes("cli.js");
         if (isAppProcess) {
-          const match = line.match(/^"(\d+)"/);
           if (match && match[1] && match[1] !== process.pid.toString()) pids.push(match[1]);
         }
       });
@@ -92,12 +96,11 @@ function collectAppPids() {
         if (!pid || isNaN(pid) || pid === process.pid.toString()) return;
         const cmd = trimmed.toLowerCase();
         // Narrow whitelist: only kill processes we actually own.
-        // Broad substring matches (just "9router") also match grep, editors, and
-        // shells with that word in their argv — which caused unrelated SIGKILL (#4295).
+        // A bare "next-server" is any Next.js app on the machine: only ours (run from our app dir).
         const isAppProcess =
           (cmd.includes("node") && (cmd.includes("ezrouter") || cmd.includes("9router")) &&
             (cmd.includes("cli.js") || cmd.includes("/ezrouter") || cmd.includes("/9router"))) ||
-          cmd.includes("next-server") ||
+          (cmd.includes("next-server") && processRunsFrom(pid, APP_DIR)) ||
           (cmd.includes("cloudflared") && (cmd.includes("ezrouter") || cmd.includes("9router"))) ||
           cmd.includes("/bin/app/") ||
           cmd.includes("tray_darwin") ||

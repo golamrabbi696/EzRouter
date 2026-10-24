@@ -60,6 +60,9 @@ export default {
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek-v4-pro-max", name: "DeepSeek V4 Pro Max", upstreamModelId: "deepseek-v4-pro" },
     { id: "deepseek-v4-pro-none", name: "DeepSeek V4 Pro No Thinking", upstreamModelId: "deepseek-v4-pro" },
+    // DeepSeek renamed the served id: the API only accepts "deepseek-flash"
+    // and rejects "deepseek-v4.1-flash" with HTTP 400 (#4940).
+    { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", upstreamModelId: "deepseek-flash" },
     // Retired V4-Flash ids — kept so existing combos/configs keep resolving.
     // Both are served by V4.1 Flash upstream, so we now send the canonical id.
     { id: "deepseek-v4-flash", name: "DeepSeek V4.1 Flash (legacy id)", upstreamModelId: "deepseek-flash" },

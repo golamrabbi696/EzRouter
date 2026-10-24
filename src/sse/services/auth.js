@@ -9,6 +9,7 @@ import { isOverLimit, recordRequest, retryAfterMs } from "./rpmLimiter.js";
 import { evaluateQuota } from "./quotaGuard.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import { pickByCacheAffinity } from "./cacheAffinity.js";
+import { getQuotaReserveHold } from "./quotaReserve.js";
 import * as log from "../utils/logger.js";
 import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
 
@@ -307,6 +308,19 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Quota reserve: prefer accounts that still have more than their reserved share in every window.
+    // When all of them are down to their reserve, use them anyway rather than fail the request.
+    const reserveHolds = new Map();
+    for (const c of routedConnections) {
+      const hold = getQuotaReserveHold(c);
+      if (hold) reserveHolds.set(c.id, hold);
+    }
+    const unreserved = routedConnections.filter((c) => !reserveHolds.has(c.id));
+    const candidates = unreserved.length ? unreserved : routedConnections;
+    for (const [id, hold] of reserveHolds) {
+      log.debug("AUTH", `${provider} | ${id.slice(0, 8)} at quota reserve (${hold.window} ${Math.round(hold.remaining)}% left, keeps ${hold.reserve}%)${unreserved.length ? "" : " — every account is at its reserve, using reserve"}`);
+    }
+
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
@@ -325,7 +339,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     let connection;
     // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
-      connection = routedConnections.find((c) => c.id === preferredConnectionId);
+      connection = candidates.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
@@ -334,8 +348,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // skip strategy
     } else {
       // Find connections with 0 in-flight requests
-      const idleConnections = routedConnections.filter((c) => getInFlight(c.id) === 0);
-      const candidateConnections = idleConnections.length > 0 ? idleConnections : routedConnections;
+      const idleConnections = candidates.filter((c) => getInFlight(c.id) === 0);
+      const candidateConnections = idleConnections.length > 0 ? idleConnections : candidates;
 
       if (strategy === LATENCY_AWARE_STRATEGY) {
         // Score live latency + error rate instead of walking a static order

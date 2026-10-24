@@ -28,12 +28,5 @@ export function selectConnectableProviders(connections, providers = {}) {
   return connections.filter((connection) => isConnectableConnection(connection, providers));
 }
 
-/**
- * Providers that need no credentials are always selectable, except the ones the registry
- * hides (e.g. `mimo-free`, whose free-ai catalog is not guaranteed to exist upstream).
- */
-export function selectNoAuthProviderIds(freeProviders = {}) {
-  return Object.keys(freeProviders).filter(
-    (id) => freeProviders[id]?.noAuth && !freeProviders[id]?.hidden,
-  );
-}
+import { selectNoAuthProviderIds } from "./modelPickerProviders.js";
+export { selectNoAuthProviderIds };

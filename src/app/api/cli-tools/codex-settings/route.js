@@ -7,6 +7,7 @@ import { parseTOML, stringifyTOML } from "confbox";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getInstalledCodexClientVersion } from "@/lib/codexNative/clientVersion.js";
 import { CODEX_NATIVE_CONFIG } from "open-sse/config/codexNative.js";
+import { CODEX_CATALOG_FILENAME, resolveContextWindow, syncCodexCatalog, restartCodexDaemon } from "@/lib/codexCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,7 @@ export async function POST(request) {
       apiKey,
       model,
       subagentModel,
+      contextWindow,
       mode = "universal",
     } = await request.json();
     if (!baseUrl || !apiKey || !model) {
@@ -193,6 +195,22 @@ export async function POST(request) {
 
     parsed.model = model;
     parsed.model_provider = provider;
+
+    const ctx = Number(contextWindow);
+    if (contextWindow === null || contextWindow === undefined || contextWindow === "") delete parsed.model_context_window;
+    else if (Number.isInteger(ctx) && ctx > 0 && ctx <= 100000000) parsed.model_context_window = ctx;
+    else return NextResponse.json({ error: "model_context_window must be a positive integer" }, { status: 400 });
+
+    delete parsed.model_max_output_tokens;
+
+    const catalogPath = await syncCodexCatalog({
+      codexDir: getCodexDir(),
+      models: [
+        { slug: model, contextWindow: resolveContextWindow(contextWindow, model) },
+        { slug: effectiveSubagentModel, contextWindow: resolveContextWindow(null, effectiveSubagentModel) },
+      ],
+    });
+    if (catalogPath) parsed.model_catalog_json = catalogPath;
     setNestedSection(parsed, "model_providers.9router", {
       name: "9Router Universal",
       base_url: universalBaseUrl,
@@ -215,6 +233,8 @@ export async function POST(request) {
     // Update auth.json with OPENAI_API_KEY if auth file exists
     const migratedLegacyAuth = await migrateOwnedLegacyAuth(apiKey.trim());
 
+    const daemonRestarted = catalogPath ? await restartCodexDaemon() : false;
+
     return NextResponse.json({
       success: true,
       mode,
@@ -223,6 +243,8 @@ export async function POST(request) {
         ? "Codex Native pool configured successfully"
         : "Codex Universal bridge configured successfully",
       configPath,
+      catalogPath,
+      daemonRestarted,
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
@@ -258,6 +280,10 @@ export async function DELETE() {
     } else if (parsed.model_provider === "9router" || parsed.model_provider === CODEX_NATIVE_CONFIG.providerConfigId) {
       delete parsed.model;
       delete parsed.model_provider;
+      delete parsed.model_context_window;
+    }
+    if (typeof parsed.model_catalog_json === "string" && parsed.model_catalog_json.endsWith(CODEX_CATALOG_FILENAME)) {
+      delete parsed.model_catalog_json;
     }
 
     const currentSubagent = getNestedSection(parsed, "agents.subagent");

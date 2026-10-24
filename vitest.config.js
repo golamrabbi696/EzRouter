@@ -9,13 +9,13 @@ const root = dirname(fileURLToPath(import.meta.url));
 //   "@/*"     -> ./src/*
 //   "open-sse"   -> ./open-sse
 //   "open-sse/*" -> ./open-sse/*
-// Without this, 40+ unit files fail on unresolved `open-sse/..` and `@/..` imports.
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": resolve(root, "src"),
-      "open-sse": resolve(root, "open-sse"),
-    },
+    alias: [
+      { find: /^@\/(.*)$/, replacement: resolve(root, "src", "$1") },
+      { find: /^open-sse\/(.*)$/, replacement: resolve(root, "open-sse", "$1") },
+      { find: /^open-sse$/, replacement: resolve(root, "open-sse") },
+    ],
   },
   test: {
     include: ["tests/**/*.{test,spec}.{js,ts,tsx}"],

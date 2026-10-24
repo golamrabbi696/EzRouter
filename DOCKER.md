@@ -17,7 +17,27 @@ docker run -d \
   decolua/9router:latest
 ```
 
-App listens on port `20128`. Open: http://localhost:20128
+App listens on port `20126`. Open: http://localhost:20126
+
+## First login
+
+The default password is `123456`, but a fresh install only accepts it from the
+machine running EzRouter (loopback). From any other address the login is rejected
+on purpose — the default password is public knowledge, so no session is issued
+before it is rotated.
+
+Pick one:
+
+- Open the dashboard **on the host itself** (`http://localhost:20126`), sign in
+  with `123456`, and set a new password in Settings; or
+- Start the container with a non-empty `INITIAL_PASSWORD`:
+
+```bash
+-e INITIAL_PASSWORD="a-strong-password-here"
+```
+
+Note: an empty `INITIAL_PASSWORD=""` is the same as unset (falls back to
+`123456`) — it must be non-empty to take effect.
 
 ## Manage container
 

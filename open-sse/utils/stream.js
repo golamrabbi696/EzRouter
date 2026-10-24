@@ -6,6 +6,7 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, enrichUsageCost, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds } from "./streamHelpers.js";
 import { restoreToolNames } from "./opencodeFingerprint.js";
+import { canonicalEchoModel } from "../services/model.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -45,6 +46,18 @@ const PENDING_COMPLETION_FLUSH_MS = 3000;
  * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
  * @param {string} options.apiKey - API key for usage tracking
  */
+// A cold upstream can sit silent for a minute before the first token. Proxies
+// (Cloudflare, nginx) close an idle SSE response as a 524/timeout, and the client
+// never sees the answer that was about to arrive. An SSE comment keeps the
+// connection warm without producing an event any parser can mistake for data.
+// NDJSON (Ollama) has no comment syntax, so it is excluded.
+function resolveKeepAliveMs(explicit) {
+  if (typeof explicit === "number") return Math.max(0, explicit);
+  const fromEnv = Number(process.env.SSE_KEEPALIVE_MS);
+  if (Number.isFinite(fromEnv) && fromEnv >= 0) return fromEnv;
+  return 15000;
+}
+
 export function createSSEStream(options = {}) {
   const {
     mode = STREAM_MODE.TRANSLATE,
@@ -64,11 +77,13 @@ export function createSSEStream(options = {}) {
     responseModel = null
   } = options;
 
+  const keepAliveMs = resolveKeepAliveMs(options.keepAliveMs);
+
   let buffer = "";
   let usage = null;
   // Body-size estimate kept apart from the provider-reported usage: it is a
   // fallback for providers that report no usage at all, never a candidate to
-  // be merged with it (see mergeUsage).
+  // be merged with it (see mergeUsage and #5056).
   let estimatedUsage = null;
 
   // Tool-call ids already sent to the client, keyed by the tool-call index.
@@ -130,6 +145,7 @@ export function createSSEStream(options = {}) {
   let passthroughFinishSeen = false;
   let finalized = false;
   let completionFlushTimer = null;
+  let keepAliveTimer = null;
 
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
@@ -144,6 +160,7 @@ export function createSSEStream(options = {}) {
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = (meta = {}) => {
+    if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     flushOutput();
     if (finalized) return;
@@ -151,6 +168,12 @@ export function createSSEStream(options = {}) {
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
+
+    // A stream that ended on an injected estimate falls back to that estimate,
+    // but only when the provider never reported authoritative usage (#5056).
+    if (!hasValidUsage(finalUsage)) {
+      finalUsage = (isPassthrough ? estimatedUsage : state?.estimatedUsage) || null;
+    }
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
       // The provider reported no usage at all: fall back to the body-size
@@ -208,6 +231,23 @@ export function createSSEStream(options = {}) {
   };
 
   return new TransformStream({
+    start(controller) {
+      // Only SSE has comments. An unknown format is left alone: guessing wrong
+      // would inject ": ping" into NDJSON and break the parse.
+      if (!keepAliveMs || !sourceFormat || sourceFormat === FORMATS.OLLAMA) return;
+      keepAliveTimer = setInterval(() => {
+        // Only until the first byte reaches the client: after that the connection
+        // carries data and a heartbeat would be noise.
+        if (finalized || sseEmittedCount > 0) return;
+        try {
+          controller.enqueue(sharedEncoder.encode(": ping\n\n"));
+        } catch {
+          // Stream already closed — nothing left to keep alive.
+        }
+      }, keepAliveMs);
+      // A heartbeat must never be the reason the process stays up.
+      if (typeof keepAliveTimer.unref === "function") keepAliveTimer.unref();
+    },
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -244,6 +284,19 @@ export function createSSEStream(options = {}) {
 
               const idFixed = fixInvalidId(parsed);
               let fieldsInjected = false;
+
+              // Echo a stable, listing-valid model name instead of the upstream
+              // id. Passthrough providers (opencode free tier) echo the bare
+              // resolved model with the provider prefix stripped; clients that
+              // trust the echo re-send it on the next hop. Prefixed requests
+              // keep their exact form; bare requests resolved to a
+              // connection-less catalog provider get the listing form
+              // re-injected (OpenRouter-style proxy echo).
+              const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+              if (typeof parsed.model === "string" && echoModel && parsed.model !== echoModel) {
+                parsed.model = echoModel;
+                fieldsInjected = true;
+              }
 
               // A fragment that opens a new tool-call index without an id breaks
               // strict OpenAI-compatible clients. Mint/reuse one before the
@@ -373,7 +426,7 @@ export function createSSEStream(options = {}) {
                 // Keep the estimate out of the accumulator: a provider that
                 // reports its usage in a trailing chunk (stream_options
                 // include_usage) sends it AFTER this chunk, and merging the
-                // two by max would let the guess outvote the real number.
+                // two by max would let the guess outvote the real number (#5056).
                 estimatedUsage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
@@ -571,8 +624,9 @@ export function createSSEStream(options = {}) {
                 model
               );
               // Same rule as the passthrough path: the estimate is a fallback,
-              // not something to merge with the provider's own usage.
+              // not something to merge with the provider's own usage (#5056).
               estimatedUsage = estimated;
+              if (state) state.estimatedUsage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
@@ -749,7 +803,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, responseModel = null, namespaceToolMap = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, responseModel = null, namespaceToolMap = null, keepAliveMs = undefined) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -765,11 +819,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     onStreamComplete,
     apiKey,
     credentials,
-    responseModel
+    responseModel,
+    keepAliveMs
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null, sourceFormat = null, keepAliveMs = undefined) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -779,6 +834,8 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    sourceFormat,
+    keepAliveMs
   });
 }

@@ -69,9 +69,10 @@ export function openaiToClaudeRequest(model, body, stream) {
   // not the conservative 64000 default — otherwise a high-output model is
   // pre-clamped here before prepareClaudeRequest's model-aware step runs.
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
+  const { maxTokens } = adjustMaxTokens(body, modelCeiling);
   const result = {
     model: model,
-    max_tokens: adjustMaxTokens(body, modelCeiling, true),
+    max_tokens: maxTokens,
     stream: stream
   };
 
@@ -270,11 +271,44 @@ function resolveToolResultIsError(source) {
   return false;
 }
 
+// A tool message may carry an OpenAI content array (text + image_url parts).
+// Claude tool_result content accepts image blocks, but not OpenAI image_url parts.
+// Strings are passed through untouched.
+function convertToolResultContent(content) {
+  if (!Array.isArray(content)) return content;
+
+  const parts = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === OPENAI_BLOCK.TEXT && part.text) {
+      parts.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
+    } else if (part.type === OPENAI_BLOCK.IMAGE_URL && part.image_url && part.image_url.url) {
+      const url = part.image_url.url;
+      const parsed = parseDataUri(url);
+      if (parsed) {
+        parts.push({
+          type: CLAUDE_BLOCK.IMAGE,
+          source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
+        });
+      } else if (url.startsWith("http://") || url.startsWith("https://")) {
+        parts.push({ type: CLAUDE_BLOCK.IMAGE, source: { type: "url", url } });
+      }
+    } else if ((part.type === CLAUDE_BLOCK.IMAGE || part.type === OPENAI_BLOCK.IMAGE) && part.source) {
+      parts.push({ type: CLAUDE_BLOCK.IMAGE, source: part.source });
+    } else {
+      parts.push(part);
+    }
+  }
+
+  // Nothing convertible: keep the original payload rather than sending an empty result.
+  return parts.length > 0 ? parts : content;
+}
+
 function buildToolResultBlock(toolUseId, content, source) {
   return {
     type: CLAUDE_BLOCK.TOOL_RESULT,
     tool_use_id: toolUseId,
-    content,
+    content: convertToolResultContent(content),
     is_error: resolveToolResultIsError(source),
   };
 }

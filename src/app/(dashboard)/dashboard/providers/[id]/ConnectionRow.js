@@ -9,6 +9,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import CooldownTimer from "./CooldownTimer";
 import { getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import PingNowButton from "@/shared/components/PingNowButton";
+import { QUOTA_WINDOWS, normalizeQuotaReserve } from "@/shared/constants/quotaWindows";
 
 const AUTH_EXPIRED_PATTERNS = [
   "invalid_grant",
@@ -41,6 +42,8 @@ function isAuthError(errorCode, errorText) {
 
 export default function ConnectionRow({ connection, plan = null, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onReconnect = null, oneByOneStatus = null, autoPing = null, fastMode = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
+  const reserve = normalizeQuotaReserve(connection.providerSpecificData?.quotaReserve);
+  const reserveText = QUOTA_WINDOWS.filter((w) => reserve[w.id]).map((w) => `${w.label} ${reserve[w.id]}%`).join(" · ");
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const [updatingFastMode, setUpdatingFastMode] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -298,6 +301,11 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
               <span className="material-symbols-outlined text-xs">{copied === copyIdKey ? "check" : "content_copy"}</span>
               {copied === copyIdKey ? "copied" : `${(connection.id || "").slice(0, 8)}…`}
             </button>
+            {reserveText && (
+              <Tooltip text="Quota kept in reserve: requests move to the next account at this share">
+                <Badge variant="default" size="sm" icon="savings">{reserveText}</Badge>
+              </Tooltip>
+            )}
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
             )}
