@@ -128,7 +128,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         if (!passthrough) delete body.thinking;
       }
     }
-    }
   }
 
   const upstreamModel = getModelUpstreamId(alias, model, body);

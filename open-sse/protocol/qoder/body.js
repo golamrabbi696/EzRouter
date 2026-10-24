@@ -482,4 +482,4 @@ export async function buildChatPayload(opts) {
   return buildQoderRequestBody(opts);
 }
 
-export { normalizeMessages, buildQoderRequestBody, resolveReasoningEffort, SHELL, foldSystemIntoFirstUser };
+export { normalizeMessages, buildQoderRequestBody, resolveReasoningEffort, SHELL };

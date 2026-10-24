@@ -44,7 +44,6 @@ function ContextWindowSelect({ value, onChange, className, ...rest }) {
     </select>
   );
 }
-}
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);

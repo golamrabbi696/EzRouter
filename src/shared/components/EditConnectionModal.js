@@ -271,7 +271,6 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (reserveWindows.length) {
         updates.providerSpecificData = { ...(updates.providerSpecificData || {}), quotaReserve: normalizeQuotaReserve(quotaReserve) };
       }
-      }
       
       await onSave(updates);
     } finally {
