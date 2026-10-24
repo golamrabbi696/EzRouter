@@ -40,6 +40,7 @@ export default {
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek/deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision Exp" },
     { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision Exp", upstreamModelId: "deepseek/deepseek-v4-flash-vision-exp" },
+    { id: "moonshotai/Kimi-K3.1-Pro", name: "Kimi K3.1 Pro" },
     { id: "moonshotai/Kimi-K2.7-Code", name: "Kimi K2.7 Code" },
     { id: "moonshotai/Kimi-K2.7-Code-Highspeed", name: "Kimi K2.7 Code HighSpeed" },
     { id: "moonshotai/Kimi-K2.6", name: "Kimi K2.6" },
