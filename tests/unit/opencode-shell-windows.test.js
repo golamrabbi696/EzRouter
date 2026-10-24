@@ -65,8 +65,18 @@ describe("concealFingerprintToolNames (#5011)", () => {
   });
 
   it("still renames a shell tool with an unrelated definition", () => {
-    const tool = shellTool("Commands run on Windows using powershell.");
-    tool.function.description = "Run whatever the caller wants.";
+    const tool = {
+      type: "function",
+      function: {
+        name: "shell",
+        description: "Run whatever the caller wants.",
+        parameters: {
+          type: "object",
+          properties: { script: { type: "string" } },
+          required: ["script"],
+        },
+      },
+    };
     const { tools, map } = concealFingerprintToolNames([tool]);
     expect(map.get("shell_client")).toBe("shell");
     expect(tools[0].function.name).toBe("shell_client");
