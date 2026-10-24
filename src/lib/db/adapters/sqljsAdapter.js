@@ -153,6 +153,12 @@ export async function createSqlJsAdapter(filePath) {
     db.close();
   }
 
+  // Security state must reach disk before a logout can acknowledge success.
+  function flushNow() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (dirty) persist();
+  }
+
   // Flush on shutdown. `once` plus an explicit exit, matching the native
   // adapters: installing a SIGINT/SIGTERM listener replaces Node's default
   // terminate action, so a handler that only flushes leaves the process running
@@ -164,9 +170,5 @@ export async function createSqlJsAdapter(filePath) {
   process.once("SIGINT", onShutdown);
   process.once("SIGTERM", onShutdown);
 
-  function flushDurable() {
-    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-    if (dirty) persist();
-  }
-  return { driver: "sql.js", run, get, all, exec, transaction, close, flushDurable, raw: db };
+  return { driver: "sql.js", run, get, all, exec, transaction, flush: flushNow, flushDurable: flushNow, close, raw: db };
 }
