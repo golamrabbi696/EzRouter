@@ -81,25 +81,45 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive header values before anything is written to disk. The debug value of a
-// log line comes from seeing WHICH auth header went out and roughly WHICH credential it
-// was — never from the credential itself, so long values keep a small prefix/suffix stub
-// (sk-proj-…abcde) and short ones are fully redacted.
+// Provider credentials must never reach disk in clear text: request logs are
+// written to the data dir and shared when debugging (#4808).
+// Full values require the explicit opt-in REQUEST_LOG_RAW_HEADERS=1 or REQUEST_LOG_FULL_HEADERS=true.
+const SENSITIVE_HEADER_RE = /(authorization|api[-_]?key|cookie|token|secret|password)/i;
+const RAW_HEADERS_OPT_IN = () =>
+  process.env.REQUEST_LOG_RAW_HEADERS === "1" ||
+  process.env.REQUEST_LOG_FULL_HEADERS === "true" ||
+  FULL_HEADERS_ENABLED;
+
+function maskHeaderValue(value) {
+  const text = String(value);
+  // Short values would be recoverable from a first/last slice: mask entirely.
+  if (text.length <= 16) return "***";
+  return `${text.slice(0, 6)}...${text.slice(-4)}`;
+}
+
 export function maskSensitiveHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
+  if (RAW_HEADERS_OPT_IN()) return { ...headers };
+
   const masked = { ...headers };
   for (const key of Object.keys(masked)) {
     const lowerKey = key.toLowerCase();
-    if (REQUEST_LOG_SENSITIVE_HEADER_KEYS.some((sensitive) => lowerKey.includes(sensitive))) {
-      const value = masked[key];
-      const str = typeof value === "string" ? value : value == null ? "" : String(value);
-      masked[key] =
-        str.length > REQUEST_LOG_MASK_PREFIX + REQUEST_LOG_MASK_SUFFIX
-          ? str.slice(0, REQUEST_LOG_MASK_PREFIX) + "..." + str.slice(-REQUEST_LOG_MASK_SUFFIX)
-          : REQUEST_LOG_MASK_REDACTED;
+    if (
+      SENSITIVE_HEADER_RE.test(key) ||
+      REQUEST_LOG_SENSITIVE_HEADER_KEYS.some((sensitive) => lowerKey.includes(sensitive))
+    ) {
+      if (masked[key] != null) masked[key] = maskHeaderValue(masked[key]);
     }
   }
   return masked;
+}
+
+/** Provider response headers as a plain object, with credentials masked. */
+export function normalizeResponseHeaders(headers) {
+  const plain = headers
+    ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers)
+    : {};
+  return maskSensitiveHeaders(plain);
 }
 
 // What the stage loggers actually persist — masked unless the explicit full-headers
@@ -187,8 +207,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        // Response headers can carry credentials too (set-cookie, www-authenticate…).
-        headers: sanitizeHeaders(normalized),
+        headers: normalizeResponseHeaders(headers),
         body
       });
     },
