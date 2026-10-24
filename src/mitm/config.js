@@ -104,6 +104,9 @@ const MODEL_SYNONYMS = {
 // Order matters: more specific patterns first. Catches AG renamed variants (e.g. gemini-pro-agent)
 const MODEL_PATTERNS = {
   antigravity: [
+    { match: /argon.*high|high.*argon/i,                           alias: "gemini-4-argon-high" },
+    { match: /argon.*low|low.*argon/i,                             alias: "gemini-4-argon-low" },
+    { match: /argon.*medium|medium.*argon|argon/i,                 alias: "gemini-4-argon-medium" },
     { match: /flash.*extra.*low|extra.*low.*flash|flash.*low|low.*flash/i, alias: "gemini-3.8-flash-low" },
     { match: /flash.*medium|medium.*flash/i,                       alias: "gemini-3.8-flash-medium" },
     { match: /flash.*agent|agent.*flash|flash/i,                   alias: "gemini-3.8-flash-high" },

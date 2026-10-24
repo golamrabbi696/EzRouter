@@ -103,6 +103,7 @@ function getMappedModel(tool, model) {
     if (!aliases) return null;
     // Normalize via synonym map (e.g., public AG names -> backend model ids)
     const normalizedModel = String(model).replace(/^models\//, "");
+    if (aliases[normalizedModel]) return aliases[normalizedModel];
     const lookup = MODEL_SYNONYMS?.[tool]?.[normalizedModel] || normalizedModel;
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback
