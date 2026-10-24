@@ -231,7 +231,7 @@ export default function LoginPage() {
                   {remoteBlocked && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
                       Fresh installs can&rsquo;t sign in with the default password from a remote
-                      address. Open the dashboard on the machine running 9router to set a
+                      address. Open the dashboard on the machine running EzRouter to set a
                       password, or restart with a non-empty INITIAL_PASSWORD.
                     </p>
                   )}
