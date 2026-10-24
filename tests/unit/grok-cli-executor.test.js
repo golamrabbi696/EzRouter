@@ -403,13 +403,13 @@ describe("GrokCliExecutor", () => {
     }
   });
 
-  it("keeps the allowlist closed around grok-4.5 / grok-4.6", () => {
-    for (const model of ["grok-4.5", "grok-4.5-xhigh", "grok-4.6", "grok-4.6-xhigh"]) {
+  it("keeps the allowlist closed around grok-4.5 / grok-4.6 / grok-4.7", () => {
+    for (const model of ["grok-4.5", "grok-4.5-xhigh", "grok-4.6", "grok-4.6-xhigh", "grok-4.7", "grok-4.7-build-fast"]) {
       expect(supportsGrokCliReasoningEffort(model)).toBe(true);
     }
     // Non-reasoning models keep receiving no effort (#2538, #2539), and an
     // unseen version stays fail-closed until it is verified against the proxy.
-    for (const model of ["grok-build", "grok-composer-2.5-fast", "grok-code-fast-1", "grok-4.7", "grok-45"]) {
+    for (const model of ["grok-build", "grok-composer-2.5-fast", "grok-code-fast-1", "grok-4.8", "grok-45"]) {
       expect(supportsGrokCliReasoningEffort(model)).toBe(false);
     }
   });
