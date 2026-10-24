@@ -54,15 +54,12 @@ export function filterToOpenAIFormat(body, opts = {}) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
-      
-      // Flatten text-only content arrays into a single string while
-      // preserving multimodal (image/tool) arrays as-is. Never flatten when a
-      // text block carries cache_control — that marker is only meaningful in
-      // array form (alicode/DashScope preserveCacheControl quirk).
-      const onlyText = filteredContent.every(b => b.type === OPENAI_BLOCK.TEXT);
-      const hasCacheControl = filteredContent.some(b => b.cache_control);
-      const content = onlyText && !hasCacheControl
-        ? filteredContent.map(b => b.text).join("\n")
+      // A text-only array is not multimodal content: providers that branch on
+      // `typeof content === "string"` mis-parse it, so flatten it here. Skip when
+      // cache_control must survive — that marker lives on a block, not on a string.
+      const hasCacheControl = filteredContent.some((b) => b?.cache_control);
+      const content = !keepCache && !hasCacheControl && filteredContent.every((b) => b?.type === OPENAI_BLOCK.TEXT)
+        ? filteredContent.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n")
         : filteredContent;
 
       return { ...msg, content };
