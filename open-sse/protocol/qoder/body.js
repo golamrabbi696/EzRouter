@@ -176,6 +176,24 @@ function pickMessageFields(msg) {
 }
 
 /**
+ * Prepend a hoisted system prompt to the first user message, in place.
+ * Providers whose upstream ignores the top-level `system` field (Qoder CN)
+ * still read user content, so this is how the prompt reaches the model.
+ *
+ * @returns {boolean} true when something was folded
+ */
+export function foldSystemIntoFirstUser(messages, systemText) {
+  const text = typeof systemText === "string" ? systemText.trim() : "";
+  if (!text || !Array.isArray(messages)) return false;
+  const firstUser = messages.find((m) => m && m.role === "user");
+  if (!firstUser) return false;
+  firstUser.content = Array.isArray(firstUser.content)
+    ? [{ type: "text", text }, ...firstUser.content]
+    : `${text}\n\n${typeof firstUser.content === "string" ? firstUser.content : ""}`;
+  return true;
+}
+
+/**
  * @returns {{ messages: object[], systemText: string, imageUrls: string[] }}
  */
 function normalizeMessages(messages) {
@@ -350,6 +368,15 @@ async function buildQoderRequestBody({
   }
 
   const { messages, systemText, imageUrls } = normalizeMessages(body?.messages || []);
+
+  // Qoder CN ignores payload.system (#4995): the same rule placed in a user
+  // message is honoured, so fold it into the first user turn instead. Region
+  // scoped — the intl endpoint keeps the original behaviour.
+  let effectiveSystem = systemText;
+  if ((p.id === "cn" || p.id === "cn-work") && systemText.trim()) {
+    const folded = foldSystemIntoFirstUser(messages, systemText);
+    if (folded) effectiveSystem = "";
+  }
   const tools = Array.isArray(body?.tools) ? body.tools : [];
   const isReasoning = !!modelConfig.is_reasoning;
   const maxOutputTokens = Number(modelConfig.max_output_tokens) || 0;
@@ -425,7 +452,7 @@ async function buildQoderRequestBody({
     ...SHELL,
     session_type: p.sessionType,
     model_config: trimmedModelConfig,
-    system: systemText,
+    system: effectiveSystem,
     messages,
     tools,
     parameters,
@@ -455,4 +482,4 @@ export async function buildChatPayload(opts) {
   return buildQoderRequestBody(opts);
 }
 
-export { normalizeMessages, buildQoderRequestBody, resolveReasoningEffort, SHELL };
+export { normalizeMessages, buildQoderRequestBody, resolveReasoningEffort, SHELL, foldSystemIntoFirstUser };

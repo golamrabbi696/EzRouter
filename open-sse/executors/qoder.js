@@ -11,6 +11,9 @@ import { chat as qoderChat } from "../protocol/qoder/index.js";
 import { isBillingBlock, wrapQoderSSE } from "../protocol/qoder/sse.js";
 import { refreshQoderDeviceToken } from "../services/tokenRefresh/providers.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
+import { foldSystemIntoFirstUser } from "../protocol/qoder/body.js";
+
+export { foldSystemIntoFirstUser };
 
 export class QoderExecutor extends BaseExecutor {
   constructor(providerId = "qoder", config = null) {
