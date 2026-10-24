@@ -99,6 +99,9 @@ export function getAntigravityModelQuota(quotas, model) {
   if (cleanModel === "gemini-4-argon" && quotas["gemini-4-argon-medium"]) {
     candidates.push(quotas["gemini-4-argon-medium"]);
   }
+  if (cleanModel === "gemini-4-argon" && quotas["gemini-4-argon-low"]) {
+    candidates.push(quotas["gemini-4-argon-low"]);
+  }
   if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-high"]) {
     candidates.push(quotas["claude-sonnet-5-5-high"]);
   }

@@ -258,8 +258,23 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       // If every model in a family is locked/exhausted (remainingPercentage === 0)
       // until a future reset time, update the 5h session row (not the weekly row).
       const entries = Object.entries(quotas);
-      const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
+      const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image") && !k.includes("argon"));
+      const argonModels = entries.filter(([k]) => k.includes("argon"));
       const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
+
+      if (weeklyQuotas.argon_session && argonModels.length > 0) {
+        const allArgonExhausted = argonModels.every(([, q]) => (q.remainingPercentage ?? 0) === 0);
+        if (allArgonExhausted && weeklyQuotas.argon_session.remainingPercentage > 0) {
+          const maxResetAt = argonModels.reduce((max, [, q]) =>
+            !max || (q.resetAt && new Date(q.resetAt) > new Date(max)) ? q.resetAt : max, null
+          );
+          weeklyQuotas.argon_session.used = weeklyQuotas.argon_session.total;
+          weeklyQuotas.argon_session.remainingPercentage = 0;
+          if (maxResetAt) {
+            weeklyQuotas.argon_session.resetAt = maxResetAt;
+          }
+        }
+      }
 
       if (weeklyQuotas.gemini_session && geminiModels.length > 0) {
         const allGeminiExhausted = geminiModels.every(([, q]) => (q.remainingPercentage ?? 0) === 0);
