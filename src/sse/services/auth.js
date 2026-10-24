@@ -7,7 +7,7 @@ import { selectHealthiestConnection } from "open-sse/services/healthTracker.js";
 import { resolveProviderId, resolveProviderRpm, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
 import { isOverLimit, recordRequest, retryAfterMs } from "./rpmLimiter.js";
 import { evaluateQuota } from "./quotaGuard.js";
-import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
+import { getAntigravityQuotaCache, getAntigravityModelQuota, getAntigravityModelFamily } from "./antigravityQuota.js";
 import { pickByCacheAffinity } from "./cacheAffinity.js";
 import { getQuotaReserveHold } from "./quotaReserve.js";
 import * as log from "../utils/logger.js";
@@ -209,6 +209,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (isOverLimit(c.id, rpmLimit)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
+      // Antigravity Argon pre-filter: if a model belongs to the Argon family,
+      // and the connection already has a known quota snapshot without any Argon buckets,
+      // skip it immediately to avoid 404 spillover and error pollution!
+      if (isAntigravity && getAntigravityModelFamily(model) === "argon") {
+        const windows = c.lastQuotaSnapshot?.windows || c.providerSpecificData?.lastQuotaSnapshot?.windows;
+        if (Array.isArray(windows) && windows.length > 0) {
+          const hasArgon = windows.some(w => w.key && (w.key.includes("argon") || w.displayName?.toLowerCase().includes("argon")));
+          if (!hasArgon) {
+            return false;
+          }
+        }
+      }
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {
         const connQuotas = antigravityQuotaCache.get(c.id);
@@ -332,7 +344,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const byAccount = global._pendingRequests?.byAccount?.[connId];
       const pending = byAccount ? Object.values(byAccount).reduce((sum, count) => sum + (count || 0), 0) : 0;
       const selTime = global._pendingSelections?.get(connId);
-      const isRecentlySelected = selTime && (Date.now() - selTime < 5000);
+      const isRecentlySelected = selTime && (Date.now() - selTime < 1500);
       return pending + (isRecentlySelected && pending === 0 ? 1 : 0);
     };
 
@@ -618,20 +630,32 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = describeProviderError(errorText);
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  // Model-level 404/not-found (e.g. model not available on this specific account yet):
+  // Lock this model on this account for 24 hours so it won't repeatedly retry every 2 minutes.
+  // Crucially, the connection itself remains active for all other models, without
+  // setting a global lastError that turns the connection row red on the dashboard.
+  const isModelSpecific404 = Boolean(model) && (status === 404 || (status === 400 && String(errorText).includes("not found")));
+  const effectiveCooldownMs = isModelSpecific404 ? 24 * 60 * 60 * 1000 : cooldownMs;
+  const lockUpdate = buildModelLockUpdate(model, effectiveCooldownMs);
 
-  await updateProviderConnection(connectionId, {
+  const updateFields = {
     ...lockUpdate,
-    testStatus: "unavailable",
-    lastError: reason,
-    errorCode: status,
-    // Which model produced this error. Locks are per-model but lastError is a
-    // single per-connection field, so without this the reader cannot tell
-    // whether the stored error belongs to the model being asked about.
     lastErrorModel: model || null,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
-  });
+  };
+
+  if (isModelSpecific404) {
+    if (!conn?.testStatus || conn.testStatus === "active") {
+      updateFields.testStatus = "active";
+    }
+  } else {
+    updateFields.testStatus = "unavailable";
+    updateFields.lastError = reason;
+    updateFields.errorCode = status;
+  }
+
+  await updateProviderConnection(connectionId, updateFields);
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);

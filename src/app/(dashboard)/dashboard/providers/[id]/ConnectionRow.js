@@ -286,9 +286,9 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
               </Badge>
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
+            {connection.lastError && connection.isActive !== false && (!connection.lastErrorModel || isCooldown || effectiveStatus !== "active") && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
-                {displayErrorText}
+                {connection.lastErrorModel ? `[${connection.lastErrorModel}] ${displayErrorText}` : displayErrorText}
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
