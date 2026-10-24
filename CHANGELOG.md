@@ -6,7 +6,10 @@
   - Enhanced session quota reconciliation in `open-sse/services/usage/google.js`: isolated Argon models (`argonModels`) from standard Gemini models to prevent quota misattribution on `gemini_session`, and dynamically synchronized `argon_session` (5h window) when all Argon model tiers are exhausted.
   - Added tier alias quota resolution for `gemini-4-argon-low` in `src/sse/services/antigravityQuota.js`.
 - **Multi-Account Model Lock & Fallback Invariant**:
-  - Verified and ensured smooth per-model fallback (`buildModelLockUpdate`) across multi-account pools: if an individual Antigravity account lacks Argon access, EzRouter isolates and temporarily locks only the Argon model on that specific account while other models remain active, seamlessly routing traffic to the next account in the pool without surfacing errors to clients.
+  - **Argon Quota Pre-Filter**: Isolated Argon model routing by pre-filtering connections using their live quota snapshot; accounts without Argon entitlement are excluded upfront, preventing 404 spillover and error pollution on non-Argon accounts.
+  - **Model-Level 404 Isolation & 24h Lock**: Model-scoped 404 errors now lock only the targeted model for 24 hours while keeping the overall connection `testStatus: "active"`, preventing healthy accounts from turning red on the dashboard.
+  - **Concurrency Window Tuning**: Reduced `isRecentlySelected` debounce from 5000ms to 1500ms to prevent premature spillover to non-Argon accounts during rapid agent turns.
+  - **Dashboard Error Scoping**: Suppressed stale model-scoped errors in `ConnectionRow` when the connection is active and not cooling down.
 - **Security & Stability Invariant Enforcement**:
   - Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
 
