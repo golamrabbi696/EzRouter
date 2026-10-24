@@ -3,6 +3,21 @@ import { describe, it, expect } from "vitest";
 import { stripUnsupportedParams } from "../../open-sse/translator/concerns/paramSupport.js";
 
 describe("stripUnsupportedParams", () => {
+  it("downgrades json_schema to json_object and injects schema system message for DeepSeek", () => {
+    const schema = { type: "object", properties: { city: { type: "string" } } };
+    const body = {
+      response_format: { type: "json_schema", json_schema: { name: "geo", schema } },
+      messages: [{ role: "user", content: "Capital of France?" }],
+    };
+    stripUnsupportedParams("deepseek", "deepseek-chat", body);
+    expect(body.response_format).toEqual({ type: "json_object" });
+    expect(body.messages[0]).toEqual({
+      role: "system",
+      content: "Respond only with a JSON object that matches this JSON schema: " + JSON.stringify(schema),
+    });
+    expect(body.messages[1]).toEqual({ role: "user", content: "Capital of France?" });
+  });
+
   it("flattens Cloudflare AI OpenAI content-part arrays", () => {
     const body = {
       messages: [
