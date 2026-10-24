@@ -1,3 +1,13 @@
+# v0.6.26 (2026-10-25)
+
+## CLI Tools & Antigravity MITM Proxy Enhancements
+- **Antigravity MITM Proxy Gemini 4 Argon Models**:
+  - Added Gemini 4 Argon tiered models (`gemini-4-argon-high`, `gemini-4-argon-medium`, `gemini-4-argon-low`, and unadorned `gemini-4-argon`) to the Antigravity MITM Proxy model mapping list in `src/shared/constants/cliTools.js`.
+  - Added fuzzy regex patterns in `src/mitm/config.js` (`/argon.*high/i`, `/argon.*low/i`, `/argon.*medium|argon/i`) ensuring accurate interception and alias mapping for any Gemini 4 Argon request variants coming from the Antigravity IDE.
+  - Enhanced `getMappedModel` in `src/mitm/server.js` to immediately prioritize explicit client alias mappings for unadorned and tiered Argon models.
+- **Security & Stability Invariant Enforcement**:
+  - Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
+
 # v0.6.25 (2026-10-24)
 
 ## Upstream Synchronization & Core Enhancements (decolua/9router #5127 - #5191)
