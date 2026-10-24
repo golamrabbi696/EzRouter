@@ -462,6 +462,7 @@ export function normalizeClaudePassthrough(body, model = "", rawHeaders = null) 
       return msg.content.length > 0;
     });
     body.messages = ensureTrailingUserTurn(body.messages, originalLastRole);
+    applyAssistantPrefillPolicy(body, rawHeaders);
   }
 
   return body;
@@ -720,6 +721,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     filtered = ensureTrailingUserTurn(filtered, originalLastRole);
 
     body.messages = filtered;
+    applyAssistantPrefillPolicy(body, rawHeaders);
+    filtered = body.messages;
 
     // Check if thinking is enabled AND last message is from user
     const lastMessage = filtered[filtered.length - 1];

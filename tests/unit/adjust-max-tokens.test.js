@@ -32,9 +32,9 @@ describe("adjustMaxTokens explicit caps", () => {
     expect(toClaude({ max_completion_tokens: 1, thinking: { type: "enabled", budget_tokens: 2048 } })).toBe(2048 + 1024);
   });
 
-  it("claude->openai keeps the tool floor", () => {
+  it("claude->openai keeps explicit cap with tools", () => {
     const claudeTools = [{ name: "f", input_schema: { type: "object", properties: {} } }];
     const out = claudeToOpenAIRequest("gpt-x", { messages, tools: claudeTools, max_tokens: 4096 }, false);
-    expect(out.max_tokens).toBe(DEFAULT_MIN_TOKENS);
+    expect(out.max_tokens).toBe(4096);
   });
 });
