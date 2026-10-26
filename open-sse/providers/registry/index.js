@@ -121,6 +121,7 @@ import providerQoder from "./qoder.js";
 import providerQoderworkCn from "./qoderwork-cn.js";
 import providerReasonix from "./reasonix.js";
 import providerRecraft from "./recraft.js";
+import providerRuncrate from "./runcrate.js";
 import providerRunwayml from "./runwayml.js";
 import providerSambanova from "./sambanova.js";
 import providerSdwebui from "./sdwebui.js";
@@ -272,6 +273,7 @@ export default [
   providerQoderworkCn,
   providerReasonix,
   providerRecraft,
+  providerRuncrate,
   providerRunwayml,
   providerSambanova,
   providerSdwebui,
