@@ -30,9 +30,15 @@ export default {
     // executor pins responseFormat to "commandcode" so the SSE translator runs.
     format: "openai",
     forceStream: true,
+    // Static identity headers of command-code@1.88.0 buildCommandAuthHeaders().
+    // x-project-slug and x-session-id are dynamic — see shared/commandCodeHeaders.js.
     headers: {
-      // Latest published CLI build (registry.npmjs.org/command-code/latest).
-      "x-command-code-version": "1.81.0",
+    headers: {
+      "User-Agent": "cli",
+      "x-command-code-version": "1.88.0",
+      "x-cli-environment": "production",
+      "x-cli-surface": "cli",
+      "x-taste-learning": "false",
     },
   },
   models: [

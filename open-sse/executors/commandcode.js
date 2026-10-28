@@ -4,6 +4,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { FORMATS } from "../translator/formats.js";
 import { openaiToCommandCodeRequest } from "../translator/request/openai-to-commandcode.js";
+import { buildCommandCodeHeaders } from "../shared/commandCodeHeaders.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
 import { modelLevelError } from "../services/accountFallback.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -14,9 +15,8 @@ import { commandCodeThreadId, isCommandCodeThreadId } from "../utils/commandCode
  * CommandCodeExecutor — talks to https://api.commandcode.ai
  *
  * Auth: Bearer <user_xxx> API key (stored as the connection's apiKey).
- * Adds the per-conversation `x-session-id` header expected by CommandCode
- * upstream — the same id the envelope carries as `threadId`, because the
- * upstream prompt cache is keyed on it (see utils/commandCodeSession.js).
+ * Sends the official CLI's header set (shared/commandCodeHeaders.js); `x-session-id`
+ * matches the body's conversation-stable threadId.
  *
  * Two surfaces, same gateway:
  *  - Provider API (`/provider/v1/chat/completions`) — documented, OpenAI-shaped
@@ -99,17 +99,11 @@ export class CommandCodeExecutor extends BaseExecutor {
     const sessionId =
       body && isCommandCodeThreadId(body.threadId) ? body.threadId : commandCodeThreadId(body);
 
-    const headers = {
-      "Content-Type": "application/json",
-      ...(this.config.headers || {}),
-      "x-session-id": sessionId,
-    };
-
-    const token = credentials?.apiKey || credentials?.accessToken;
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    if (stream) headers["Accept"] = "text/event-stream";
-    return headers;
+    return buildCommandCodeHeaders({
+      apiKey: credentials?.apiKey || credentials?.accessToken,
+      sessionId,
+      accept: stream ? "text/event-stream" : null,
+    });
   }
 
   /** Carry the resolved session id on a credentials copy for this request. */

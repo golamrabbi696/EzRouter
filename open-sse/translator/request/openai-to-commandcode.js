@@ -15,6 +15,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { stripThinkingSuffix } from "../concerns/thinkingUnified.js";
+import { COMMAND_CODE_WORKING_DIR } from "../../shared/commandCodeHeaders.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 import { parseDataUri, encodeDataUri } from "../concerns/image.js";
 import { commandCodeThreadId } from "../../utils/commandCodeSession.js";
@@ -235,7 +236,7 @@ export function openaiToCommandCodeRequest(model, body, stream, credentials = nu
     threadId: commandCodeThreadId(body),
     memory: "",
     config: {
-      workingDir: process.cwd(),
+      workingDir: COMMAND_CODE_WORKING_DIR,
       date: today,
       environment: "external",
       structure: [],
