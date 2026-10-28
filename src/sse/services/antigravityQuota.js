@@ -55,6 +55,67 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
 }
 
 /**
+ * Check whether an Antigravity account is eligible for a requested model.
+ * Google rolls out preview/restricted models (Argon, Claude 5.5 Sonnet, Claude 5.5 Opus, etc.)
+ * on an account-by-account basis. Accounts that have not received an entitlement
+ * do not have the corresponding quota window in their lastQuotaSnapshot, and will
+ * return 404 "Requested entity was not found" if sent requests for those models.
+ *
+ * This pre-filter skips ineligible accounts upfront to prevent 404 spillover,
+ * retry storms, and unnecessary cooldown locks.
+ */
+export function isAntigravityAccountEligibleForModel(connection, model) {
+  if (!connection || !model) return true;
+  const windows = connection.lastQuotaSnapshot?.windows || connection.providerSpecificData?.lastQuotaSnapshot?.windows;
+  if (!Array.isArray(windows) || windows.length === 0) {
+    // Fail-open if no snapshot exists yet (e.g. newly added account before first sync)
+    return true;
+  }
+
+  const clean = (model.includes("/") ? model.slice(model.indexOf("/") + 1) : model)
+    .replace(/\([^()]+\)\s*$/, "")
+    .trim()
+    .toLowerCase();
+
+  // 1. Argon models (gemini-4-argon, gemini-4-argon-high, gemini-4-argon-medium, gemini-4-argon-low)
+  if (clean.includes("argon")) {
+    return windows.some(w => w.key && (w.key.toLowerCase().includes("argon") || w.displayName?.toLowerCase().includes("argon")));
+  }
+
+  // 2. Claude 5.5 Sonnet (claude-sonnet-5-5, claude-sonnet-5-5-high, claude-sonnet-5-5-medium, claude-sonnet-5-5-low)
+  if (clean.includes("sonnet-5-5") || clean.includes("sonnet-5.5")) {
+    return windows.some(w => w.key && (w.key.toLowerCase().includes("sonnet-5-5") || w.key.toLowerCase().includes("sonnet-5.5") || w.displayName?.toLowerCase().includes("sonnet-5-5")));
+  }
+
+  // 3. Claude 5.5 Opus (claude-opus-5-5, claude-opus-5-5-high, claude-opus-5-5-medium, claude-opus-5-5-low)
+  if (clean.includes("opus-5-5") || clean.includes("opus-5.5")) {
+    return windows.some(w => w.key && (w.key.toLowerCase().includes("opus-5-5") || w.key.toLowerCase().includes("opus-5.5") || w.displayName?.toLowerCase().includes("opus-5-5")));
+  }
+
+  // 4. Any other non-standard Claude version (e.g. claude-sonnet-5, claude-opus-5, future Claude 5/6 models)
+  // Standard accounts only have claude-sonnet-4-6 and claude-opus-4-6-thinking.
+  // If requesting a Claude model that is NOT 4-6, verify that the account has a matching window!
+  if (clean.startsWith("claude-") && !clean.includes("4-6")) {
+    return windows.some(w => {
+      if (!w.key) return false;
+      const k = w.key.toLowerCase();
+      return k.includes(clean) || clean.includes(k);
+    });
+  }
+
+  // 5. Future Gemini generations beyond 3.x (e.g. gemini-4, gemini-5)
+  if (/^gemini-[4-9]/.test(clean)) {
+    return windows.some(w => {
+      if (!w.key) return false;
+      const k = w.key.toLowerCase();
+      return k.includes(clean) || clean.includes(k);
+    });
+  }
+
+  return true;
+}
+
+/**
  * Get model family for Antigravity models ("argon", "claude_gpt" or "gemini").
  */
 export function getAntigravityModelFamily(model) {
@@ -105,8 +166,20 @@ export function getAntigravityModelQuota(quotas, model) {
   if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-high"]) {
     candidates.push(quotas["claude-sonnet-5-5-high"]);
   }
+  if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-medium"]) {
+    candidates.push(quotas["claude-sonnet-5-5-medium"]);
+  }
+  if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-low"]) {
+    candidates.push(quotas["claude-sonnet-5-5-low"]);
+  }
   if (cleanModel === "claude-opus-5-5" && quotas["claude-opus-5-5-high"]) {
     candidates.push(quotas["claude-opus-5-5-high"]);
+  }
+  if (cleanModel === "claude-opus-5-5" && quotas["claude-opus-5-5-medium"]) {
+    candidates.push(quotas["claude-opus-5-5-medium"]);
+  }
+  if (cleanModel === "claude-opus-5-5" && quotas["claude-opus-5-5-low"]) {
+    candidates.push(quotas["claude-opus-5-5-low"]);
   }
   if (cleanModel === "gemini-3.8-flash" && quotas["gemini-3.8-flash-medium"]) {
     candidates.push(quotas["gemini-3.8-flash-medium"]);

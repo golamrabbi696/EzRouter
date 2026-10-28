@@ -5,6 +5,7 @@ import { stripThinkingSuffix } from "../../open-sse/translator/concerns/thinking
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getPricingForModel } from "../../open-sse/providers/pricing.js";
 import { MITM_TOOLS } from "../../src/shared/constants/cliTools.js";
+import { isAntigravityAccountEligibleForModel } from "../../src/sse/services/antigravityQuota.js";
 
 const require = createRequire(import.meta.url);
 const { MODEL_SYNONYMS, MODEL_PATTERNS } = require("../../src/mitm/config.js");
@@ -109,5 +110,63 @@ describe("Antigravity Claude 5.5 models (#4555, #4548)", () => {
     // Legacy fallback still works
     expect(matchModel("claude-sonnet-4.6")).toBe("claude-sonnet-4-6");
     expect(matchModel("claude-opus-4.6")).toBe("claude-opus-4-6-thinking");
+  });
+
+  it("determines account eligibility for preview vs standard models", () => {
+    const entitledConn = {
+      lastQuotaSnapshot: {
+        windows: [
+          { key: "claude-sonnet-5-5-high" },
+          { key: "claude-opus-5-5-high" },
+          { key: "gemini-4-argon-high" },
+          { key: "argon_weekly" },
+          { key: "gemini_weekly" },
+          { key: "claude_gpt_weekly" }
+        ]
+      }
+    };
+
+    const standardConn = {
+      lastQuotaSnapshot: {
+        windows: [
+          { key: "gemini-3.8-flash-high" },
+          { key: "claude-sonnet-4-6" },
+          { key: "claude-opus-4-6-thinking" },
+          { key: "gemini_weekly" },
+          { key: "claude_gpt_weekly" }
+        ]
+      }
+    };
+
+    const emptyConn = { lastQuotaSnapshot: { windows: [] } };
+    const noSnapshotConn = {};
+
+    // Claude 5.5 Sonnet
+    expect(isAntigravityAccountEligibleForModel(entitledConn, "claude-sonnet-5-5")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(entitledConn, "claude-sonnet-5-5-high")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "claude-sonnet-5-5")).toBe(false);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "claude-sonnet-5-5-high")).toBe(false);
+
+    // Claude 5.5 Opus
+    expect(isAntigravityAccountEligibleForModel(entitledConn, "claude-opus-5-5")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(entitledConn, "claude-opus-5-5-high")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "claude-opus-5-5")).toBe(false);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "claude-opus-5-5-high")).toBe(false);
+
+    // Gemini 4 Argon
+    expect(isAntigravityAccountEligibleForModel(entitledConn, "gemini-4-argon")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(entitledConn, "gemini-4-argon-high")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "gemini-4-argon")).toBe(false);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "gemini-4-argon-high")).toBe(false);
+
+    // Standard models (both entitled and standard connections are eligible)
+    expect(isAntigravityAccountEligibleForModel(standardConn, "claude-sonnet-4-6")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "claude-opus-4-6-thinking")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "gemini-3.8-flash-high")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(standardConn, "gemini-3.7-flash")).toBe(true);
+
+    // Fail-open for connections without snapshot yet
+    expect(isAntigravityAccountEligibleForModel(emptyConn, "claude-sonnet-5-5")).toBe(true);
+    expect(isAntigravityAccountEligibleForModel(noSnapshotConn, "claude-sonnet-5-5")).toBe(true);
   });
 });

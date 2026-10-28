@@ -199,7 +199,13 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
 
   useEffect(() => {
     const checkCooldown = () => {
-      setIsCooldown(!!getEarliestModelLockUntil(connection));
+      // Account-level cooldown: either testStatus is unavailable with an active lock,
+      // or all models are locked (modelLock___all). An active account with an isolated
+      // single-model lock is ready and active for all other models.
+      const isConnInCooldown = connection.testStatus === "unavailable"
+        ? !!getEarliestModelLockUntil(connection)
+        : (!!connection.modelLock___all && new Date(connection.modelLock___all).getTime() > Date.now());
+      setIsCooldown(isConnInCooldown);
     };
 
     checkCooldown();
@@ -207,7 +213,7 @@ export default function ConnectionRow({ connection, plan = null, proxyPools, isO
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [modelLockUntil]);
+  }, [modelLockUntil, connection.testStatus, connection.modelLock___all]);
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)

@@ -1,3 +1,15 @@
+# v0.6.29 (2026-10-28)
+
+## Antigravity Preview Model Entitlement & UI Cooldown Precision
+- **Antigravity Multi-Account Model Eligibility Routing**:
+  - **Account Entitlement Pre-Filter (`isAntigravityAccountEligibleForModel`)**: Integrated strict snapshot-aware model entitlement verification in `src/sse/services/auth.js` and `src/sse/services/antigravityQuota.js`. Routing for account-restricted preview models (`claude-sonnet-5-5*`, `claude-opus-5-5*`, `gemini-4-argon*`) now checks the account's live quota snapshot upfront. Accounts without Google entitlement for these models are excluded before dispatch, eliminating 404 `Requested entity was not found` spillover, retry cascades, and error pollution across non-entitled accounts.
+  - **Extended Claude 5.5 Quota Candidates**: Added tier aliases for `claude-sonnet-5-5-medium`, `claude-sonnet-5-5-low`, `claude-opus-5-5-medium`, and `claude-opus-5-5-low` in `getAntigravityModelQuota` for exhaustive live quota resolution.
+  - **Standard Model Universal Access**: Preserved universal routing for all standard models (`gemini-3.8-flash*`, `gemini-3.7-flash*`, `gemini-3.6-flash*`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium`, and `gemini-3.1-flash-image`) across all active Antigravity accounts.
+- **Dashboard UI Cooldown & Health Status Accuracy**:
+  - **Scoped Cooldown Timer**: Refined cooldown status calculation in `ConnectionRow.js` and `ConnectionsCard.js`. An active connection with an isolated single-model lock is no longer stamped with a whole-account cooldown timer badge, accurately reflecting its readiness to serve all other enabled models.
+- **Security & Stability Invariant Enforcement**:
+  - Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
+
 # v0.6.28 (2026-10-25)
 
 ## Antigravity Multi-Account Argon Routing & 404 Spillover Isolation

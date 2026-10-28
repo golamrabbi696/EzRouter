@@ -7,7 +7,7 @@ import { selectHealthiestConnection } from "open-sse/services/healthTracker.js";
 import { resolveProviderId, resolveProviderRpm, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
 import { isOverLimit, recordRequest, retryAfterMs } from "./rpmLimiter.js";
 import { evaluateQuota } from "./quotaGuard.js";
-import { getAntigravityQuotaCache, getAntigravityModelQuota, getAntigravityModelFamily } from "./antigravityQuota.js";
+import { getAntigravityQuotaCache, getAntigravityModelQuota, getAntigravityModelFamily, isAntigravityAccountEligibleForModel } from "./antigravityQuota.js";
 import { pickByCacheAffinity } from "./cacheAffinity.js";
 import { getQuotaReserveHold } from "./quotaReserve.js";
 import * as log from "../utils/logger.js";
@@ -209,17 +209,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (isOverLimit(c.id, rpmLimit)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
-      // Antigravity Argon pre-filter: if a model belongs to the Argon family,
-      // and the connection already has a known quota snapshot without any Argon buckets,
-      // skip it immediately to avoid 404 spillover and error pollution!
-      if (isAntigravity && getAntigravityModelFamily(model) === "argon") {
-        const windows = c.lastQuotaSnapshot?.windows || c.providerSpecificData?.lastQuotaSnapshot?.windows;
-        if (Array.isArray(windows) && windows.length > 0) {
-          const hasArgon = windows.some(w => w.key && (w.key.includes("argon") || w.displayName?.toLowerCase().includes("argon")));
-          if (!hasArgon) {
-            return false;
-          }
-        }
+      // Antigravity model eligibility pre-filter:
+      // Accounts without entitlement for preview/restricted models (Argon, Claude 5.5 Sonnet/Opus, etc.)
+      // are skipped upfront to prevent 404 spillover and error pollution on non-entitled accounts!
+      if (isAntigravity && !isAntigravityAccountEligibleForModel(c, model)) {
+        return false;
       }
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {

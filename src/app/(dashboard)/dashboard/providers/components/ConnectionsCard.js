@@ -152,12 +152,18 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
 
   useEffect(() => {
     const check = () => {
-      setIsCooldown(!!getEarliestModelLockUntil(connection));
+      // Account-level cooldown: either testStatus is unavailable with an active lock,
+      // or all models are locked (modelLock___all). An active account with an isolated
+      // single-model lock is ready and active for all other models.
+      const isConnInCooldown = connection.testStatus === "unavailable"
+        ? !!getEarliestModelLockUntil(connection)
+        : (!!connection.modelLock___all && new Date(connection.modelLock___all).getTime() > Date.now());
+      setIsCooldown(isConnInCooldown);
     };
     check();
     const t = modelLockUntil ? setInterval(check, 1000) : null;
     return () => { if (t) clearInterval(t); };
-  }, [modelLockUntil]);
+  }, [modelLockUntil, connection.testStatus, connection.modelLock___all]);
 
   useEffect(() => {
     if (!showProxyDropdown) return;
