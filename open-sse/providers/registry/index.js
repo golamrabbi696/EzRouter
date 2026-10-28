@@ -94,6 +94,7 @@ import providerMistral from "./mistral.js";
 import providerMmf from "./mmf.js";
 import providerMorph from "./morph.js";
 import providerMuse from "./muse.js";
+import providerNace from "./nace.js";
 import providerNanobanana from "./nanobanana.js";
 import providerNebius from "./nebius.js";
 import providerNous from "./nous.js";
@@ -246,6 +247,7 @@ export default [
   providerMmf,
   providerMorph,
   providerMuse,
+  providerNace,
   providerNanobanana,
   providerNebius,
   providerNous,
