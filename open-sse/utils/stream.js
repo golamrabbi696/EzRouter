@@ -380,6 +380,8 @@ export function createSSEStream(options = {}) {
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
+              // Cover vendor alias shapes (reasoning / reasoning_details) so thinking
+              // char counts in usage logs match what the client received.
               const reasoning = extractReasoningText(delta);
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
