@@ -170,6 +170,26 @@ export async function pingModelByKind(model, kind = "llm", baseUrl = `http://127
     return { ok: true, latencyMs, error: null, status: res.status, preview: text };
   }
 
+  if (kind === "tts") {
+    const res = await fetch(`${baseUrl}/api/v1/audio/speech`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ model, input: "Test.", response_format: "mp3" }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const latencyMs = Date.now() - start;
+    const buf = new Uint8Array(await res.arrayBuffer().catch(() => new ArrayBuffer(0)));
+    const looksAudio = buf.length > 512 && !(buf[0] === 0x7b); // not a JSON error body
+
+    if (!res.ok || !looksAudio) {
+      const text = new TextDecoder().decode(buf.slice(0, 240));
+      let detail = text;
+      try { detail = JSON.parse(text)?.error?.message || text; } catch {}
+      return { ok: false, latencyMs, status: res.status, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}` };
+    }
+    return { ok: true, latencyMs, error: null, status: res.status };
+  }
+
   if (kind === "systemone") {
     let res;
     try {
