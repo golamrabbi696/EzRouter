@@ -19,14 +19,13 @@ describe("stripUnsupportedParams", () => {
     expect(body.messages[1]).toEqual({ role: "user", content: "Capital of France?" });
   });
 
-  it("flattens Cloudflare AI OpenAI content-part arrays", () => {
+  it("flattens Cloudflare AI text-only content-part arrays", () => {
     const body = {
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: "hello " },
-            { type: "image_url", image_url: { url: "data:image/png;base64,xx" } },
             { type: "text", text: "world" },
           ],
         },
@@ -71,6 +70,39 @@ describe("stripUnsupportedParams", () => {
       { role: "user", content: "hello" },
       { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] },
     ]);
+  });
+
+  it("keeps image_url parts for Cloudflare AI vision models instead of dropping them", () => {
+    const parts = [
+      { type: "text", text: "What color is this?" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,xx" } },
+    ];
+    const body = { messages: [{ role: "user", content: parts.map((p) => ({ ...p })) }] };
+
+    stripUnsupportedParams("cloudflare-ai", "@cf/moonshotai/kimi-k2.6", body);
+
+    expect(body.messages[0].content).toEqual(parts);
+  });
+
+  it("flattens text-only turns while keeping image turns in the same Cloudflare AI request", () => {
+    const body = {
+      messages: [
+        { role: "system", content: [{ type: "text", text: "be brief" }] },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "describe" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,xx" } },
+          ],
+        },
+      ],
+    };
+
+    stripUnsupportedParams("cloudflare-ai", "@cf/mistralai/mistral-small-3.1-24b-instruct", body);
+
+    expect(body.messages[0].content).toBe("be brief");
+    expect(Array.isArray(body.messages[1].content)).toBe(true);
+    expect(body.messages[1].content[1].type).toBe("image_url");
   });
 
   it.each(["gpt-5.4", "gpt-5.4-mini", "gpt-5.9", "gpt-5.10", "gpt-6.0", "gpt-6.1-sol", "gpt-6.10"])("drops unsupported GitHub params for %s", (model) => {
