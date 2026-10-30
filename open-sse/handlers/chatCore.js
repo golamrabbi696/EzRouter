@@ -258,7 +258,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
       // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
       if (clientTool === "claude") {
-        normalizeClaudePassthrough(translatedBody, translatedBody.model, clientRawRequest?.headers || null);
+        normalizeClaudePassthrough(translatedBody, translatedBody.model, provider, clientRawRequest?.headers || null);
         clampNativeThinking(translatedBody, provider, model);
       }
       // Strip structured-output format for Claude-compatible passthrough targets.
@@ -293,6 +293,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         delete translatedBody.stream_options;
       }
     }
+
   }
 
   // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
