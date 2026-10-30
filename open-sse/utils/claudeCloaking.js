@@ -57,12 +57,12 @@ export function cloakClaudeTools(body) {
   const tools = body.tools;
   if (!tools || tools.length === 0) return { body, toolNameMap: null };
 
-  // Idempotent: clients echo suffixed names back in history (e.g. "bash_ide"),
-  // and re-suffixing would yield "bash_ide_ide", which decloak can't restore.
-  // Trade-off: a genuine client tool literally named "x_ide" is sent as "x_ide"
-  // (not "x_ide_ide") and comes back as "x" via the suffix-strip fallback.
+  // Avoid double-suffixing: client history echoed back already carries the suffix
+  // from the previous turn (GH decolua/9router#5170).
   const suffix = (name) =>
-    name.endsWith(CLAUDE_TOOL_SUFFIX) ? name : `${name}${CLAUDE_TOOL_SUFFIX}`;
+    typeof name === "string" && name.endsWith(CLAUDE_TOOL_SUFFIX)
+      ? name
+      : `${name}${CLAUDE_TOOL_SUFFIX}`;
   const toolNameMap = new Map();
   const clientToolNames = new Set();
   const clientDeclarations = [];
