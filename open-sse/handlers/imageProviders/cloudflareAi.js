@@ -1,5 +1,6 @@
 import { nowSec, urlToBase64 } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { fetchImageAsBase64, parseDataUri } from "../../translator/concerns/image.js";
 
 const BASE_URL = PROVIDER_MEDIA["cloudflare-ai"]?.imageConfig?.baseUrl;
 
@@ -90,7 +91,7 @@ async function buildJsonBody(body) {
   return req;
 }
 
-function buildMultipartBody(body) {
+async function buildMultipartBody(body) {
   const form = new FormData();
   form.append("prompt", body.prompt);
 
@@ -102,6 +103,21 @@ function buildMultipartBody(body) {
   addOptionalFields(form, body, (target, key, value) => {
     target.append(key, String(value));
   });
+
+  let image = typeof body.image === "string" ? body.image.trim() : body.image;
+  if (image != null && image !== "") {
+    // FLUX.2 requires a binary file part; use the guarded fetcher for remote inputs.
+    if (typeof image === "string" && /^https?:\/\//i.test(image)) {
+      const fetched = await fetchImageAsBase64(image);
+      if (!fetched) throw new Error("Unable to fetch reference image safely");
+      image = fetched.url;
+    }
+    const imageData = await resolveImageInput(image);
+    if (!imageData?.bytes?.length) throw new Error("Invalid reference image");
+    form.append("input_image_0", new Blob([Uint8Array.from(imageData.bytes)], {
+      type: parseDataUri(image)?.mimeType || "application/octet-stream",
+    }), "reference-image");
+  }
 
   return form;
 }
