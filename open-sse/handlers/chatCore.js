@@ -1,6 +1,7 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix, clampNativeThinking } from "../translator/concerns/thinkingUnified.js";
+import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix, clampNativeThinking, parseModelModifiers } from "../translator/concerns/thinkingUnified.js";
+import { MODEL_SERVICE_TIER_PROVIDERS } from "../config/modelModifiers.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -247,11 +248,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       if (provider === "codex") {
         const suffixThinking = {};
         applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
-        if (suffixThinking.reasoning_effort) {
+        const suffixEffort = suffixThinking.reasoning?.effort || suffixThinking.reasoning_effort;
+        if (suffixEffort) {
           const reasoning = translatedBody.reasoning;
           translatedBody.reasoning = {
             ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
-            effort: suffixThinking.reasoning_effort,
+            effort: suffixEffort,
           };
           delete translatedBody.reasoning_effort;
         }
@@ -354,6 +356,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
+
+  // Apply after translation so model-selected tiers survive client-format pivots.
+  if (MODEL_SERVICE_TIER_PROVIDERS.has(provider)
+      && (finalFormat === FORMATS.OPENAI || finalFormat === FORMATS.OPENAI_RESPONSES)) {
+    const { serviceTier } = parseModelModifiers(upstreamModel);
+    if (serviceTier) translatedBody.service_tier = serviceTier;
+  }
 
   // Request line: one correlated summary (fmt + thinking + counts + account)
   if (log?.line) {
