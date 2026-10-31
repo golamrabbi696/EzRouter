@@ -105,6 +105,59 @@ describe("Cloudflare FLUX.2 reference resolution", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["data URI array", [DATA_URL]],
+    ["URL array", ["https://example.com/reference.png"]],
+    ["mixed bytes and strings", [137, DATA_URL]],
+    ["numeric string", ["137"]],
+    ["negative byte", [-1]],
+    ["byte overflow", [256]],
+    ["fractional byte", [1.5]],
+    ["null byte", [null]],
+    ["boolean byte", [true]],
+    ["nested byte array", [Array.from(PNG)]],
+    ["sparse byte array", new Array(1)],
+    ["empty byte array", []],
+  ])("rejects %s before any network request", async (_name, image) => {
+    const result = await generate({ image });
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(400);
+    expect(result.error).toBe("Invalid reference image");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["single reference in images", { images: [DATA_URL] }],
+    ["multiple references in images", { images: [DATA_URL, DATA_URL] }],
+    ["both image and images", { image: DATA_URL, images: [DATA_URL] }],
+    ["remote image and images", { image: "https://example.com/reference.png", images: [DATA_URL] }],
+    ["non-array images", { images: DATA_URL }],
+  ])("rejects unsupported %s instead of dropping references", async (_name, body) => {
+    fetch.mockResolvedValueOnce(new Response(PNG, { headers: { "Content-Type": "image/png" } }));
+    const result = await generate(body);
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(400);
+    expect(result.error).toBe("FLUX.2 expects a single reference in image; images is not supported");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it.each([[null], [[]]])("allows empty images (%j) without dropping a valid single image", async (images) => {
+    const result = await generate({ image: DATA_URL, images });
+    expect(result.success).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const file = (await sentForm()).get("input_image_0");
+    expect(Buffer.from(await file.arrayBuffer())).toEqual(PNG);
+  });
+
+  it.each([[null], [[]]])("keeps prompt-only requests with empty images (%j)", async (images) => {
+    const result = await generate({ images });
+    expect(result.success).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(Object.fromEntries(await sentForm())).toEqual({ prompt: "Make the reference a watercolor" });
+  });
+
   it("keeps prompt-only FLUX.2 requests and their options unchanged", async () => {
     const result = await generate({ size: "1024x768", seed: 0, guidance: 3.5 });
     expect(result.success).toBe(true);

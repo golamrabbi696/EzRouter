@@ -92,6 +92,10 @@ async function buildJsonBody(body) {
 }
 
 async function buildMultipartBody(body) {
+  if (body.images != null && (!Array.isArray(body.images) || body.images.length > 0)) {
+    throw new Error("FLUX.2 expects a single reference in image; images is not supported");
+  }
+
   const form = new FormData();
   form.append("prompt", body.prompt);
 
@@ -106,6 +110,13 @@ async function buildMultipartBody(body) {
 
   let image = typeof body.image === "string" ? body.image.trim() : body.image;
   if (image != null && image !== "") {
+    if (Array.isArray(image)) {
+      for (const byte of image) {
+        if (!Number.isInteger(byte) || byte < 0 || byte > 255) {
+          throw new Error("Invalid reference image");
+        }
+      }
+    }
     // FLUX.2 requires a binary file part; use the guarded fetcher for remote inputs.
     if (typeof image === "string" && /^https?:\/\//i.test(image)) {
       const fetched = await fetchImageAsBase64(image);
