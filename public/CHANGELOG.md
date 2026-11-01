@@ -1,4 +1,4 @@
-# v0.6.29 (2026-10-28)
+# v0.6.30 (2026-11-01)
 
 ## Upstream PR Synchronization (#5191 - #5361)
 - **Thinking & Model Modifiers**:
@@ -18,6 +18,11 @@
   - Aligned OpenCode and CommandCode CLI headers while preserving EzRouter dual-surface routing (#5263, #5328).
   - Resolved combo seat provider identity from live connections on `/v1/models` without leaking NaN/null limits (#5347).
   - Pointed Tailscale Funnel and Cloudflare Quick Tunnel dynamically at the active server port while preserving default port `20126` (#5354).
+- **Security & Stability Invariant Enforcement**:
+  - Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
+  - Antigravity preview model isolation (`gemini-4-argon`, `claude-sonnet-5-5`, `claude-opus-5-5`) 100% verified and active.
+
+# v0.6.29 (2026-10-28)
 
 ## Antigravity Preview Model Entitlement & UI Cooldown Precision
 - **Antigravity Multi-Account Model Eligibility Routing**:
