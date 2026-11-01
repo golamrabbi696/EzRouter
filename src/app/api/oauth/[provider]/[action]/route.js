@@ -429,7 +429,6 @@ export async function POST(request, { params }) {
       });
       return NextResponse.json({ success: true, connection: { id: connection.id, provider: connection.provider } });
     }
-    }
 
     if (action === "register-session") {
       // Register proxy session out of URL query (state) + body (codeVerifier).
