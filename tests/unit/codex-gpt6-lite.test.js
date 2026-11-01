@@ -127,7 +127,7 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     });
     const history = [
       { type: "web_search_call", id: "ws_fixture", status: "completed", action: { type: "search", query: "fixture" } },
-      { type: "reasoning", encrypted_content: "synthetic-fixture", summary: [] },
+      { type: "reasoning", encrypted_content: "gAAAAABsynthetic-fixture", summary: [] },
       { type: "message", role: "user", content: [{ type: "input_text", text: "Summarize for continuation." }] },
     ];
     await new CodexExecutor().execute({

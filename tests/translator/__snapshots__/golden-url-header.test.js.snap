@@ -118,20 +118,20 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
 {
   "apiKey": {
     "Accept": "text/event-stream",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
   },
   "oauth": {
     "Accept": "text/event-stream",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+    "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
@@ -408,7 +408,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -426,7 +426,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -446,7 +446,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Version": "2023-06-01",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.280 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -867,24 +867,24 @@ exports[`GOLDEN buildHeaders (default executor providers) > grok-cli → headers
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "grok-shell/<APP_VER> (linux; x86_64)",
+    "User-Agent": "grok-shell/1.0.44 (linux; x86_64)",
     "x-grok-client-identifier": "grok-shell",
-    "x-grok-client-version": "<APP_VER>",
+    "x-grok-client-version": "1.0.44",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "grok-shell/<APP_VER> (linux; x86_64)",
+    "User-Agent": "grok-shell/1.0.44 (linux; x86_64)",
     "x-grok-client-identifier": "grok-shell",
-    "x-grok-client-version": "<APP_VER>",
+    "x-grok-client-version": "1.0.44",
   },
   "oauth": {
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "grok-shell/<APP_VER> (linux; x86_64)",
+    "User-Agent": "grok-shell/1.0.44 (linux; x86_64)",
     "x-grok-client-identifier": "grok-shell",
-    "x-grok-client-version": "<APP_VER>",
+    "x-grok-client-version": "1.0.44",
   },
 }
 `;
@@ -1161,7 +1161,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > minimax-code → hea
     "Content-Type": "application/json",
     "User-Agent": "MiniMaxAgent",
     "X-Mavis-Agent-Id": "main",
-    "X-Mavis-Session-Id": "6aaeec4a-aa20-4fd3-8cbe-3fa9da24435f",
+    "X-Mavis-Session-Id": "c1a965d6-5f2a-408c-a69f-90432c6c0ebf",
     "X-Mavis-Timezone-Offset": "21600",
     "anthropic-version": "2023-06-01",
     "x-api-key": "sk-xxx",
@@ -1171,7 +1171,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > minimax-code → hea
     "Content-Type": "application/json",
     "User-Agent": "MiniMaxAgent",
     "X-Mavis-Agent-Id": "main",
-    "X-Mavis-Session-Id": "d9c9bc5a-8ef4-482d-93ac-8f4b8736573e",
+    "X-Mavis-Session-Id": "ec5d8eed-c596-48c5-b87b-1eed7e0b7535",
     "X-Mavis-Timezone-Offset": "21600",
     "anthropic-version": "2023-06-01",
     "x-api-key": "sk-xxx",
@@ -1182,7 +1182,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > minimax-code → hea
     "Content-Type": "application/json",
     "User-Agent": "MiniMaxAgent",
     "X-Mavis-Agent-Id": "main",
-    "X-Mavis-Session-Id": "e48d7931-d18d-4698-9942-f91a260cbfab",
+    "X-Mavis-Session-Id": "1e69eade-d178-4f12-8c3d-ddcb3a25d985",
     "X-Mavis-Timezone-Offset": "21600",
     "anthropic-version": "2023-06-01",
     "x-api-key": "sk-xxx",
@@ -1198,7 +1198,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > minimax-code-global 
     "Content-Type": "application/json",
     "User-Agent": "MiniMaxAgent",
     "X-Mavis-Agent-Id": "main",
-    "X-Mavis-Session-Id": "e58e9406-b47b-468e-90da-4808350f78a9",
+    "X-Mavis-Session-Id": "6622cfc6-ea66-4f27-9894-fb50e6218e1c",
     "X-Mavis-Timezone-Offset": "21600",
     "anthropic-version": "2023-06-01",
     "x-api-key": "sk-xxx",
@@ -1208,7 +1208,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > minimax-code-global 
     "Content-Type": "application/json",
     "User-Agent": "MiniMaxAgent",
     "X-Mavis-Agent-Id": "main",
-    "X-Mavis-Session-Id": "205c6d7f-dab2-4ae5-9d75-3b01c4853ba6",
+    "X-Mavis-Session-Id": "37642625-bad1-4e0b-9991-2d4b87841f7c",
     "X-Mavis-Timezone-Offset": "21600",
     "anthropic-version": "2023-06-01",
     "x-api-key": "sk-xxx",
@@ -1219,7 +1219,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > minimax-code-global 
     "Content-Type": "application/json",
     "User-Agent": "MiniMaxAgent",
     "X-Mavis-Agent-Id": "main",
-    "X-Mavis-Session-Id": "1104015e-d9c7-4f2e-b8f1-71c418aa8c15",
+    "X-Mavis-Session-Id": "74fb76a9-e9e3-498f-aa2a-da373f02285f",
     "X-Mavis-Timezone-Offset": "21600",
     "anthropic-version": "2023-06-01",
     "x-api-key": "sk-xxx",
@@ -1443,15 +1443,18 @@ exports[`GOLDEN buildHeaders (default executor providers) > opencode-zen → hea
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+    "x-opencode-client": "desktop",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+    "x-opencode-client": "desktop",
   },
   "oauth": {
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+    "x-opencode-client": "desktop",
   },
 }
 `;
@@ -1653,23 +1656,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > reasonix → headers
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > runcrate → headers (apiKey / oauth) 1`] = `
-{
-  "apiKey": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "nonStream": {
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "oauth": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-}
-`;
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -2388,8 +2374,8 @@ exports[`GOLDEN buildUrl (default executor providers) > openai → url (stream +
 
 exports[`GOLDEN buildUrl (default executor providers) > opencode-zen → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://opencode.ai/zen/v1",
-  "stream": "https://opencode.ai/zen/v1",
+  "nonStream": "https://opencode.ai/zen/v1/chat/completions",
+  "stream": "https://opencode.ai/zen/v1/chat/completions",
 }
 `;
 
@@ -2467,8 +2453,6 @@ exports[`GOLDEN buildUrl (default executor providers) > runcrate → url (stream
 {
   "nonStream": "https://api.runcrate.ai/v1/chat/completions",
   "stream": "https://api.runcrate.ai/v1/chat/completions",
-}
-`;
 }
 `;
 
