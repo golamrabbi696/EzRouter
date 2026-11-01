@@ -1,5 +1,24 @@
 # v0.6.29 (2026-10-28)
 
+## Upstream PR Synchronization (#5191 - #5361)
+- **Thinking & Model Modifiers**:
+  - Supported OpenAI & Codex model service tier modifiers: `model(fast)`, `model(xhigh,fast)`, `model(standard)` with priority and default processing (#5356).
+  - Floored `MINIMAL` thinking tier on tiered Gemini 3.6/3.7/3.8 Flash to `low`, preventing 400 rejection from Google API (#5355).
+  - Routed Qwen 3.8 through official reasoning effort (`qwen-effort` format) and normalized Qwen 3.8/3.7 reasoning formats (#5308).
+  - Preserved native omitted and redacted thinking for first-party Claude / Anthropic providers (#5344).
+  - Maintained adaptive thinking for Haiku 5.5 and effort max for GPT-5.6 / GPT-6 on OpenAI Compatible nodes (#5197, #5198).
+  - Applied Claude 5.5 thinking rules to Copilot dotted model IDs (#5254).
+- **Providers & Transports**:
+  - Forwarded caller `Anthropic-Version` on native Claude gateways (#5357).
+  - Prevented double-suffixing (`_ide_ide`) in Claude cloaking multi-turn history (#5339).
+  - Kept image parts for Cloudflare Workers AI vision models (e.g. Mistral Small 3.1) and rejected malformed FLUX reference inputs (#5348, #5350).
+  - Preserved image-only user messages without text in Ollama (#5337).
+  - Added Runcrate provider, Nace Drex provider (System One lane), and MiniMax Code named-pipe broker lease (#5207, #5286, #5306).
+  - Added Ollama Local TTS (Phonon) and Gemini 3.8 Flash / Flash Lite TTS models (#5212, #5321, #5323).
+  - Aligned OpenCode and CommandCode CLI headers while preserving EzRouter dual-surface routing (#5263, #5328).
+  - Resolved combo seat provider identity from live connections on `/v1/models` without leaking NaN/null limits (#5347).
+  - Pointed Tailscale Funnel and Cloudflare Quick Tunnel dynamically at the active server port while preserving default port `20126` (#5354).
+
 ## Antigravity Preview Model Entitlement & UI Cooldown Precision
 - **Antigravity Multi-Account Model Eligibility Routing**:
   - **Account Entitlement Pre-Filter (`isAntigravityAccountEligibleForModel`)**: Integrated strict snapshot-aware model entitlement verification in `src/sse/services/auth.js` and `src/sse/services/antigravityQuota.js`. Routing for account-restricted preview models (`claude-sonnet-5-5*`, `claude-opus-5-5*`, `gemini-4-argon*`) now checks the account's live quota snapshot upfront. Accounts without Google entitlement for these models are excluded before dispatch, eliminating 404 `Requested entity was not found` spillover, retry cascades, and error pollution across non-entitled accounts.
