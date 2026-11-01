@@ -310,6 +310,12 @@ export const PROVIDER_CAPABILITIES = {
     "claude-fable-5": GITHUB_CLAUDE_200K_CAPS,
     "claude-opus-4.8": GITHUB_CLAUDE_200K_CAPS,
     "claude-opus-5": GITHUB_CLAUDE_200K_CAPS,
+    // GitHub Copilot routes Claude to its Anthropic-native /v1/messages shim, which applies
+    // Anthropic's per-model thinking rules. claude-haiku-5.5 is adaptive-only there too: the
+    // budget shape the global *claude*haiku* pattern sends comes back 400 "thinking.type.enabled"
+    // is not supported for this model (live probe). Limits are stated because this override
+    // short-circuits the catalog overlay; they match the synced catalog's github entry.
+    "claude-haiku-5.5": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   },
   "qoder": QODER_PROVIDER_MODEL_CAPS,
   "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
@@ -347,14 +353,6 @@ export const PROVIDER_CAPABILITIES = {
     // maxOutput 128000 for this id (the provider override short-circuits before the
     // catalog overlay, so maxOutput must be stated here too).
     "claude-haiku-5-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
-  },
-  // GitHub Copilot routes Claude to its Anthropic-native /v1/messages shim, which applies
-  // Anthropic's per-model thinking rules. claude-haiku-5.5 is adaptive-only there too: the
-  // budget shape the global *claude*haiku* pattern sends comes back 400 "thinking.type.enabled"
-  // is not supported for this model (live probe). Limits are stated because this override
-  // short-circuits the catalog overlay; they match the synced catalog's github entry.
-  "github": {
-    "claude-haiku-5.5": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   },
   // OpenCode Free (oc) — the free lane's MiMo route is OpenRouter-backed and takes
   // the plain OpenAI reasoning_effort enum verbatim (live probe on
