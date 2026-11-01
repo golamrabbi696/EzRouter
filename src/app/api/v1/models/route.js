@@ -70,11 +70,48 @@ const ALIAS_TO_PROVIDER_ID = {
   ...ALIAS_TO_ID,
 };
 
-function comboSeatCapabilities(seat) {
+// The prefix a connection's models are published under. Mirrors the publication
+// step in buildModelsList() so a combo seat prefix and a published model id
+// always denote the same provider.
+function seatPrefixFor(providerId, conn) {
+  return (
+    conn?.providerSpecificData?.prefix
+    || getProviderAlias(providerId)
+    || PROVIDER_ID_TO_ALIAS[providerId]
+    || providerId
+  ).trim();
+}
+
+// Seat prefix -> provider id, built from the live connections.
+//
+// ALIAS_TO_PROVIDER_ID only knows the built-in providers, so a custom
+// (OpenAI/Anthropic-compatible) provider node is missing from it. Its seat
+// prefix then resolved to the literal prefix string instead of the provider
+// id, and the seat fell through to the generic model-name patterns —
+// publishing a window the provider never claimed. Resolving the prefix
+// against the same connections the models are published from keeps combo
+// members on the same authoritative metadata as direct models.
+function buildSeatProviderIds(activeConnectionByProvider) {
+  const ids = new Map();
+  if (!activeConnectionByProvider) return ids;
+  const entries = activeConnectionByProvider instanceof Map
+    ? activeConnectionByProvider.entries()
+    : Array.isArray(activeConnectionByProvider)
+      ? activeConnectionByProvider
+      : Object.entries(activeConnectionByProvider);
+  for (const [providerId, conn] of entries) {
+    const prefix = seatPrefixFor(providerId, conn);
+    if (prefix && !ids.has(prefix)) ids.set(prefix, providerId);
+  }
+  return ids;
+}
+
+function comboSeatCapabilities(seat, seatProviderIds = null) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
-  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
+  const provider = seatProviderIds?.get(alias) || ALIAS_TO_PROVIDER_ID[alias] || alias;
+  return getCapabilitiesForModel(provider, seat.slice(slash + 1));
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -280,30 +317,37 @@ function comboMatchesKinds(combo, kindFilter) {
 // treated as a literal model and publishes the 200k floor. Expand nested
 // names (cycle-guarded) so the published window is the true min across the
 // whole chain.
-export function comboSeatLimits(combo, combosByName, activeConnectionByProvider = null, comboStrategies = {}, visiting = new Set()) {
+export function comboSeatLimits(combo, combosByName, activeConnectionByProvider = null, comboStrategies = {}, visiting = new Set(), seatProviderIds = null) {
   const name = typeof combo?.name === "string" ? combo.name : null;
   if (name) {
     if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
     visiting.add(name);
   }
 
+  const effectiveSeatProviderIds = seatProviderIds || buildSeatProviderIds(activeConnectionByProvider);
+
   // Filter seats to active providers when connection records are available.
   // ponytail: only checks provider-level activation, not per-model enabledModels; add per-model filter if combos mix enabled/disabled models on one account.
   const seats = Array.isArray(combo?.models) ? combo.models : [];
-  const hasActiveFilter = activeConnectionByProvider && activeConnectionByProvider.size > 0;
+  const hasActiveFilter = activeConnectionByProvider && (activeConnectionByProvider instanceof Map ? activeConnectionByProvider.size > 0 : Object.keys(activeConnectionByProvider).length > 0);
   const isSeatActive = (seat) => {
     if (!hasActiveFilter || typeof seat !== "string") return true;
     const slash = seat.indexOf("/");
     if (slash <= 0) return true;
     const alias = seat.slice(0, slash);
-    const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
-    return activeConnectionByProvider.has(providerId);
+    const providerId = effectiveSeatProviderIds?.get(alias) || ALIAS_TO_PROVIDER_ID[alias] || alias;
+    if (ALIAS_TO_PROVIDER_ID[alias] || AI_PROVIDERS[providerId]) {
+      return activeConnectionByProvider instanceof Map ? activeConnectionByProvider.has(providerId) : Boolean(activeConnectionByProvider[providerId]);
+    }
+    return true;
   };
   const activeSeats = hasActiveFilter ? seats.filter(isSeatActive) : seats;
   const candidateSeats = activeSeats.length > 0 ? activeSeats : seats;
 
   const seatWindows = [];
   let maxOutput = Infinity;
+  let contextUnknown = false;
+  let outputUnknown = false;
   try {
     for (const seat of candidateSeats) {
       if (typeof seat !== "string") continue;
@@ -313,15 +357,19 @@ export function comboSeatLimits(combo, combosByName, activeConnectionByProvider 
         if (nested) {
           // A nested combo is one seat: it contributes the window it publishes for
           // itself, i.e. its own override already applied.
-          const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, comboStrategies, visiting);
+          const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, comboStrategies, visiting, effectiveSeatProviderIds);
           if (Number.isFinite(nestedLimits.contextWindow)) seatWindows.push(nestedLimits.contextWindow);
+          else contextUnknown = true;
           if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
+          else outputUnknown = true;
           continue;
         }
       }
-      const caps = comboSeatCapabilities(seat) || getCapabilitiesForModel(null, seat);
+      const caps = comboSeatCapabilities(seat, effectiveSeatProviderIds) || getCapabilitiesForModel(null, seat);
       if (Number.isFinite(caps?.contextWindow)) seatWindows.push(caps.contextWindow);
+      else contextUnknown = true;
       if (Number.isFinite(caps?.maxOutput)) maxOutput = Math.min(maxOutput, caps.maxOutput);
+      else outputUnknown = true;
     }
   } finally {
     if (name) visiting.delete(name);
@@ -330,11 +378,12 @@ export function comboSeatLimits(combo, combosByName, activeConnectionByProvider 
   // What the combo promises is its own decision: min (every seat), max (the chain
   // via rollover), or an explicit number. See comboContextWindow.
   const { mode, custom } = comboWindowSetting(comboStrategies?.[name]);
+  const resolvedWindow = comboContextWindow(seatWindows, mode, custom);
   return {
-    contextWindow: comboContextWindow(seatWindows, mode, custom),
+    contextWindow: contextUnknown || !Number.isFinite(resolvedWindow) ? undefined : resolvedWindow,
     seatMinWindow: seatWindows.length ? Math.min(...seatWindows) : undefined,
     seatMaxWindow: seatWindows.length ? Math.max(...seatWindows) : undefined,
-    maxOutput: Number.isFinite(maxOutput) ? maxOutput : undefined,
+    maxOutput: outputUnknown || !Number.isFinite(maxOutput) ? undefined : maxOutput,
   };
 }
 
@@ -348,13 +397,14 @@ function comboToEntry(combo, comboByName, combosByName, activeConnectionByProvid
   if (combo.kind === "webSearch" || combo.kind === "webFetch") {
     entry.kind = combo.kind;
   } else {
-    const comboCaps = aggregateComboCapabilities(combo.models, comboByName, comboSeatCapabilities);
+    const seatProviderIds = buildSeatProviderIds(activeConnectionByProvider);
+    const comboCaps = aggregateComboCapabilities(combo.models, comboByName, (s) => comboSeatCapabilities(s, seatProviderIds));
     if (comboCaps) entry.capabilities = comboCaps;
     // Any seat can serve the request, so the only window a combo can promise is
     // its smallest. Combo entries were the only models on this endpoint that
     // published no limits at all, which leaves a client to guess from the name —
     // and it guesses high (see the snake_case note on the per-provider path).
-    const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, activeConnectionByProvider, comboStrategies);
+    const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, activeConnectionByProvider, comboStrategies, new Set(), seatProviderIds);
     if (Number.isFinite(contextWindow)) {
       entry.context_length = contextWindow;
       // capabilities is the min/max union from aggregateComboCapabilities; keep its
