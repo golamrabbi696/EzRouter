@@ -156,3 +156,21 @@ curl -X POST "$NINEROUTER_URL/v1/images/generations?response_format=binary" \
   -d '{"model":"ag/gemini-3.1-flash-image","prompt":"watercolor mountains at sunrise"}' \
   --output out.png
 ```
+
+## Provider quirks
+
+Common fields above work everywhere. These add/override:
+
+| Provider | Extra/changed fields | Notes |
+|---|---|---|
+| `openai`, `minimax`, `openrouter`, `recraft` | `quality`, `style`, `response_format` | Standard OpenAI shape |
+| `gemini` (nano-banana) | — | Only `prompt`; ignores `size`/`n` |
+| `codex` (gpt-5.4-image) | `image`, `images[]`, `image_detail`, `output_format`, `background` | SSE stream; **ChatGPT Plus/Pro required** |
+| `huggingface` | — | Only `prompt`; returns single image |
+| `nanobanana` | `image`, `images[]` (edit mode) | `size` → aspect ratio; async polling |
+| `fal-ai` | `image` (img2img) | `n` → `num_images`; `size` → ratio; async |
+| `stability-ai` | `style` (preset), `output_format` | `size` → `aspect_ratio` |
+| `black-forest-labs` (FLUX) | `image` (ref) | `size` → exact `width`/`height`; async |
+| `cloudflare-ai` | `steps`, `seed`, `guidance`, `negative_prompt` (model-dependent) | `size` → `width`/`height`; FLUX.2 uses multipart; FLUX.1 Schnell ignores `size` |
+| `runwayml` | `image` (ref) | `size` → ratio; async; video models exist |
+| `sdwebui`, `comfyui` | — | Localhost noAuth (`:7860` / `:8188`) |
