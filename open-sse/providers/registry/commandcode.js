@@ -33,7 +33,6 @@ export default {
     // Static identity headers of command-code@1.88.0 buildCommandAuthHeaders().
     // x-project-slug and x-session-id are dynamic — see shared/commandCodeHeaders.js.
     headers: {
-    headers: {
       "User-Agent": "cli",
       "x-command-code-version": "1.88.0",
       "x-cli-environment": "production",
