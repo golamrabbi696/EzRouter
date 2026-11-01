@@ -398,6 +398,13 @@ export async function handleNonStreamingResponse({
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Upstream provider error: ${nativeReason}`);
     }
 
+    if (sourceFormat === FORMATS.OPENAI && targetFormat === FORMATS.OPENAI && (!Array.isArray(responseBody?.choices) || !responseBody.choices.length ||
+        !responseBody.choices.every(choice => choice?.message && typeof choice.message === "object"))) {
+      trackDone?.();
+      appendLog?.({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Chat Completions response from upstream");
+    }
+
     if (onRequestSuccess) {
       Promise.resolve()
         .then(onRequestSuccess)
