@@ -50,7 +50,7 @@ describe("Gemini TTS", () => {
 
     expect(result.success).toBe(true);
     expect(global.fetch.mock.calls[0][0]).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key=test-key"
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent?key=test-key"
     );
 
     const sent = JSON.parse(global.fetch.mock.calls[0][1].body);
