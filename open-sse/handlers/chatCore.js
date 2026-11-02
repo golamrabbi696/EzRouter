@@ -5,6 +5,7 @@ import { MODEL_SERVICE_TIER_PROVIDERS } from "../config/modelModifiers.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
+import { normalizeClaudeAssistantTail } from "../translator/concerns/claudeAssistantTail.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { modelLevelError } from "../services/accountFallback.js";
@@ -475,6 +476,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
       try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
     }
+  }
+
+  // All savers, including Headroom/PXPIPE, may change the final assistant text.
+  if (finalFormat === FORMATS.CLAUDE) {
+    translatedBody = normalizeClaudeAssistantTail(translatedBody);
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
