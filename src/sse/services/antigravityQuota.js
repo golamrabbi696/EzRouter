@@ -55,6 +55,7 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
 }
 
 /**
+<<<<<<< HEAD
  * Check whether an Antigravity account is eligible for a requested model.
  * Google rolls out preview/restricted models (Argon, Claude 5.5 Sonnet, Claude 5.5 Opus, etc.)
  * on an account-by-account basis. Accounts that have not received an entitlement
@@ -116,13 +117,13 @@ export function isAntigravityAccountEligibleForModel(connection, model) {
 }
 
 /**
- * Get model family for Antigravity models ("argon", "claude_gpt" or "gemini").
+ * Get model family for Antigravity models ("claude_gpt", "gemini_argon", or "gemini").
  */
 export function getAntigravityModelFamily(model) {
   if (!model || typeof model !== "string") return null;
   const clean = (model.includes("/") ? model.slice(model.indexOf("/") + 1) : model).toLowerCase();
-  if (clean.includes("argon")) {
-    return "argon";
+  if (clean.includes("argon") || clean === "gemini_argon") {
+    return "gemini_argon";
   }
   if (clean.startsWith("claude-") || clean.startsWith("gpt-") || clean === "claude") {
     return "claude_gpt";
@@ -192,9 +193,17 @@ export function getAntigravityModelQuota(quotas, model) {
   }
 
   // 3. Shared family summary buckets (5h session & Weekly)
-  if (family === "argon") {
+  if (family === "gemini_argon" || family === "argon") {
+    if (quotas.gemini_argon_session) candidates.push(quotas.gemini_argon_session);
     if (quotas.argon_session) candidates.push(quotas.argon_session);
+    if (quotas.gemini_argon_weekly) candidates.push(quotas.gemini_argon_weekly);
     if (quotas.argon_weekly) candidates.push(quotas.argon_weekly);
+    // On Ultra plans where Argon shares the main Gemini bucket (no separate argon summary),
+    // fall back to the shared Gemini summary buckets.
+    if (!quotas.gemini_argon_session && !quotas.argon_session && !quotas.gemini_argon_weekly && !quotas.argon_weekly) {
+      if (quotas.gemini_session) candidates.push(quotas.gemini_session);
+      if (quotas.gemini_weekly) candidates.push(quotas.gemini_weekly);
+    }
   } else if (family === "claude_gpt") {
     if (quotas.claude_gpt_session) candidates.push(quotas.claude_gpt_session);
     if (quotas.claude_gpt_weekly) candidates.push(quotas.claude_gpt_weekly);
@@ -261,6 +270,8 @@ export function clearAntigravityStrikes(connectionId, model) {
   const family = getAntigravityModelFamily(model);
   if (family === "claude_gpt" && cached?.claude_gpt_session?.resetAt === iso) {
     delete cached.claude_gpt_session;
+  } else if (family === "gemini_argon" && cached?.gemini_argon_session?.resetAt === iso) {
+    delete cached.gemini_argon_session;
   } else if (family === "gemini" && cached?.gemini_session?.resetAt === iso) {
     delete cached.gemini_session;
   }
