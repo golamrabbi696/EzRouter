@@ -14,6 +14,12 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+// Regions per service host; a region outside the set is never spliced into the hostname.
+const KIRO_SERVICE_REGIONS = {
+  q: new Set(["us-east-1", "eu-central-1"]),
+  runtime: new Set(["us-east-1", "eu-central-1"]),
+  codewhisperer: new Set(["us-east-1"]),
+};
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
 const KIRO_SHORT_FINAL_MAX_CHARS = 800;
 const EVENTSTREAM_MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
@@ -305,11 +311,15 @@ export class KiroExecutor extends BaseExecutor {
    */
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
-    const regionalize = (u) =>
-      region && region !== "us-east-1" && u.includes("amazonaws.com")
-        ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
-        : u;
+    // Only a covered region reaches the hostname that receives the bearer token.
+    const requestedRegion = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    const regionalize = (u) => {
+      if (!u.includes("amazonaws.com")) return u;
+      const service = u.match(/\/\/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/)?.[1];
+      const covered = KIRO_SERVICE_REGIONS[service];
+      if (!covered || !covered.has(requestedRegion)) return u;
+      return u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${requestedRegion}.amazonaws.com`);
+    };
 
     return [
       regionalize("https://q.us-east-1.amazonaws.com/generateAssistantResponse"),
@@ -357,7 +367,16 @@ export class KiroExecutor extends BaseExecutor {
    */
   async execute(args) {
     const result = await super.execute(args);
-    if (result?.response?.ok) this.attachIntegrityGate(result, args);
+    if (result?.response?.ok) {
+      // KIRO_INTEGRITY_GATE=off streams through, forfeiting the tool-call repair retry.
+      if (process.env.KIRO_INTEGRITY_GATE === "off") {
+        result.response = this.transformEventStreamToSSE(result.response, args.model, {
+          toolSpecs: args.body?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools || []
+        });
+      } else {
+        this.attachIntegrityGate(result, args);
+      }
+    }
     return result;
   }
 
