@@ -45,11 +45,8 @@ export function geminiToOpenAIRequest(model, body, stream) {
     for (const content of body.contents) {
       const converted = convertGeminiContentWithReasoning(content);
       if (converted) {
-        if (Array.isArray(converted)) {
-          result.messages.push(...converted);
-        } else {
-          result.messages.push(converted);
-        }
+        if (Array.isArray(converted)) result.messages.push(...converted);
+        else result.messages.push(converted);
       }
     }
   }
@@ -85,8 +82,8 @@ function convertGeminiContent(content) {
   }
 
   const parts = [];
-  const toolResults = [];
   const toolCalls = [];
+  const toolResults = [];
 
   for (const part of content.parts) {
     if (part.text !== undefined) {
@@ -124,26 +121,26 @@ function convertGeminiContent(content) {
     }
   }
 
+  let message = null;
   if (toolCalls.length > 0) {
-    const result = { role: ROLE.ASSISTANT };
+    message = { role: ROLE.ASSISTANT };
     if (parts.length > 0) {
-      result.content = parts.length === 1 ? parts[0].text : parts;
+      message.content = parts.length === 1 ? parts[0].text : parts;
     }
-    result.tool_calls = toolCalls;
-    return toolResults.length > 0 ? [...toolResults, result] : result;
-  }
-
-  if (parts.length > 0) {
-    const result = {
+    message.tool_calls = toolCalls;
+  } else if (parts.length > 0) {
+    message = {
       role,
       content: collapseTextParts(parts)
     };
-    return toolResults.length > 0 ? [...toolResults, result] : result;
   }
 
-  if (toolResults.length === 1) return toolResults[0];
-  if (toolResults.length > 1) return toolResults;
-  return null;
+  // Complete the parts scan before returning: parallel results must all precede
+  // any co-located follow-up text or calls in the OpenAI message sequence.
+  if (toolResults.length > 0) {
+    return message ? [...toolResults, message] : toolResults;
+  }
+  return message;
 }
 
 function convertGeminiContentWithReasoning(content) {
