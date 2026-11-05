@@ -21,6 +21,14 @@ export function filterToOpenAIFormat(body, opts = {}) {
     // provider accepts developer and must keep the caller's instruction role.
     if (msg.role === ROLE.DEVELOPER && !opts.preserveDeveloperRole) msg = { ...msg, role: ROLE.SYSTEM };
 
+    // Some OpenAI-compatible APIs deserialize these names as aliases of one
+    // field. Keep the explicit canonical value (even null/empty) when both
+    // names are present, without changing structured reasoning data.
+    if (msg.role === ROLE.ASSISTANT && typeof msg.reasoning === "string" && msg.reasoning_content !== undefined) {
+      msg = { ...msg };
+      delete msg.reasoning;
+    }
+
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === ROLE.TOOL) return msg;
 
