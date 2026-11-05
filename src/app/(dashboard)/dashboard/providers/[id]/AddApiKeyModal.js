@@ -32,7 +32,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
-  const credentialLabel = isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
+  const credentialLabel = isCompatible ? "API Key (optional)" : isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
@@ -130,9 +130,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   // One place decides whether the credential requirement is met. The button's disabled state and
   // handleSubmit's early return both read it; encoding the rule twice is what let Save look
   // clickable while silently doing nothing for profile-only Bedrock connections.
-  const apiKeySatisfied = () =>
-    !!formData.apiKey ||
-    !!(apiKeyOptionalWith && buildProviderSpecificData()?.[apiKeyOptionalWith]);
+  const apiKeySatisfied = () => {
+    if (isCompatible) return true;
+    const psd = buildProviderSpecificData();
+    if (apiKeyOptionalWith && psd?.[apiKeyOptionalWith]) return true;
+    if (usesAwsCredentialForm) return !!formData.apiKey && !!psd?.accessKeyId;
+    return !!formData.apiKey;
+  };
 
   const handleValidate = async () => {
     if (isCompatible && !formData.defaultModel.trim()) {
@@ -334,6 +338,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               value={formData.apiKey}
               onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
               placeholder={credentialPlaceholder}
+              hint={isCompatible ? "Leave empty to send requests without authentication." : undefined}
               className="flex-1"
             />
             <div className="pt-6">

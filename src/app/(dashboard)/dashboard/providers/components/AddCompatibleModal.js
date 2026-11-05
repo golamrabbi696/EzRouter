@@ -295,10 +295,11 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           />
         )}
         <Input
-          label="API Key (for Check)"
+          label="API Key (optional, for Check)"
           type="password"
           value={checkKey}
           onChange={(e) => setCheckKey(e.target.value)}
+          hint="Leave empty to check an endpoint without authentication."
         />
         <Input
           label="Model ID (optional)"
@@ -310,7 +311,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
             onClick={handleValidate}
-            disabled={!checkKey || validating || !formData.baseUrl.trim()}
+            disabled={validating || !formData.baseUrl.trim()}
             variant="secondary"
             className="w-full sm:w-auto"
           >

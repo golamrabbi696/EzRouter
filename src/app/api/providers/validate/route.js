@@ -115,7 +115,8 @@ export async function POST(request) {
     // that replaces the API key (Bedrock's `profile`), so validating that setup must not 400.
     const apiKeySubstitute = AI_PROVIDERS[provider]?.apiKeyOptionalWith;
     const hasApiKeySubstitute = !!(apiKeySubstitute && providerSpecificData?.[apiKeySubstitute]);
-    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth && !hasApiKeySubstitute)) {
+    const isExplicitlyKeyless = apiKey === "" && (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider));
+    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth && !hasApiKeySubstitute && !isExplicitlyKeyless)) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
     }
 
@@ -137,7 +138,7 @@ export async function POST(request) {
               clientIdentityProfile: providerSpecificData?.clientIdentityProfile ?? node.clientIdentityProfile,
               clientIdentityHeaders: providerSpecificData?.clientIdentityHeaders ?? node.clientIdentityHeaders,
             },
-            { "Authorization": `Bearer ${apiKey}` },
+            apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
           ),
         });
         isValid = res.ok;
@@ -228,10 +229,10 @@ export async function POST(request) {
               clientIdentityProfile: providerSpecificData?.clientIdentityProfile ?? node.clientIdentityProfile,
               clientIdentityHeaders: providerSpecificData?.clientIdentityHeaders ?? node.clientIdentityHeaders,
             },
-            {
+            apiKey ? {
               "x-api-key": apiKey,
               "Authorization": `Bearer ${apiKey}`,
-            },
+            } : {},
           ),
           body: JSON.stringify({
             model,

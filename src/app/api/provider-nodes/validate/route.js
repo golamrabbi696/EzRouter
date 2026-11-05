@@ -70,7 +70,8 @@ export async function POST(request) {
     const { baseUrl, apiKey, type, modelId, clientIdentityProfile, clientIdentityHeaders } = body;
     const identity = { clientIdentityProfile, clientIdentityHeaders };
 
-    if (!baseUrl || !apiKey) {
+    const isExplicitlyKeyless = apiKey === "" && (type === "openai-compatible" || type === "anthropic-compatible");
+    if (!baseUrl || (!apiKey && !isExplicitlyKeyless)) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
     }
 
@@ -162,9 +163,8 @@ export async function POST(request) {
           {},
           identity,
           {
-            "x-api-key": apiKey,
+            ...(apiKey ? { "x-api-key": apiKey, "Authorization": `Bearer ${apiKey}` } : {}),
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}`,
           },
         ),
       });
@@ -181,13 +181,15 @@ export async function POST(request) {
         const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
           method: "POST",
           headers: mergeClientIdentityHeaders(
-            { "Content-Type": "application/json" },
-            identity,
             {
-              "Authorization": `Bearer ${apiKey}`,
-              "x-api-key": apiKey,
+              "Content-Type": "application/json",
               "anthropic-version": "2023-06-01",
             },
+            identity,
+            apiKey ? {
+              "Authorization": `Bearer ${apiKey}`,
+              "x-api-key": apiKey,
+            } : {},
           ),
           body: JSON.stringify({
             model: modelId,
@@ -214,7 +216,7 @@ export async function POST(request) {
       headers: mergeClientIdentityHeaders(
         {},
         identity,
-        { "Authorization": `Bearer ${apiKey}` },
+        apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
       ),
     });
 
@@ -232,7 +234,7 @@ export async function POST(request) {
         headers: mergeClientIdentityHeaders(
           { "Content-Type": "application/json" },
           identity,
-          { "Authorization": `Bearer ${apiKey}` },
+          apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
         ),
         body: JSON.stringify({
           model: modelId,

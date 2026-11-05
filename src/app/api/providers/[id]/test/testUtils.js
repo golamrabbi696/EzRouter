@@ -552,7 +552,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         headers: mergeClientIdentityHeaders(
           {},
           connection.providerSpecificData || {},
-          { "Authorization": `Bearer ${connection.apiKey}` },
+          connection.apiKey ? { "Authorization": `Bearer ${connection.apiKey}` } : {},
         ),
       }, effectiveProxy);
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
@@ -573,13 +573,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       const res = await fetchWithConnectionProxy(messagesUrl, {
         method: "POST",
         headers: mergeClientIdentityHeaders(
-          { "content-type": "application/json" },
-          connection.providerSpecificData || {},
           {
-            "x-api-key": connection.apiKey,
+            "content-type": "application/json",
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${connection.apiKey}`,
           },
+          connection.providerSpecificData || {},
+          connection.apiKey ? {
+            "x-api-key": connection.apiKey,
+            "Authorization": `Bearer ${connection.apiKey}`,
+          } : {},
         ),
         body: JSON.stringify({
           model,

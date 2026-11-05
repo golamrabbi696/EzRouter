@@ -755,7 +755,7 @@ export async function GET(request, { params }) {
         headers: mergeClientIdentityHeaders(
           { "Content-Type": "application/json" },
           connection.providerSpecificData || {},
-          { "Authorization": `Bearer ${connection.apiKey}` },
+          connection.apiKey ? { "Authorization": `Bearer ${connection.apiKey}` } : {},
         ),
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       });
@@ -799,10 +799,10 @@ export async function GET(request, { params }) {
             "anthropic-version": "2023-06-01",
           },
           connection.providerSpecificData || {},
-          {
+          connection.apiKey ? {
             "x-api-key": connection.apiKey,
             "Authorization": `Bearer ${connection.apiKey}`,
-          },
+          } : {},
         ),
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       });
