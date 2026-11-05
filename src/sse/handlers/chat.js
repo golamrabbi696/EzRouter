@@ -520,13 +520,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        // Preserve the upstream class so 4xx still means stop and 5xx still means
-        // retry, EXCEPT for the one status that lied here: a non-model 404, which
-        // is a cooldown the router set itself (see clientStatusForBreakerOpen).
-        // credentials.lastErrorCode is only populated when the stored error provably
-        // belongs to THIS model (see auth.js), so a stale code from another request
-        // can no longer decide this status.
-        const status = clientStatusForBreakerOpen(lastStatus || Number(credentials.lastErrorCode), errorMsg);
+        // Prefer this request's error over a persisted cooldown from an earlier
+        // request. Unknown or malformed codes still represent unavailability.
+        const rawStatus = [lastStatus, credentials.lastErrorCode]
+          .map((code) => typeof code === "number" || typeof code === "string" ? Number(code) : null)
+          .find((code) => Number.isInteger(code) && code >= 400 && code <= 599);
+        const status = clientStatusForBreakerOpen(rawStatus, errorMsg);
         log.warn("CHAT", `[${provider}/${model}] ${status} | ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
