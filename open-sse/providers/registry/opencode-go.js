@@ -30,8 +30,13 @@ export default {
   // opencode-go models differ in endpoint support.
   transports: [
     { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
-    { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
-    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+    // /messages uses adaptive thinking and output_config.effort for DeepSeek.
+    // Its reasoning_effort extension requires a native Anthropic target.
+    { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true }, thinkingFormat: "claude-adaptive" },
+    // /responses rejects the Chat-shaped thinking fields (reasoning_effort, thinking:{type}) with
+    // 503 "Endpoint is unavailable" (probed live on deepseek-v4.1-flash); it accepts the nested
+    // reasoning:{effort,summary} for every model it serves (deepseek-v4*, gpt-*-luna, grok-4.*).
+    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" }, thinkingFormat: "openai-responses" },
     { format: "gemini", baseUrl: "https://opencode.ai/inference/go/v1/models", auth: { combined: true, header: "x-goog-api-key", scheme: "raw" } },
   ],
   // supportedFormats follow the endpoint table in https://opencode.ai/docs/go/
