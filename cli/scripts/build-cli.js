@@ -158,6 +158,8 @@ const DEEPSEEK_POW_FILES = ["deepseek-pow-worker.mjs", "deepseek-pow-hash.js"];
 function copyDeepSeekPowFiles(appDir, cliAppDir) {
   const srcDir = path.join(appDir, "open-sse/lib");
   const destDir = path.join(cliAppDir, "open-sse/lib");
+  const hasAny = DEEPSEEK_POW_FILES.some((file) => fs.existsSync(path.join(srcDir, file)));
+  if (!hasAny) return false;
   for (const file of DEEPSEEK_POW_FILES) {
     const src = path.join(srcDir, file);
     if (!fs.existsSync(src)) {
@@ -166,6 +168,7 @@ function copyDeepSeekPowFiles(appDir, cliAppDir) {
     fs.mkdirSync(destDir, { recursive: true });
     fs.copyFileSync(src, path.join(destDir, file));
   }
+  return true;
 }
 
 function assertDeepSeekPowFiles(cliAppDir) {
@@ -261,10 +264,11 @@ function buildCliPackage() {
   }
 
   // Step 3b: DeepSeek PoW worker + its hash dependency (runtime-loaded, not traced).
-  console.log("3️⃣ b Copying DeepSeek PoW worker files...");
-  copyDeepSeekPowFiles(appDir, cliAppDir);
-  assertDeepSeekPowFiles(cliAppDir);
-  console.log("✅ Copied DeepSeek PoW worker files\n");
+  const copiedPow = copyDeepSeekPowFiles(appDir, cliAppDir);
+  if (copiedPow) {
+    assertDeepSeekPowFiles(cliAppDir);
+    console.log("✅ Copied DeepSeek PoW worker files\n");
+  }
 
   // Step 3c: Ensure sql.js (pure JS fallback) bundled in app/cli/app/node_modules.
   // Strip better-sqlite3 (native) — it lives in ~/.9router/runtime to avoid
