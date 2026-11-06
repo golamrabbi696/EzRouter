@@ -79,6 +79,7 @@ const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const { getUpdateCommand, isHomebrewManaged } = require("./hooks/packageManager");
 const { buildServerEnv } = require("./src/cli/serverEnv");
 const args = process.argv.slice(2);
+const foregroundMode = args.includes("--foreground");
 
 // Provider-scoped auth hook used by modern Codex. Stdout must contain only the
 // bearer token because Codex consumes it directly.
@@ -123,13 +124,15 @@ if (args[0] === "connect" || args[0] === "show") {
 const homebrewManaged = isHomebrewManaged();
 
 if (!homebrewManaged) {
-  // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
+  // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.ezrouter/runtime
   // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
   // better-sqlite3 is optional. Logs to stderr only on failure.
   try { ensureSqliteRuntime({ silent: true }); } catch {}
 
   // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
-  try { ensureTrayRuntime({ silent: true }); } catch {}
+  if (!foregroundMode) {
+    try { ensureTrayRuntime({ silent: true }); } catch {}
+  }
 }
 
 // Configuration constants
@@ -202,6 +205,7 @@ Options:
   -t, --tray          ${homebrewManaged
     ? "Run without the TUI (tray unavailable in Homebrew)"
     : "Run in system tray mode (background)"}
+  --foreground       Run without tray or menus, for process supervisors
   --skip-update       Skip update checks (CLI and dashboard notice)
   -h, --help          Show this help message
   -v, --version       Show version
@@ -222,8 +226,14 @@ Commands:
   }
 }
 
+if (foregroundMode && trayMode) {
+  console.error("--foreground cannot be combined with --tray.");
+  process.exit(1);
+  return;
+}
+
 // Auto-relaunch after update: detached process has no TTY → fallback to tray
-if (skipUpdate && !trayMode && !process.stdin.isTTY) {
+if (skipUpdate && !foregroundMode && !trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
@@ -744,8 +754,8 @@ function startServer(updatePromise) {
     crashLog = [];
     const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
       cwd: standaloneDir,
-      stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
-      detached: true,
+      stdio: foregroundMode ? ["ignore", "inherit", "inherit"] : showLog ? "inherit" : ["ignore", "ignore", "pipe"],
+      detached: !foregroundMode,
       windowsHide: true,
       env: buildServerEnv({
         baseEnv: buildEnvWithRuntime(process.env),
@@ -780,10 +790,12 @@ function startServer(updatePromise) {
     removePidRecordIfOwner(launcherPidFile, process.pid);
     try {
       // Kill tray if running
-      try {
-        const { killTray } = require("./src/cli/tray/tray");
-        killTray();
-      } catch (e) { }
+      if (!foregroundMode) {
+        try {
+          const { killTray } = require("./src/cli/tray/tray");
+          killTray();
+        } catch (e) { }
+      }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
       cleanMitmHostsSync();
@@ -794,7 +806,7 @@ function startServer(updatePromise) {
         process.kill(server.pid, "SIGKILL");
       }
       // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+      if (!foregroundMode) process.kill(-server.pid, "SIGKILL");
     } catch (e) { }
   }
 
@@ -829,13 +841,13 @@ function startServer(updatePromise) {
   function attachServerEvents() {
     server.on("error", (err) => {
       console.error("Failed to start server:", err.message);
-      if (!isShuttingDown) tryRestart();
+      if (!foregroundMode && !isShuttingDown) tryRestart();
       else { cleanup(); process.exit(1); }
     });
 
     server.on("close", (code, signal) => {
-      if (isShuttingDown || code === 0) {
-        process.exit(code || 0);
+      if (foregroundMode || isShuttingDown || code === 0) {
+        process.exit(foregroundMode && isShuttingDown ? 0 : code ?? (foregroundMode ? 1 : 0));
         return;
       }
       tryRestart(code, signal);
@@ -911,6 +923,13 @@ function startServer(updatePromise) {
       // Tray not available - continue without it
     }
   };
+
+  // Let the external supervisor own restarts; keep this process and child attached.
+  if (foregroundMode) {
+    console.log(`\n${pkg.name} v${pkg.version} (foreground)`);
+    console.log(`Server: http://${displayHost}:${port}`);
+    return;
+  }
 
   // Tray-only mode: no TUI, just tray icon
   if (trayMode) {

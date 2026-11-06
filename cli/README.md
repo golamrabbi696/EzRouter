@@ -76,8 +76,22 @@ ezrouter                    # Start with default settings (port 20126)
 ezrouter --port 8080        # Custom port
 ezrouter --no-browser       # Don't open browser
 ezrouter --skip-update      # Skip update checks (CLI and dashboard notice)
+ezrouter --foreground       # No tray or menu; keep server attached for supervision
 ezrouter --help             # Show all options
 ```
+
+For systemd, pm2, containers or another process supervisor:
+
+```bash
+ezrouter --foreground --skip-update --host 127.0.0.1 --port 20126
+```
+
+Foreground mode forwards server logs, stays attached to the server child, and
+passes its exit status to the supervisor instead of restarting it internally.
+The supervisor owns restart policy. An unexpected signal termination of the
+server exits the launcher with status 1; stopping the launcher normally exits
+with status 0. Use `--skip-update` to suppress the version check;
+`--foreground` cannot be combined with `--tray`.
 
 **Dashboard**: `http://localhost:20126/dashboard`
 
