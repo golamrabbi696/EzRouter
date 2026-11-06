@@ -52,6 +52,36 @@ async function normalizeProxyPoolId(proxyPoolId) {
   return { proxyPoolId: normalizedId };
 }
 
+async function normalizeProxyPoolIds(proxyPoolIdsInput) {
+  if (proxyPoolIdsInput === undefined || proxyPoolIdsInput === null || proxyPoolIdsInput === "") {
+    return { proxyPoolIds: null };
+  }
+
+  const rawList = Array.isArray(proxyPoolIdsInput)
+    ? proxyPoolIdsInput
+    : String(proxyPoolIdsInput)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+  const sanitized = rawList
+    .map((s) => String(s || "").trim())
+    .filter((id) => id && id !== "__none__");
+
+  if (sanitized.length === 0) {
+    return { proxyPoolIds: null };
+  }
+
+  for (const id of sanitized) {
+    const pool = await getProxyPoolById(id);
+    if (!pool) {
+      return { error: `Proxy pool "${id}" not found` };
+    }
+  }
+
+  return { proxyPoolIds: sanitized };
+}
+
 // GET /api/providers - List all connections (paginated when ?page/&pageSize/&provider/&q present)
 export async function GET(request) {
   if (!(await requireAuth(request))) {
@@ -137,6 +167,12 @@ export async function POST(request) {
       return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
     }
     const proxyPoolId = proxyPoolResult.proxyPoolId;
+
+    const proxyPoolIdsResult = await normalizeProxyPoolIds(body.proxyPoolIds);
+    if (proxyPoolIdsResult.error) {
+      return NextResponse.json({ error: proxyPoolIdsResult.error }, { status: 400 });
+    }
+    const proxyPoolIds = proxyPoolIdsResult.proxyPoolIds;
 
     // Validation
     const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
@@ -233,6 +269,12 @@ export async function POST(request) {
 
     if (proxyPoolId !== null) {
       mergedProviderSpecificData.proxyPoolId = proxyPoolId;
+    }
+    if (proxyPoolIds !== null) {
+      mergedProviderSpecificData.proxyPoolIds = proxyPoolIds;
+    }
+    if (body.proxyRotateStrategy) {
+      mergedProviderSpecificData.proxyRotateStrategy = String(body.proxyRotateStrategy).trim();
     }
 
     const newConnection = await createProviderConnection({

@@ -430,7 +430,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (!global._pendingSelections) global._pendingSelections = new Map();
     global._pendingSelections.set(connection.id, Date.now());
 
-    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const resolvedProxy = await resolveConnectionProxyConfig(
+      connection.providerSpecificData || {},
+      { connectionId: connection.id, providerId }
+    );
 
     return {
       authType: connection.authType,

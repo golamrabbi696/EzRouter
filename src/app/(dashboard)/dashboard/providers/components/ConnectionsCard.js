@@ -120,12 +120,19 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   }, [connection.id, connection.provider, isOAuth, connection.isActive]);
 
   const proxyPoolMap = new Map((proxyPools || []).map((p) => [p.id, p]));
+  const boundProxyPoolIds = Array.isArray(connection.providerSpecificData?.proxyPoolIds)
+    ? connection.providerSpecificData.proxyPoolIds
+    : null;
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
   const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
   const hasLegacyProxy = connection.providerSpecificData?.connectionProxyEnabled === true && !!connection.providerSpecificData?.connectionProxyUrl;
-  const hasAnyProxy = !!boundProxyPoolId || hasLegacyProxy;
+  const isPoolRotating = Array.isArray(boundProxyPoolIds) && boundProxyPoolIds.length > 0;
+  const hasAnyProxy = isPoolRotating || !!boundProxyPoolId || hasLegacyProxy;
 
-  const proxyDisplayText = boundProxyPool
+  const strategyLabel = connection.providerSpecificData?.proxyRotateStrategy || "round-robin";
+  const proxyDisplayText = isPoolRotating
+    ? `Pool (${boundProxyPoolIds.length} rotating, ${strategyLabel})`
+    : boundProxyPool
     ? `Pool: ${boundProxyPool.name}`
     : boundProxyPoolId ? `Pool: ${boundProxyPoolId} (inactive/missing)`
     : hasLegacyProxy ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}` : "";
@@ -140,7 +147,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   }
 
   const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
-  const proxyBadgeVariant = boundProxyPool?.isActive === true ? "success" : (boundProxyPoolId || hasLegacyProxy) ? "error" : "default";
+  const proxyBadgeVariant = (isPoolRotating || boundProxyPool?.isActive === true) ? "success" : (boundProxyPoolId || hasLegacyProxy) ? "error" : "default";
 
   // Earliest lock that has not expired. Filtering on truthiness alone returned
   // a lock that lapsed hours ago whenever a connection carried more than one:
