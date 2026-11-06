@@ -12,6 +12,7 @@ import { saveErrorLog } from "@/lib/usageDb.js";
 import { inspectComboPreaction } from "./comboPreaction.js";
 import { annotateComboResponse } from "./routeAttribution.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
+import { peekStreamForContent, reconstructStream, isNoRetryFinish, EMPTY_PEEK_DEADLINE_MS, COMBO_FIRST_TOKEN_TIMEOUT_MS } from "./emptyFailover.js";
 import {
   getStickyComboModel,
   setStickyComboModel,
@@ -28,10 +29,15 @@ import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./empt
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
 // them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
 // where `response` is a faithful replay of the original stream (head buffer + live reader).
+// When COMBO_FIRST_TOKEN_TIMEOUT_MS > 0, uses failover mode so timeout returns "empty"
+// and handleComboChat falls through to the next seat.
 async function peekComboResponse(result, log) {
   const ct = (result.headers.get("content-type") || "").toLowerCase();
   if (!result.body || !ct.includes("text/event-stream")) return null;
-  const peeked = await peekStreamForContent(result.body);
+  const peeked = await peekStreamForContent(result.body, {
+    deadlineMs: COMBO_FIRST_TOKEN_TIMEOUT_MS || EMPTY_PEEK_DEADLINE_MS,
+    failover: COMBO_FIRST_TOKEN_TIMEOUT_MS > 0,
+  });
   const response = new Response(reconstructStream(peeked.head, peeked.reader, peeked.pendingRead), {
     status: result.status,
     statusText: result.statusText,
@@ -1007,6 +1013,16 @@ export async function handleComboChat({
       }).catch(() => {});
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
+      // Also handle NO_CREDENTIALS error thrown when a combo model has no valid connection
+      if (error.code === "NO_CREDENTIALS") {
+        if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+          clearStickyComboSession(comboName, sessionId);
+        }
+        lastError = error.message || "No credentials";
+        if (!lastStatus) lastStatus = error.status || 500;
+        log.warn("COMBO", `Model ${modelStr} has no valid credentials, trying next`, { error: lastError });
+        continue;
+      }
       if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
         clearStickyComboSession(comboName, sessionId);
       }
