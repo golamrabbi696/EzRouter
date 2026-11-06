@@ -715,10 +715,10 @@ export async function buildModelsList(kindFilter, options = {}) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
-      // Config-driven live catalog override for providers that have no static list (or explicit enabledModels).
-      // If provider has static or custom models configured in UI, do not override with upstream live catalog.
+      // Config-driven live catalog override for providers that have a live resolver (kiro, github, anthropic, qoder, ...).
+      // If user has explicit enabledModels or custom models configured in UI, do not override.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels && providerModels.length === 0 && customModelIds.length === 0) {
+      if (liveResolver && !hasExplicitEnabledModels && customModelIds.length === 0) {
         try {
           const live = await liveResolver(conn);
           if (live?.models?.length) {
