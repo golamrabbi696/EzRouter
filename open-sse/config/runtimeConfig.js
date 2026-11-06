@@ -96,6 +96,41 @@ export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000)
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Pooled keep-alive socket TTLs and undici agent parameters: cap idle socket lifetime
+// below upstream/edge idle windows (Cloudflare, AWS Global Accelerator / NVIDIA NIM)
+// and clamp keepAliveMaxTimeout so an upstream `Keep-Alive` header cannot extend it.
+export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 30 * 1000;
+export const FRESH_RETRY_KEEPALIVE_TIMEOUT_MS = 1;
+export const DIRECT_AGENT_PIPELINING = 0;
+export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DEFAULT_KEEPALIVE_TIMEOUT_MS);
+
+export function resolveKeepAliveTimeouts() {
+  const timeout = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", FETCH_KEEPALIVE_TIMEOUT_MS);
+  return { keepAliveTimeout: timeout, keepAliveMaxTimeout: timeout };
+}
+
+export const STALE_SOCKET_ERROR_CODES = new Set([
+  "UND_ERR_SOCKET",
+  "ECONNRESET",
+  "EPIPE",
+  "UND_ERR_HEADERS_TIMEOUT",
+]);
+
+export const NON_STALE_SOCKET_ERROR_CODES = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+export const STALE_SOCKET_ERROR_SUBSTRINGS = [
+  "other side closed",
+  "socket hang up",
+  "fetch failed",
+];
+
 // Non-streaming body read timeout. FETCH_CONNECT_TIMEOUT_MS only covers headers;
 // once they arrive an upstream that stalls mid-body left the read hanging with no
 // deadline at all, so the client blocked forever on a request that would never

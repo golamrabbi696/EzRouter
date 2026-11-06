@@ -1,55 +1,92 @@
 import { Readable } from "stream";
-import { MEMORY_CONFIG, ALLOW_INSECURE_TLS_FALLBACK } from "../config/runtimeConfig.js";
+import {
+  MEMORY_CONFIG,
+  ALLOW_INSECURE_TLS_FALLBACK,
+  FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
+  DIRECT_AGENT_PIPELINING,
+  STALE_SOCKET_ERROR_CODES,
+  NON_STALE_SOCKET_ERROR_CODES,
+  STALE_SOCKET_ERROR_SUBSTRINGS,
+  resolveKeepAliveTimeouts,
+} from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 import { createProxyDispatcher } from "./proxyDispatcher.js";
 
+export { resolveKeepAliveTimeouts };
+
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
+const directDispatchers = new Map();
+const freshRetryDispatchers = new Map();
 
-// ─── Stale keep-alive protection ───────────────
-// Undici pools keep-alive sockets up to keepAliveMaxTimeout (default 600s),
-// far past edge idle timeouts (e.g. Cloudflare closes idle connections
-// first). Reusing a server-closed socket produces zero response bytes: the
-// request hangs or fails with UND_ERR_SOCKET/ECONNRESET, and every follow-up
-// request can draw another dead socket until the process restarts.
-// Close our side first (below any known server window) and retry once on a
-// fresh socket when the first attempt dies before responding.
-function envKeepAliveMs(name, def) {
-  const raw = process.env[name];
-  if (raw == null || raw === "") return def;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : def;
-}
-
-export const DIRECT_KEEP_ALIVE_TIMEOUT_MS = envKeepAliveMs("FETCH_KEEP_ALIVE_TIMEOUT_MS", 30_000);
-export const DIRECT_KEEP_ALIVE_MAX_TIMEOUT_MS = envKeepAliveMs("FETCH_KEEP_ALIVE_MAX_TIMEOUT_MS", 30_000);
-
-let _directDispatcher = null;
-
-export async function getDirectDispatcher() {
-  if (_directDispatcher) return _directDispatcher;
-  try {
-    const { Agent } = await import("undici");
-    _directDispatcher = new Agent({
-      keepAliveTimeout: DIRECT_KEEP_ALIVE_TIMEOUT_MS,
-      keepAliveMaxTimeout: DIRECT_KEEP_ALIVE_MAX_TIMEOUT_MS,
-    });
-  } catch (error) {
-    dbg("FETCH", `capped direct dispatcher unavailable, using default: ${error?.message || error}`);
-    _directDispatcher = null;
-  }
-  return _directDispatcher;
+export function resetDirectDispatchersForTests() {
+  directDispatchers.clear();
+  freshRetryDispatchers.clear();
+  proxyDispatchers.clear();
 }
 
 export function resetDirectDispatcherForTests() {
-  _directDispatcher = null;
+  resetDirectDispatchersForTests();
 }
 
 // True when the failure means "our socket was dead", not "the host is down":
 // zero response bytes received. Safe to replay once on a fresh connection.
 export function isStaleSocketError(error) {
-  const code = error?.cause?.code || error?.code;
-  return code === "UND_ERR_SOCKET" || code === "ECONNRESET" || code === "EPIPE";
+  if (!error || error.name === "AbortError" || isTlsCertError(error)) return false;
+  const code = error?.cause?.code || error?.code || "";
+  if (NON_STALE_SOCKET_ERROR_CODES.has(code)) return false;
+  if (STALE_SOCKET_ERROR_CODES.has(code)) return true;
+  const msg = `${error?.message || ""} ${error?.cause?.message || ""}`.toLowerCase();
+  return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
+}
+
+async function getOrCreateDirectAgent(cacheMap, key, keepAliveTimeout, keepAliveMaxTimeout, insecure) {
+  if (!cacheMap.has(key)) {
+    try {
+      const { Agent } = await import("undici");
+      const connect = insecure ? { rejectUnauthorized: false } : undefined;
+      cacheMap.set(
+        key,
+        new Agent({
+          keepAliveTimeout,
+          keepAliveMaxTimeout,
+          pipelining: DIRECT_AGENT_PIPELINING,
+          ...(connect ? { connect } : {}),
+        })
+      );
+    } catch (error) {
+      dbg("FETCH", `direct dispatcher unavailable, using default: ${error?.message || error}`);
+      return null;
+    }
+  }
+  return cacheMap.get(key);
+}
+
+/**
+ * Shared direct dispatcher with capped keep-alive TTL and pipelining disabled.
+ * Prevents undici from reusing idle sockets that upstream edges (NVIDIA NIM,
+ * Cloudflare) silently dropped without sending a TCP RST.
+ */
+export async function getDirectDispatcher(insecure = false) {
+  const { keepAliveTimeout, keepAliveMaxTimeout } = resolveKeepAliveTimeouts();
+  const key = `${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}`;
+  return getOrCreateDirectAgent(directDispatchers, key, keepAliveTimeout, keepAliveMaxTimeout, insecure);
+}
+
+/**
+ * Dedicated no-keep-alive, no-pipelining retry dispatcher (`keepAliveTimeout: 1ms`).
+ * Guarantees a fresh TCP/TLS connection after a poisoned pooled socket failure or
+ * connect timeout so retries never draw another dead socket from the pool.
+ */
+export async function getFreshRetryDispatcher(insecure = false) {
+  const key = insecure ? "insecure" : "secure";
+  return getOrCreateDirectAgent(
+    freshRetryDispatchers,
+    key,
+    FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
+    FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
+    insecure
+  );
 }
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
@@ -327,58 +364,63 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 }
 
 /**
- * Create proxy dispatcher lazily (undici-compatible)
+ * Create proxy or direct dispatcher lazily (undici-compatible)
  */
-async function getDispatcher(proxyUrl, insecure = false) {
+async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false) {
   const normalized = normalizeProxyUrl(proxyUrl);
-  if (!normalized && !insecure) return null;
+  if (!normalized) {
+    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure);
+  }
 
-  const key = `${normalized || "direct"}::${insecure ? "insecure" : "secure"}`;
+  const key = `${normalized}::${insecure ? "insecure" : "secure"}`;
   if (!proxyDispatchers.has(key)) {
     // Evict oldest entry if max size reached
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
-    const { Agent } = await import("undici");
     const connectTimeout = readPositiveIntegerEnv("PROXY_CONNECT_TIMEOUT_MS", DEFAULT_PROXY_CONNECT_TIMEOUT_MS);
     const headersTimeout = readPositiveIntegerEnv("PROXY_HEADERS_TIMEOUT_MS", DEFAULT_PROXY_HEADERS_TIMEOUT_MS);
     const connect = insecure ? { rejectUnauthorized: false } : undefined;
-    const dispatcher = normalized
-      ? await createProxyDispatcher({
-          uri: normalized,
-          connectTimeout,
-          headersTimeout,
-          bodyTimeout: 0,
-          ...(insecure ? { requestTls: connect } : {}),
-        })
-      : new Agent({ connect });
+    const dispatcher = await createProxyDispatcher({
+      uri: normalized,
+      connectTimeout,
+      headersTimeout,
+      bodyTimeout: 0,
+      ...(insecure ? { requestTls: connect } : {}),
+    });
     proxyDispatchers.set(key, dispatcher);
   }
 
   return proxyDispatchers.get(key);
 }
 
-async function fetchWithTlsFallback(url, options, proxyUrl) {
+function isBodyReplaySafe(body) {
+  return !(body && typeof body.getReader === "function" && body.locked);
+}
+
+async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = false) {
   const targetUrl = typeof url === "string" ? url : url.toString();
   try {
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    if (proxyUrl) {
-      const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
-    }
-    const dispatcher = await getDirectDispatcher();
-    const directOptions = dispatcher ? { ...options, dispatcher } : { ...options };
-    try {
-      return await originalFetch(url, directOptions);
-    } catch (error) {
-      if (!dispatcher || !isStaleSocketError(error)) throw error;
-      dbg("FETCH", `stale keep-alive socket for ${targetUrl}, retrying once with Connection: close`);
-      const retryHeaders = { ...(directOptions.headers || {}), Connection: "close" };
-      return await originalFetch(url, { ...directOptions, headers: retryHeaders });
-    }
+    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
+    return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
+    // Stale keep-alive socket recovery: if a pooled socket died before returning headers,
+    // immediately retry once on the dedicated fresh-socket dispatcher (`keepAliveTimeout=1ms`).
+    if (
+      !proxyUrl
+      && !forceFreshSocket
+      && !options.directFetch
+      && !options.signal?.aborted
+      && isBodyReplaySafe(options.body)
+      && isStaleSocketError(err)
+    ) {
+      dbg("FETCH", `stale keep-alive socket (${err.cause?.code || err.code || err.message}), retrying on fresh socket: ${targetUrl}`);
+      return await fetchWithTlsFallback(url, options, proxyUrl, true);
+    }
+
     if (!isTlsCertError(err)) throw err;
     const code = err.cause?.code || err.code;
     // Fail closed by default: retrying without verification would send the request
@@ -387,12 +429,12 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
       console.warn(`[ProxyFetch] TLS cert verification failed (${code}) for ${logSafeOrigin(url)}; not retrying without verification. Trust the issuing CA via NODE_EXTRA_CA_CERTS, or set ALLOW_INSECURE_TLS_FALLBACK=true to opt in to the insecure retry.`);
       throw err;
     }
-    if (options.body && typeof options.body.getReader === "function" && options.body.locked) {
+    if (!isBodyReplaySafe(options.body)) {
       throw err;
     }
     // Opt-in: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
     console.warn(`[ProxyFetch] TLS cert verification failed (${code}), retrying with insecure TLS (ALLOW_INSECURE_TLS_FALLBACK=true): ${logSafeOrigin(url)}`);
-    const insecureDispatcher = await getDispatcher(proxyUrl, true);
+    const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket);
     return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
   }
 }
@@ -536,13 +578,14 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
+  const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
     if (proxyUrl) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
-        return await fetchWithTlsFallback(url, options, proxyUrl);
+        return await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
       } catch (proxyError) {
         if (proxyError?.code === "ERR_PROXY_DNS_MODE") throw proxyError;
         if (proxyOptions?.strictProxy === true) {
@@ -563,7 +606,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   if (proxyUrl) {
     try {
-      const proxied = await fetchWithTlsFallback(url, options, proxyUrl);
+      const proxied = await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
       // strictProxy never leaves the configured path — pass the rejection through.
       if (proxyOptions?.strictProxy === true) return proxied;
       return await replayFreeTierRejectionDirect(url, options, proxied);
@@ -574,7 +617,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
-      return fetchWithTlsFallback(url, options, null);
+      return fetchWithTlsFallback(url, options, null, forceFreshSocket);
     }
   }
 
@@ -598,7 +641,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   // got-scraping disabled — use native fetch directly
   // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
-  return fetchWithTlsFallback(url, options, null);
+  return fetchWithTlsFallback(url, options, null, forceFreshSocket);
 }
 
 /**
