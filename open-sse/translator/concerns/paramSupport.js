@@ -70,7 +70,7 @@ const STRIP_RULES = [
   // bare model echo (`{"model":"deepseek-v4.1-flash"}`, which names neither the
   // field nor the reason) or "This response_format type is unavailable now", so a
   // client cannot classify it and keeps re-sending the field. Measured 2026-10-13
-  // against /zen/go/v1/chat/completions with one key: 12/12 structured calls 400,
+  // against /inference/go/openai/v1/chat/completions with one key: 12/12 structured calls 400,
   // 4/4 identical calls without the field 200.
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
   // DeepSeek's API only documents response_format type json_object; a json_schema

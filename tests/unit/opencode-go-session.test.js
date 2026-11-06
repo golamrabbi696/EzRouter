@@ -3,9 +3,9 @@ import { DefaultExecutor } from "../../open-sse/executors/default.js";
 import { OpenCodeExecutor } from "../../open-sse/executors/opencode.js";
 
 const TRANSPORTS = [
-  { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
-  { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages" },
-  { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses" },
+  { format: "openai", baseUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+  { format: "claude", baseUrl: "https://opencode.ai/inference/go/anthropic/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
+  { format: "openai-responses", baseUrl: "https://opencode.ai/inference/go/openai/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
   { format: "gemini", baseUrl: "https://opencode.ai/inference/go/v1/models" },
 ];
 
