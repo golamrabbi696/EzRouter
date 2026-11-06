@@ -6,13 +6,13 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse, clientStatusForBreakerOpen } from "../utils/error.js";
 import { NO_REPLAY_HEADER } from '../config/ha.js';
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
-import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_FIRST_CHUNK_TIMEOUT_MS, EMPTY_PEEK_DEADLINE_MS, COMBO_FIRST_TOKEN_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { saveErrorLog } from "@/lib/usageDb.js";
 import { inspectComboPreaction } from "./comboPreaction.js";
 import { annotateComboResponse } from "./routeAttribution.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
-import { peekStreamForContent, reconstructStream, isNoRetryFinish, EMPTY_PEEK_DEADLINE_MS, COMBO_FIRST_TOKEN_TIMEOUT_MS } from "./emptyFailover.js";
+import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
 import {
   getStickyComboModel,
   setStickyComboModel,
@@ -23,8 +23,6 @@ import { parseModel } from "./model.js";
 import { SPEED_MODE, getSpeedMode, getModelSpeed, markModelProbed, wasProbedRecently } from "./modelSpeed.js";
 
 const ENDPOINT_COMBO = "/v1/chat/completions";
-
-import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "./emptyFailover.js";
 
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
 // them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
