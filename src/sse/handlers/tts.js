@@ -11,6 +11,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 import * as log from "../utils/logger.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
@@ -67,6 +68,15 @@ export async function handleTts(request) {
   return handleSingleModelTts(body, modelStr, request, responseFormat, language);
 }
 
+/**
+ * Route the whole core (and every provider adapter inside it) through the
+ * resolved proxy pool of the account that will serve this attempt.
+ */
+async function runTtsCore(args) {
+  await ensureProxyFetchPatched();
+  return runWithProxyOptions(buildProxyOptions(args.credentials), () => handleTtsCore(args));
+}
+
 async function handleSingleModelTts(body, modelStr, request, responseFormat, language) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -94,7 +104,7 @@ async function handleSingleModelTts(body, modelStr, request, responseFormat, lan
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, options });
+    const result = await runTtsCore({ provider, model, input: body.input, responseFormat, options });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
@@ -115,7 +125,7 @@ async function handleSingleModelTts(body, modelStr, request, responseFormat, lan
       }
       if (excludeConnectionIds.size === 0) {
         if (provider === "ollama-local") {
-          const result = await handleTtsCore({ provider, model, input: body.input, credentials: null, responseFormat, language, style });
+          const result = await runTtsCore({ provider, model, input: body.input, credentials: null, responseFormat, language, style });
           if (result.success) return result.response;
           return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
         }
@@ -126,7 +136,7 @@ async function handleSingleModelTts(body, modelStr, request, responseFormat, lan
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, options });
+    const result = await runTtsCore({ provider, model, input: body.input, credentials, responseFormat, options });
 
     if (result.success) return result.response;
 

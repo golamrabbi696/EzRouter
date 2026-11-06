@@ -9,6 +9,7 @@ import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
+import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 import { getImageAdapter } from "open-sse/handlers/imageProviders/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -123,8 +124,9 @@ async function handleSingleModelImage(body, modelStr, request, { wantsStream, bi
   const policy = await authorizeApiKeyRequest(request, { model: `${provider}/${model}`, body });
   if (policy.error) return policy.error;
 
-  // noAuth providers — no credential needed
+  // noAuth providers — no credential needed (local installs, nothing to proxy)
   if (NO_AUTH_PROVIDERS.has(provider)) {
+    await ensureProxyFetchPatched();
     const result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
@@ -168,7 +170,8 @@ async function handleSingleModelImage(body, modelStr, request, { wantsStream, bi
       continue;
     }
 
-    const result = await handleImageGenerationCore({
+    await ensureProxyFetchPatched();
+    const result = await runWithProxyOptions(buildProxyOptions(refreshedCredentials), () => handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
@@ -195,7 +198,7 @@ async function handleSingleModelImage(body, modelStr, request, { wantsStream, bi
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       }
-    });
+    }));
 
     if (result.success) return withConnectionMetadata(result.response, credentials);
 

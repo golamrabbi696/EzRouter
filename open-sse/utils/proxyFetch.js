@@ -11,6 +11,7 @@ import {
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 import { createProxyDispatcher } from "./proxyDispatcher.js";
+import { getProxyOptionsFromContext } from "./proxyContext.js";
 
 export { resolveKeepAliveTimeouts };
 
@@ -560,8 +561,12 @@ function targetHost(url) {
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
 
+  // Explicit per-call options win; otherwise fall back to the request-scoped
+  // config published by the media/MCP handlers (see utils/proxyContext.js).
+  const effectiveProxyOptions = proxyOptions || getProxyOptionsFromContext();
+
   // Vercel relay: forward request via relay headers
-  const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
+  const vercelRelayUrl = normalizeString(effectiveProxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
     const parsed = new URL(targetUrl);
     const baseHeaders = options.headers instanceof Headers
@@ -575,7 +580,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 
-  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, effectiveProxyOptions);
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
@@ -588,7 +593,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         return await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
       } catch (proxyError) {
         if (proxyError?.code === "ERR_PROXY_DNS_MODE") throw proxyError;
-        if (proxyOptions?.strictProxy === true) {
+        if (effectiveProxyOptions?.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
         }
         console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
@@ -608,12 +613,12 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     try {
       const proxied = await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket);
       // strictProxy never leaves the configured path — pass the rejection through.
-      if (proxyOptions?.strictProxy === true) return proxied;
+      if (effectiveProxyOptions?.strictProxy === true) return proxied;
       return await replayFreeTierRejectionDirect(url, options, proxied);
     } catch (proxyError) {
       if (proxyError?.code === "ERR_PROXY_DNS_MODE") throw proxyError;
       // If strictProxy is enabled, fail hard instead of falling back to direct
-      if (proxyOptions?.strictProxy === true) {
+      if (effectiveProxyOptions?.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
@@ -631,11 +636,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // strictProxy to mean "do not replay this request directly if the proxy
   // fails" (a replayed COSY signature returns 403), not "a proxy is required".
   // With nothing configured they must keep working.
-  const proxyIntended = proxyOptions?.proxyPoolId
-    || proxyOptions?.enabled === true
-    || proxyOptions?.connectionProxyEnabled === true
-    || !!normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
-  if (proxyOptions?.strictProxy === true && proxyIntended) {
+  const proxyIntended = effectiveProxyOptions?.proxyPoolId
+    || effectiveProxyOptions?.enabled === true
+    || effectiveProxyOptions?.connectionProxyEnabled === true
+    || !!normalizeString(effectiveProxyOptions?.url ?? effectiveProxyOptions?.connectionProxyUrl);
+  if (effectiveProxyOptions?.strictProxy === true && proxyIntended) {
     throw new Error("[ProxyFetch] Proxy required but none resolved (strictProxy=true)");
   }
 

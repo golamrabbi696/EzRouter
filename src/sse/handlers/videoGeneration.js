@@ -11,10 +11,13 @@ import { getModelInfo } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { findProviderByJobId } from "open-sse/handlers/videoProviders/index.js";
+import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import * as log from "../utils/logger.js";
+
+const NO_AUTH_VIDEO_PROVIDERS = new Set(["veoaifree-web"]);
 
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
@@ -156,6 +159,22 @@ export async function handleVideoCreate(request, action) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
+  // noAuth providers — executor-driven generation, no credential needed
+  if (NO_AUTH_VIDEO_PROVIDERS.has(provider)) {
+    await ensureProxyFetchPatched();
+    const result = await handleVideoProxyCore({
+      provider,
+      action,
+      rawBody: forwardBody,
+      contentType: bodyInfo.contentType || null,
+      idempotencyKey: null,
+      credentials: null,
+      signal: request.signal,
+      log,
+    });
+    if (result.success) return result.response;
+    return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Video generation failed");
+  }
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
@@ -177,7 +196,8 @@ export async function handleVideoCreate(request, action) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleVideoProxyCore({
+    await ensureProxyFetchPatched();
+    const result = await runWithProxyOptions(buildProxyOptions(refreshedCredentials), () => handleVideoProxyCore({
       provider,
       action,
       rawBody: forwardBody,
@@ -194,7 +214,7 @@ export async function handleVideoCreate(request, action) {
           testStatus: "active",
         });
       },
-    });
+    }));
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, model);
@@ -249,7 +269,8 @@ export async function handleVideoGet(request, requestId) {
 
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-  const result = await handleVideoProxyCore({
+  await ensureProxyFetchPatched();
+  const result = await runWithProxyOptions(buildProxyOptions(refreshedCredentials), () => handleVideoProxyCore({
     provider,
     requestId,
     credentials: refreshedCredentials,
@@ -263,7 +284,7 @@ export async function handleVideoGet(request, requestId) {
         testStatus: "active",
       });
     },
-  });
+  }));
 
   if (result.success) {
     await clearAccountError(credentials.connectionId, credentials, VIDEO_POLL_SCOPE);
