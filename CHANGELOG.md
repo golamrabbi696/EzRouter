@@ -1,3 +1,38 @@
+# v0.6.31 (2026-11-06)
+
+## Upstream PR Synchronization (#5361 - #5501)
+- **Proxy Pool & Network Security**:
+  - Routed media upstream requests (image generation, TTS, STT, video generation) and MCP traffic through configured proxy pools via `AsyncLocalStorage` (#5370).
+  - Implemented auto-rotation for proxy pool selection (#5419).
+  - Prevented `undici` keep-alive dead-socket hangs on idle sockets during streaming and long inference tasks (#5497).
+  - Added full SOCKS5 proxy URL parsing and authentication support (#5479).
+  - Improved network error failover by excluding unreachable or dead proxy candidates.
+- **CLI & Supervision**:
+  - Added `--foreground` mode for process supervisors (e.g. systemd, Docker, runit, supervisor) (#5420).
+  - Ensured runtime dependencies stay local during global npm hooks (#5448).
+  - Reduced CLI launcher startup time by ~2.5x with lazy-loaded modules (#5498).
+  - Included no-auth, alias, and custom models in CLI Tools "Add All" command (#5450).
+  - Updated offline CLI verification and packaging scripts.
+- **Combo & Routing Resilience**:
+  - Added first-token timeout failover with configurable `COMBO_FIRST_TOKEN_TIMEOUT_MS` (#5475).
+  - Aggregated combo `maxOutput` as the minimum across available seats (#5444).
+  - Stripped trailing SSE frames in non-streaming responses (#5384).
+  - Fixed passthrough SSE re-serialization edge cases (#5441).
+  - Enhanced dynamic combo seat fallback on unauthenticated, expired, or rate-limited accounts (#5475).
+- **Provider & Model Enhancements**:
+  - Added batch "Enable All" / "Disable All" and "Free Only" filter buttons in provider model management UI (#5452).
+  - Added Bulk API Key input modal for custom OpenAI and Anthropic compatible providers (#5446).
+  - Added `/api/health/status` monitoring endpoint for lightweight health checks (#5414).
+  - Added weekly quota tracking for Gemini 4 Argon (#5459).
+  - Resolved OpenCode Free v2.0.29 session negotiation and 403 `FreeTierError` handling (#5381).
+  - Fixed Kiro upstream hostname resolution (#5463).
+  - Added DashScope Claude prompt-cache markers support (#5494).
+  - Preserved tool results and structured reasoning turns across continuation requests (#5489, #5500).
+  - Refined error classification and streaming responses for AWS Bedrock, Mistral, Vertex AI, and Google Gemini (#5477, #5478, #5486, #5487, #5488, #5490, #5491, #5492, #5493, #5499).
+- **Security & Stability Invariant Enforcement**:
+  - Strictly maintained default port `20126` and EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
+  - Antigravity preview model isolation (`gemini-4-argon`, `claude-sonnet-5-5`, `claude-opus-5-5`) 100% verified and active.
+
 # v0.6.30 (2026-11-01)
 
 ## Upstream PR Synchronization (#5191 - #5361)
