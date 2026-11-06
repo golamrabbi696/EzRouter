@@ -65,7 +65,7 @@ describe("CLI build server artifacts", () => {
   ]) {
     it(`merges complete API routes and provider chunks for the ${name} layout`, () => {
       const root = createTempDir();
-      const appDir = path.join(root, "9router");
+      const appDir = path.join(root, "ezrouter");
       const buildDistDir = path.join(appDir, ".next-cli-build");
       const cliAppDir = path.join(root, "cli-app");
       const standaloneDir = standalonePath(appDir, buildDistDir);
@@ -150,7 +150,7 @@ describe("CLI build DeepSeek PoW worker files", () => {
 
   it("copies worker and hash next to each other (standalone tracing drops the worker's import)", () => {
     const root = createTempDir();
-    const appDir = path.join(root, "9router");
+    const appDir = path.join(root, "ezrouter");
     const cliAppDir = path.join(root, "cli-app");
     createPoWSource(appDir);
     // What standalone tracing ships today: worker only.
@@ -167,7 +167,7 @@ describe("CLI build DeepSeek PoW worker files", () => {
 
   it("fails loudly when a PoW source file is missing", () => {
     const root = createTempDir();
-    const appDir = path.join(root, "9router");
+    const appDir = path.join(root, "ezrouter");
     const cliAppDir = path.join(root, "cli-app");
     writeFixture(path.join(appDir, "open-sse/lib"), "deepseek-pow-worker.mjs", "worker");
 
