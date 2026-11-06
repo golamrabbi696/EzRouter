@@ -26,6 +26,7 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import BulkAddCustomKeysModal from "./BulkAddCustomKeysModal";
 import CustomConfigCard from "./CustomConfigCard";
 import AutoPingScheduleModal from "./AutoPingScheduleModal";
 import MinimaxLeaseButton from "../components/MinimaxLeaseButton.js";
@@ -86,6 +87,7 @@ export default function ProviderDetailPage() {
   const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
   const [showExportKeys, setShowExportKeys] = useState(false);
   const [showBulkImportGrokCli, setShowBulkImportGrokCli] = useState(false);
+  const [showBulkAddCustomKeys, setShowBulkAddCustomKeys] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
@@ -1986,6 +1988,15 @@ export default function ProviderDetailPage() {
               <Button
                 size="sm"
                 variant="secondary"
+                icon="playlist_add"
+                onClick={() => setShowBulkAddCustomKeys(true)}
+                className="w-full sm:w-auto"
+              >
+                {translate("Bulk Add")}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
                 icon="edit"
                 onClick={() => setShowEditNodeModal(true)}
                 className="w-full sm:w-auto"
@@ -2162,6 +2173,16 @@ export default function ProviderDetailPage() {
                         {translate("Bulk Add")}
                       </Button>
                     )}
+                    {isCompatible && (
+                      <Button
+                        size="sm"
+                        icon="playlist_add"
+                        variant="secondary"
+                        onClick={() => setShowBulkAddCustomKeys(true)}
+                      >
+                        {translate("Bulk Add")}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       icon="add"
@@ -2205,6 +2226,27 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
+              {isCompatible && (
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
+                  <Button
+                    size="sm"
+                    icon="playlist_add"
+                    variant="secondary"
+                    onClick={() => setShowBulkAddCustomKeys(true)}
+                    className="w-full sm:w-auto"
+                  >
+                    {translate("Bulk Add")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    icon="add"
+                    onClick={triggerAddConnection}
+                    className="w-full sm:w-auto"
+                  >
+                    Add API Key
+                  </Button>
+                </div>
+              )}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {MCODE_LEASE_PROVIDERS.has(providerId) && (
@@ -2502,6 +2544,18 @@ export default function ProviderDetailPage() {
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
       />
+      {isCompatible && (
+        <BulkAddCustomKeysModal
+          isOpen={showBulkAddCustomKeys}
+          onClose={() => setShowBulkAddCustomKeys(false)}
+          providerId={providerId}
+          providerName={providerInfo?.name || providerId}
+          isAnthropic={isAnthropicCompatible}
+          existingNames={connections.map((c) => c.name).filter(Boolean)}
+          proxyPools={proxyPools}
+          onSuccess={fetchConnections}
+        />
+      )}
       {isCompatible && (
         <EditCompatibleNodeModal
           isOpen={showEditNodeModal}
