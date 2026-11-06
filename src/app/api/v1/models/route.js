@@ -641,6 +641,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
+      if (isDisabled(providerAlias, modelId)) continue;
 
       models.push({
         id: `${providerAlias}/${modelId}`,
