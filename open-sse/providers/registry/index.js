@@ -72,6 +72,7 @@ import providerHuggingface from "./huggingface.js";
 import providerHyperbolic from "./hyperbolic.js";
 import providerIflow from "./iflow.js";
 import providerInworld from "./inworld.js";
+import providerJembatanai from "./jembatanai.js";
 import providerJinaAi from "./jina-ai.js";
 import providerJinaReader from "./jina-reader.js";
 import providerJoycode from "./joycode.js";
@@ -225,6 +226,7 @@ export default [
   providerHyperbolic,
   providerIflow,
   providerInworld,
+  providerJembatanai,
   providerJinaAi,
   providerJinaReader,
   providerJoycode,

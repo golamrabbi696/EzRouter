@@ -848,6 +848,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "tokenharbor":
       case "kira":
+      case "jembatanai":
       case "dahl":
       case "atria":
       case "agnes":
