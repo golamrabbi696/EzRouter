@@ -175,7 +175,6 @@ export class DefaultExecutor extends BaseExecutor {
         && Array.isArray(transformed.messages) && !transformed.stream_options) {
         transformed.stream_options = { include_usage: true };
       }
-      stripUnsupportedParams(this.provider, model, transformed);
       // Ask OpenAI-compatible upstreams to include usage in the final stream
       // chunk so /v1 streaming requests record real token counts instead of
       // IN 0 · OUT 0 (issue #3017). Same approach as the iflow executor.
@@ -197,9 +196,10 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     const injected = injectReasoningContent({ provider: this.provider, model, body: transformed });
+    const stripped = stripUnsupportedParams(this.provider, model, injected);
     return isResponsesWire(this.provider, this.config, credentials)
-      ? normalizeResponsesReasoning(injected)
-      : injected;
+      ? normalizeResponsesReasoning(stripped)
+      : stripped;
   }
 
   applyNousAttribution(model, body, stream, credentials) {

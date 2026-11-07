@@ -15,6 +15,7 @@ import { parseClaudeSSEToMessage } from "./claudeSSEToMessage.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
+import { normalizeMistralContent } from "../../translator/concerns/reasoning.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail, trackPendingRequest } from "@/lib/usageDb.js";
 import { recordModelSpeed, SPEED_MODE } from "../../services/modelSpeed.js";
@@ -376,7 +377,7 @@ export async function handleNonStreamingResponse({
           ? parseClaudeSSEToMessage(sseText, model)
           : (isGeminiSse && !sseText.includes('"chat.completion'))
           ? parseGeminiSSEToOpenAIResponse(sseText, model)
-          : parseSSEToOpenAIResponse(sseText, model);
+          : parseSSEToOpenAIResponse(sseText, model, provider);
 
         if (!parsed) {
           trackDone?.();
@@ -422,6 +423,9 @@ export async function handleNonStreamingResponse({
     // bare OpenAI body and usage tracking sees data.usage. No-op unless the
     // provider opts in via transport.quirks.clineEnvelope.
     responseBody = unwrapClineEnvelope(responseBody, provider);
+    if (provider === "mistral") for (const choice of responseBody?.choices || []) {
+      if (choice.message) choice.message = normalizeMistralContent(choice.message);
+    }
 
     reqLogger?.logProviderResponse?.(providerResponse?.status, providerResponse?.statusText, providerResponse?.headers, responseBody);
 
@@ -525,7 +529,7 @@ export async function handleNonStreamingResponse({
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
     // reasoning_content is the only useful output and must be preserved.
-    if (!isClaudeMessageResponse && !isResponsesResponse && Array.isArray(translatedResponse?.choices)) {
+    if (provider !== "mistral" && !isClaudeMessageResponse && !isResponsesResponse && Array.isArray(translatedResponse?.choices)) {
       for (const choice of translatedResponse.choices) {
         if (choice?.message?.reasoning_content && choice.message.content) {
           delete choice.message.reasoning_content;

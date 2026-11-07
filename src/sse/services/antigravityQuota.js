@@ -55,7 +55,6 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
 }
 
 /**
-<<<<<<< HEAD
  * Check whether an Antigravity account is eligible for a requested model.
  * Google rolls out preview/restricted models (Argon, Claude 5.5 Sonnet, Claude 5.5 Opus, etc.)
  * on an account-by-account basis. Accounts that have not received an entitlement
