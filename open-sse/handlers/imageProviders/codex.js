@@ -24,6 +24,8 @@ const CODEX_TOOL_IMAGE_MODELS = new Set([
   "gpt-image-2.5",
   "gpt-image-2.5-flare",
   "gpt-image-2.5-sunburst",
+  "gpt-image-2.6-flare",
+  "gpt-image-2.6-sunburst",
 ]);
 
 function decodeOpenAIAuthClaims(token) {
@@ -333,6 +335,8 @@ export default {
     }
     if (body.size && body.size !== "") imgTool.size = body.size;
     if (body.quality && body.quality !== "") imgTool.quality = body.quality;
+    // The ChatGPT Codex backend currently rejects every explicit complexity level.
+    // Omit it so GPT Image 2.6 uses its supported upstream default.
     if (body.background && body.background !== "") imgTool.background = body.background;
     if (body.moderation) imgTool.moderation = body.moderation;
     if (Number.isFinite(Number(body.output_compression))) imgTool.output_compression = Number(body.output_compression);
