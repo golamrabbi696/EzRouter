@@ -28,6 +28,7 @@ export const CLAUDE_BLOCK = {
   DOCUMENT: "document",
   TOOL_USE: "tool_use",
   TOOL_RESULT: "tool_result",
+  TOOL_REFERENCE: "tool_reference",
   CONTAINER_UPLOAD: "container_upload",
   TOOL_ADDITION: "tool_addition",
   THINKING: "thinking",
