@@ -30,11 +30,11 @@ export default {
     // executor pins responseFormat to "commandcode" so the SSE translator runs.
     format: "openai",
     forceStream: true,
-    // Static identity headers of command-code@1.88.0 buildCommandAuthHeaders().
+    // Static identity headers of command-code@1.88.5 buildCommandAuthHeaders().
     // x-project-slug and x-session-id are dynamic — see shared/commandCodeHeaders.js.
     headers: {
       "User-Agent": "cli",
-      "x-command-code-version": "1.88.0",
+      "x-command-code-version": "1.88.5",
       "x-cli-environment": "production",
       "x-cli-surface": "cli",
       "x-taste-learning": "false",

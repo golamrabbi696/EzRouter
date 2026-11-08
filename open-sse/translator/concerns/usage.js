@@ -75,7 +75,7 @@ const USAGE_EXTRACTORS = {
     // the cached prefix.
     const details = raw.inputTokenDetails;
     const cachedTokens = n(raw.cachedInputTokens ?? details?.cacheReadTokens);
-    const cacheCreationTokens = details && typeof details.cacheWriteTokens === "number" ? details.cacheWriteTokens : 0;
+    const cacheCreationTokens = n(details?.cacheWriteTokens);
     return { promptTokens: input, completionTokens: output, totalTokens: total, cachedTokens, cacheCreationTokens };
   },
 };

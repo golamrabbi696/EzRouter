@@ -596,6 +596,23 @@ function applyFormat(fmt, body, cfg, caps, provider, model, display = undefined,
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
+    case "commandcode": {
+      // Native CLI sends reasoning_effort inside params of the /alpha/generate envelope.
+      if (!body.params || typeof body.params !== "object") body.params = {};
+      if (none && canDisable) {
+        delete body.params.reasoning_effort;
+        break;
+      }
+      const rawLevel = toLevel(eff);
+      const level = rawLevel === "auto" ? "high"
+        : rawLevel === "minimal" ? "low"
+        : rawLevel;
+      const validLevels = ["off", "low", "medium", "high", "xhigh", "max"];
+      if (level && validLevels.includes(level)) {
+        body.params.reasoning_effort = level;
+      }
+      break;
+    }
     default:
       break;
   }

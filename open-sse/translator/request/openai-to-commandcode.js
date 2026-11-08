@@ -15,7 +15,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { stripThinkingSuffix } from "../concerns/thinkingUnified.js";
-import { COMMAND_CODE_WORKING_DIR } from "../../shared/commandCodeHeaders.js";
+import { COMMAND_CODE_WORKING_DIR, toCommandCodeSessionUuid } from "../../shared/commandCodeHeaders.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 import { parseDataUri, encodeDataUri } from "../concerns/image.js";
 import { commandCodeThreadId } from "../../utils/commandCodeSession.js";
@@ -112,12 +112,36 @@ function toContentBlocks(content) {
 function safeParseJson(s) {
   if (s == null) return {};
   if (typeof s !== "string") return s;
-  try { return JSON.parse(s); } catch { return {}; }
+  const trimmed = s.trim();
+  if (!trimmed) return {};
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object") return parsed;
+    return { value: parsed };
+  } catch {
+    return { raw: s };
+  }
 }
+
+const COMMAND_CODE_MAX_TOKENS = 64000;
 
 function convertMessages(messages = []) {
   const out = [];
   const systemTexts = [];
+  // Build a lookup map of toolCallId -> toolName across all assistant turns.
+  // Standard OpenAI/Claude tool-response turns omit the tool name on role:"tool",
+  // which would otherwise leave toolName empty and crash upstream /alpha/generate.
+  const toolCallIdToName = new Map();
+  for (const m of messages) {
+    if (m?.role === ROLE.ASSISTANT && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        const name = tc?.function?.name || tc?.name;
+        if (tc?.id && name) {
+          toolCallIdToName.set(tc.id, name);
+        }
+      }
+    }
+  }
 
   for (const m of messages) {
     if (!m) continue;
@@ -131,13 +155,15 @@ function convertMessages(messages = []) {
 
     if (role === ROLE.TOOL) {
       const value = typeof m.content === "string" ? m.content : flattenText(m.content);
+      const isError = Boolean(m.is_error || m.status === "error");
+      const toolName = m.name || (m.tool_call_id ? toolCallIdToName.get(m.tool_call_id) : null) || "unknown";
       out.push({
         role: ROLE.TOOL,
         content: [{
           type: "tool-result",
           toolCallId: m.tool_call_id || "",
-          toolName: m.name || "",
-          output: { type: "text", value },
+          toolName,
+          output: { type: isError ? "error-text" : "text", value },
         }],
       });
       continue;
@@ -146,23 +172,20 @@ function convertMessages(messages = []) {
     if (role === ROLE.ASSISTANT) {
       const blocks = [];
       const rc = m.reasoning_content || m.thought || m.reasoning;
-      if (rc || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0)) {
-        blocks.push({ type: "reasoning", text: rc || " " });
+      if (rc && typeof rc === "string" && rc.trim()) {
+        blocks.push({ type: "reasoning", text: rc });
       }
       const text = flattenText(m.content);
-      // Preserve reasoning_content as a reasoning block (CommandCode/AI SDK v5 supports this)
-      if (m.reasoning_content) {
-        blocks.push({ type: "reasoning", text: m.reasoning_content });
-      }
       if (text) blocks.push({ type: OPENAI_BLOCK.TEXT, text });
       if (Array.isArray(m.tool_calls)) {
         for (const tc of m.tool_calls) {
           const fn = tc.function || {};
+          const name = fn.name || tc.name || "";
           blocks.push({
             type: "tool-call",
             toolCallId: tc.id || "",
-            toolName: fn.name || "",
-            input: safeParseJson(fn.arguments),
+            toolName: name,
+            input: safeParseJson(fn.arguments ?? tc.input),
           });
         }
       }
@@ -200,10 +223,10 @@ function convertTools(tools) {
 
 export function openaiToCommandCodeRequest(model, body, stream, credentials = null) {
   const { messages, system } = convertMessages(body.messages);
-  const rawMaxTokens = body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS;
+  const rawMaxTokens = body.max_tokens ?? body.max_output_tokens ?? COMMAND_CODE_MAX_TOKENS;
   const max_tokens = typeof rawMaxTokens === "number" && rawMaxTokens > 0
     ? Math.min(rawMaxTokens, 200000)
-    : 200000;
+    : COMMAND_CODE_MAX_TOKENS;
   const params = {
     // Upstream reads params.model and rejects unknown ids — never leak the
     // client thinking suffix "model(level)" (chatCore strips only the top-level
@@ -220,21 +243,30 @@ export function openaiToCommandCodeRequest(model, body, stream, credentials = nu
   if (tools) params.tools = tools;
   if (body.top_p != null) params.top_p = body.top_p;
 
-  // The provider surface keeps reasoning top-level; the CLI envelope nests it
-  // under params (this builder runs for that surface).
+  // Reasoning effort if specified by client (Claude effort or OpenAI reasoning_effort)
+  const effort = body.reasoning_effort ??
+    body.output_config?.effort ??
+    (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  if (effort && typeof effort === "string") {
+    params.reasoning_effort = effort;
+  }
   for (const field of ["reasoning_effort", "reasoning", "thinking"]) {
-    if (body[field] !== undefined && body[field] !== null) params[field] = body[field];
+    if (body[field] !== undefined && body[field] !== null && params[field] === undefined) {
+      params[field] = body[field];
+    }
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const threadId = credentials?._clientSessionId
+    ? toCommandCodeSessionUuid(credentials._clientSessionId)
+    : commandCodeThreadId(body);
 
   return {
-    // Conversation-stable: the upstream prompt cache is keyed on this id, so it
-    // must stay constant across the turns of one conversation (see
-    // utils/commandCodeSession.js). A random id here re-caches the whole prefix
-    // on every request.
-    threadId: commandCodeThreadId(body),
-    memory: "",
+    threadId,
+    memory: null,
+    taste: null,
+    skills: null,
+    permissionMode: "standard",
     config: {
       workingDir: COMMAND_CODE_WORKING_DIR,
       date: today,

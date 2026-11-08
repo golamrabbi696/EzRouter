@@ -40,10 +40,12 @@ const OUTPUT_BUDGET_FIELDS = ["max_tokens", "max_output_tokens", "max_completion
 
 function floorMuseSparkBudget(model, body) {
   if (!MUSE_SPARK_PATTERN.test(String(model || ""))) return;
+  const target = body?.params || body;
+  if (!target) return;
   for (const field of OUTPUT_BUDGET_FIELDS) {
-    const value = body[field];
+    const value = target[field];
     if (typeof value === "number" && Number.isFinite(value) && value > 0 && value < MUSE_SPARK_MIN_OUTPUT_TOKENS) {
-      body[field] = MUSE_SPARK_MIN_OUTPUT_TOKENS;
+      target[field] = MUSE_SPARK_MIN_OUTPUT_TOKENS;
     }
   }
 }
@@ -83,7 +85,12 @@ export class CommandCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    body.stream = true;
+    if (!body || typeof body !== "object") return body || {};
+    if (body.params) {
+      body.params.stream = true;
+    } else {
+      body.stream = true;
+    }
     if (body?.params && typeof body.params.max_tokens === "number" && body.params.max_tokens > 200000) {
       body.params.max_tokens = 200000;
     }
