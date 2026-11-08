@@ -1,3 +1,30 @@
+# v0.6.32 (2026-11-08)
+
+## Upstream PR Synchronization (#5501 - #5518) & Stability Hardening
+- **Model Catalog & Context Window Feeds**:
+  - Implemented live dynamic model catalog resolver for Codex (`open-sse/services/codexCatalog.js`) that fetches `/backend-api/codex/models` through active Codex accounts and falls back to a persisted snapshot (`#5511`).
+  - Fed live Codex models and dynamic context windows directly into `/v1/models` while preserving extended-context twins (`[1m]`), `-review` variants, and existing Codex Native transparent routing routes (`#5511`).
+  - Added GPT Image 2.6 models (`gpt-image-2.6-flare`, `gpt-image-2.6-sunburst`) to Codex image tool routing and registry, omitting explicit complexity overrides that ChatGPT Codex backend rejects (`#5512`).
+  - Added `sensenova-6.8-flash` and `glm-5.3` to SenseNova provider model catalog (`#5516`).
+- **Reasoning & Payload Normalization**:
+  - Normalized Mistral reasoning chunks across streaming and non-streaming responses, preserving `thinking` and `reasoning_content` for OpenAI and Claude clients (`#5510`).
+  - Preserved reasoning and nested effort (`reasoning.effort`) on OpenAI-compatible providers in Responses mode (e.g. AWS Bedrock Mantle) while maintaining top-level `reasoning_effort` for Chat Completions endpoints (`#5518`).
+  - Removed outdated parameter stripping rules that interfered with reasoning on custom OpenAI-compatible providers.
+- **Provider & Protocol Resilience**:
+  - Added new OpenAI-compatible API-key provider `jembatanai` (`jai`) with dynamic model discovery, vendor segment passthrough, and logo asset (`#5515`).
+  - Switched OpenCode Go inference to current endpoint structure (`/inference/go/openai/...`, `/inference/go/anthropic/...`, `/inference/go/v1/...`) and strictly preserved deterministic `x-opencode-session` session headers across multi-turn exchanges (`#5509`).
+  - Preserved client custom system prompts and sanitized CLI agent identity on CodeBuddy International (`#5508`).
+  - Fixed duplicate hook collisions in CodeBuddy Intl provider registry.
+- **CLI & System Tray Reliability**:
+  - Bound system tray startup with timeout and error callbacks, preventing misleading "running in system tray" claims when background tray helpers fail to launch (`#5513`).
+  - Added diagnostic hints for Linux missing shared libraries (e.g., `libappindicator3.so.1` vs `libayatana-appindicator3.so.1`) and preserved macOS Apple Silicon Rosetta 2 guidance (`#5513`).
+  - Preserved EzRouter branding (`[ezrouter]`) across all tray error handling and launcher output.
+- **Security & Stability Invariant Enforcement**:
+  - Cleaned up obsolete conflict markers in comments across services.
+  - Strictly maintained default port `20126` (zero occurrences of 20128/20127 added).
+  - Maintained EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
+  - Antigravity preview models isolation (`gemini-4-argon`, `claude-sonnet-5-5`, `claude-opus-5-5`) 100% intact and verified.
+
 # v0.6.31 (2026-11-06)
 
 ## Upstream PR Synchronization (#5361 - #5501)
