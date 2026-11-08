@@ -90,6 +90,27 @@ export async function getFreshRetryDispatcher(insecure = false) {
   );
 }
 
+// Always fetch through the package's own undici instance: undici 8 rejects
+// dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
+// bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
+// option once we build our own Agents.
+let undiciFetch = null;
+let undiciFormData = null;
+async function rawFetch(url, options) {
+  undiciFetch ??= (await import("undici")).fetch;
+  if (options?.body && typeof options.body.append === "function" && typeof options.body.entries === "function") {
+    // Node's global FormData is a different class than the undici package's.
+    // Handing it to undici's fetch makes the body serialize as text/plain
+    // instead of multipart/form-data (issue #5525), so rebuild the body with
+    // the undici FormData class before dispatching.
+    undiciFormData ??= (await import("undici")).FormData;
+    const rebuilt = new undiciFormData();
+    for (const [key, value] of options.body.entries()) rebuilt.append(key, value);
+    options = { ...options, body: rebuilt };
+  }
+  return undiciFetch(url, options);
+}
+
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
 // Restore the original block to re-enable per-host JA3 spoofing.
@@ -406,7 +427,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
     const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
-    return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
+    return await rawFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
     // Stale keep-alive socket recovery: if a pooled socket died before returning headers,
     // immediately retry once on the dedicated fresh-socket dispatcher (`keepAliveTimeout=1ms`).
@@ -436,7 +457,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     // Opt-in: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
     console.warn(`[ProxyFetch] TLS cert verification failed (${code}), retrying with insecure TLS (ALLOW_INSECURE_TLS_FALLBACK=true): ${logSafeOrigin(url)}`);
     const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket);
-    return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
+    return await rawFetch(url, { ...options, dispatcher: insecureDispatcher });
   }
 }
 
@@ -577,7 +598,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    return rawFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, effectiveProxyOptions);
