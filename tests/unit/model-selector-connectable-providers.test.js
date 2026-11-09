@@ -78,7 +78,7 @@ describe("model selector — providers without usable credentials", () => {
     );
 
     expect(source).toMatch(/selectConnectableProviders\((activeProviders|effectiveConnections), AI_PROVIDERS\)/);
-    expect(source).toMatch(/selectNoAuthProviderIds\(FREE_PROVIDERS\)/);
+    expect(source).toMatch(/NO_AUTH_PROVIDER_IDS/);
     // The kind-filtered list and the live-catalog lookups must use the filtered list,
     // never the raw connections prop.
     expect(source).not.toMatch(/if \(!kindFilter\) return activeProviders;/);

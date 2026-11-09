@@ -8,7 +8,7 @@ import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { modelSupportsCap } from "@/shared/utils/modelCapMatch";
-import { selectConnectableProviders, selectNoAuthProviderIds } from "@/shared/utils/modelSelectorProviders";
+import { selectConnectableProviders } from "@/shared/utils/modelSelectorProviders";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
 import {
@@ -21,6 +21,7 @@ import {
   isAnthropicCompatibleProvider,
   getProviderAlias,
 } from "@/shared/constants/providers";
+import { NO_AUTH_PROVIDER_IDS } from "@/shared/utils/selectableModels";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -29,11 +30,6 @@ const PROVIDER_ORDER = [
   ...Object.keys(FREE_TIER_PROVIDERS),
   ...Object.keys(APIKEY_PROVIDERS),
 ];
-
-// Providers that need no auth — always show in model selector.
-// Registry entries marked `hidden` are excluded: they are not offered in the dashboard
-// either, and their upstream catalog can be gone (e.g. `mimo-free`).
-const NO_AUTH_PROVIDER_IDS = selectNoAuthProviderIds(FREE_PROVIDERS);
 
 function getCircularComboNames(combos, comboContext) {
   const targetName = comboContext?.name?.trim();
@@ -65,7 +61,6 @@ function getCircularComboNames(combos, comboContext) {
       .map((combo) => combo.name)
   );
 }
-
 // Providers with per-account live catalogs via /api/providers/[id]/models.
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
