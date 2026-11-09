@@ -99,6 +99,7 @@ export default {
     { id: "transcribe", name: "Codex Transcription", kind: "stt", params: ["response_format"], responseFormats: ["json", "text"] },
   ],
   serviceKinds: ["llm","image","stt"],
+  imageConfig: { baseUrl: "https://chatgpt.com/backend-api/codex/images/generations" },
   sttConfig: {
     baseUrl: "https://chatgpt.com/backend-api/transcribe",
     authType: "oauth",
