@@ -17,6 +17,7 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
+import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
 
 // Machine's real public IPv4, discovered once (direct https — intentionally
 // NOT the patched proxy-aware fetch, so we learn the home/public egress even
@@ -498,6 +499,29 @@ export class OpenCodeExecutor extends BaseExecutor {
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
+  // The free gate keys on the TLS ClientHello, so a native Node fetch is refused
+  // no matter how faithful the body is. Route through the impersonating client
+  // and keep proxy handling on the existing path (proxyAwareFetch delegates to
+  // `directFetch` when no proxy is configured, and passes the resolved proxy
+  // URL through when one is). Fail-open: without wreq-js the request still goes
+  // out on native fetch instead of erroring here.
+  //
+  // OpenCode Zen's free tier is rate-limited per real egress IP (daily
+  // budget per IP, reset at UTC midnight). applyOcEgress() only honors the
+  // manually chosen mode from the state file (<APPDATA>/ezrouter/oc-egress.json).
+  async execute(args) {
+    applyOcEgress();
+    const credentials = this.prepareRequestCredentials(args);
+    return super.execute({
+      ...args,
+      credentials,
+      directFetch: (url, options, proxyUrl) => opencodeTlsFetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+      }, { signal: options.signal, proxyUrl }),
+    });
+  }
   // Free tier moved from /zen/v1 to /inference/v1 (OpenCode v2); /zen/v1 now
   // answers every free request with 403 FreeTierError.
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
@@ -507,20 +531,6 @@ export class OpenCodeExecutor extends BaseExecutor {
     if (isResponsesModel(model)) return `${base}/inference/v1/responses`;
     if (isMessagesModel(model)) return `${base}/inference/v1/messages`;
     return `${base}/inference/v1/chat/completions`;
-  }
-
-  // OpenCode Zen's free tier is rate-limited per real egress IP (daily
-  // budget per IP, reset at UTC midnight). There is NO automatic switching:
-  // when the current IP's budget is exhausted the gateway answers
-  // 429 FreeUsageLimitError and it stays exhausted until midnight — the user
-  // picks another node/egress themselves (Clash UI or oc-egress.mjs
-  // switch/flip/set) and the SAME conversation continues from the new IP.
-  // applyOcEgress() only honors the manually chosen mode from the state file
-  // (<APPDATA>/ezrouter/oc-egress.json) so a manual switch works without
-  // restarting EzRouter. Errors propagate untouched.
-  async execute(args) {
-    applyOcEgress();
-    return super.execute({ ...args, credentials: this.prepareRequestCredentials(args) });
   }
 
   buildHeaders(credentials, stream = true, url = "") {

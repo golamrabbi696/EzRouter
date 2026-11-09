@@ -98,7 +98,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null }) {
     const fallbackCount = this.getFallbackCount(credentials);
     let lastError = null;
     let lastStatus = 0;
@@ -152,7 +152,8 @@ export class BaseExecutor {
           method: "POST",
           headers,
           body: bodyStr,
-          signal: mergedSignal
+          signal: mergedSignal,
+          ...(directFetch ? { directFetch } : {}),
         }, effectiveProxyOptions);
         clearTimeout(connectTimer);
         if (!response) {
