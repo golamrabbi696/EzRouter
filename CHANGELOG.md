@@ -1,3 +1,39 @@
+# v0.6.33 (2026-11-09)
+
+## Upstream PR Synchronization (#5518 - #5537) & Protocol Hardening
+- **CommandCode v1.88.5 Alignment & CLI Auto-Import**:
+  - Aligned CommandCode data bridge with CLI v1.88.5 protocol (`#5522`).
+  - Added CLI Auto-Import endpoint (`/api/oauth/commandcode/auto-import`) for seamless local credential discovery and token refresh (`#5522`).
+  - Dynamically resolved CommandCode models directly from its live catalog endpoint (`#5526`).
+  - Pruned dangling `tool_reference` blocks during tool deduplication when stripped tools are removed (`#5522`).
+- **Antigravity Reasoning & Adaptive Thinking Tiers**:
+  - Aligned thinking effort mapping and adaptive reasoning tiers (`low`, `medium`, `high`, `max`) for Antigravity preview and standard models (`#5529`).
+  - Added comprehensive test coverage asserting tier preservation across Antigravity model requests (`#5529`).
+- **Claude Tool Cloaking & Deferred Tool Loading**:
+  - Automatically renamed `tool_reference` blocks inside `tool_result` to match suffixed tool declarations during Claude tool cloaking (`#5537`).
+  - Resolved "Tool reference '<name>' not found in available tools" rejections when Claude Code dynamically loads deferred tools (`#5537`).
+- **OpenCode Proxy Forwarding & TLS Transport**:
+  - Carried user-configured outbound proxies (SOCKS5/HTTP) cleanly through the `wreq-js` transport layer (`#5534`).
+  - Added isolated, branded runtime data directory resolver (`~/.ezrouter` / `ezrouter-runtime`) for headless TLS workers (`#5534`).
+  - Unified OpenCode TLS executor implementation combining egress configuration with secure fetch transport.
+- **Codex Native GPT Image Editing & Responses**:
+  - Routed GPT Image edit requests directly to the native `/backend-api/codex/images/edits` endpoint with multipart payload mapping (`#5535`).
+  - Added `nativeImageSseResponse` and comprehensive error property forwarding (`code`, `type`, `param`) conforming to OpenAI Image specs (`#5535`).
+- **Usage Details & Quota Auto-Ping Catch-up**:
+  - Surfaced Claude `output_tokens` properly in the Dashboard Usage request details tab (`#5527`).
+  - Added catch-up check in quota auto-ping service to detect Claude quota resets that occur between periodic ping intervals (`#5531`).
+- **Transport & Network Resilience**:
+  - Fixed `proxyFetch` to serialize and stream `FormData` bodies as standard `multipart/form-data` via `undici` (`#5528`).
+- **Model Picker & Web Search Combos**:
+  - Added SearXNG support to Web Search model pickers and Combos as a no-auth provider without requiring manual credential creation (`#5536`).
+  - Maintained circular combo dependency prevention.
+- **Environment & Build Reliability**:
+  - Removed outdated `.nvmrc` to prevent interactive shell 504 gateway timeouts on non-existent Node versions under DevEz / Flock.
+- **Security & Stability Invariant Enforcement**:
+  - Strictly maintained default port `20126` (zero occurrences of 20128/20127 added).
+  - Maintained all EzRouter branding (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`, `x-ez-real-ip`).
+  - Antigravity preview models isolation (`gemini-4-argon`, `claude-sonnet-5-5`, `claude-opus-5-5`) 100% verified and active.
+
 # v0.6.32 (2026-11-08)
 
 ## Upstream PR Synchronization (#5501 - #5518) & Stability Hardening
