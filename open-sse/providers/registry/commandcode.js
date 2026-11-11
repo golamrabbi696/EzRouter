@@ -66,6 +66,8 @@ export default {
     { id: "stepfun/Step-3.7-Flash", name: "Step 3.7 Flash" },
     { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash" },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", name: "Nemotron 3 Ultra" },
+    { id: "google/gemini-4-carbon", name: "Gemini 4 Carbon" },
+    { id: "claude-fable-5-2", name: "Claude Fable 5.2" },
     { id: "meta/muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor" },
     { id: "meta/muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor" },
     { id: "meta/muse-spark-1.3", name: "Muse Spark 1.3" },
