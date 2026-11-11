@@ -195,6 +195,9 @@ export const ERROR_RULES = [
   // Monthly allowance spent — must be matched before the generic 402/429 rules.
   { text: "monthly_request_count",    cooldownMs: COOLDOWN.monthly },
   { text: "monthly limit",            cooldownMs: COOLDOWN.monthly },
+  // NVIDIA NIM returns 400 with "degraded" when specific model cluster is unhealthy.
+  // Lock only the degraded model (modelScoped: true) without locking the API key.
+  { provider: "nvidia", text: "degraded", cooldownMs: 15 * 60 * 1000, modelScoped: true },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   // Schema-validation rejections: same body fails on every account.

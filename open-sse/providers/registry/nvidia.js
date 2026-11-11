@@ -20,6 +20,10 @@ export default {
   transport: {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     validateUrl: "https://integrate.api.nvidia.com/v1/models",
+    timeoutMs: 90000,
+    quirks: {
+      dropClientMetadata: true,
+    },
   },
   // NIM's catalogue is large and moves fast. integrate.api.nvidia.com/v1/models
   // requires a key, so there is no modelsFetcher here — the list below is a
@@ -36,6 +40,7 @@ export default {
     { id: "deepseek-ai/deepseek-v4-pro-0813", name: "DeepSeek V4 Pro 0813" },
     { id: "deepseek-ai/deepseek-v4-flash-0731", name: "DeepSeek V4 Flash 0731" },
     { id: "nvidia/nemotron-3.5-lightning-30b-a3b", name: "Nemotron 3.5 Lightning 30B" },
+    { id: "nvidia/nemotron-3.5-bolt-e4b", name: "Nemotron 3.5 Bolt" },
     { id: "nvidia/nemotron-3-super-120b-a12b", name: "Nemotron 3 Super 120B" },
     { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", name: "Nemotron 3 Nano Omni 30B" },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", name: "Nemotron 3 Ultra" },
@@ -52,6 +57,9 @@ export default {
     { id: "stepfun-ai/step-3.7-flash", name: "Step 3.7 Flash" },
     { id: "stepfun-ai/step-3.5-flash", name: "Step 3.5 Flash" },
     { id: "poolside/laguna-xs-2.1", name: "Laguna XS 2.1" },
+    { id: "meta/llama-guard-4-12b", name: "Llama Guard 4 12B" },
+    { id: "nvidia/riva-translate-4b-instruct-v2", name: "Riva Translate 4B v2" },
+    { id: "meta/llama-3.3-70b-instruct", name: "Llama 3.3 70B Instruct" },
     { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B" },
     { id: "meta/muse-glimmer-30b", name: "Muse Glimmer 30B" },
     { id: "google/gemma-4-31b-it", name: "Gemma 4 31B" },
