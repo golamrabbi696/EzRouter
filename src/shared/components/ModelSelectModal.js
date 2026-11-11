@@ -1,5 +1,7 @@
 "use client";
 
+import { applyQoderModelNames } from "@/shared/utils/providerCustomModels";
+
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
@@ -493,7 +495,7 @@ export default function ModelSelectModal({
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
         const merged = [
-          ...hardcodedModels.map((m) => {
+          ...applyQoderModelNames(hardcodedModels, customModels, alias).map((m) => {
             const cleanId = m.id.startsWith(`${alias}/`) ? m.id.slice(alias.length + 1) : m.id;
             return { id: cleanId, name: m.name, value: `${alias}/${cleanId}`, kind: getModelKind(m) };
           }),
