@@ -379,7 +379,7 @@ Set `X-9Router-Token-Saver: off` to bypass all token savers for one chat request
 
 ## 🛠️ Tech Stack
 
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 20.18.1+ (22 LTS recommended)
 - **Framework**: Next.js 16
 - **UI**: React 19 + Tailwind CSS 4
 - **Database**: SQLite (better-sqlite3 / node:sqlite / sql.js fallback)

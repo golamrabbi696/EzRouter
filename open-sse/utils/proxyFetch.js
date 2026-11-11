@@ -49,18 +49,38 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
+// ISP DPI (VN → api.anthropic.com) RSTs Node's default TLS ClientHello curve
+// list; a single curve rewrites the fingerprint enough to pass. Empirically:
+// default agent = ECONNRESET 100%, X25519 = through 100%.
+const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
+
+// autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
+// families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
+// one broken-family network by breaking the other (see claude-code#20240).
+// requestTls must stay TLS-options-only (connect-level options belong in `connect`).
+const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
+function buildConnectOptions(insecure) {
+  return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
+}
+
+function evictOldest(cacheMap) {
+  if (cacheMap.size >= (MEMORY_CONFIG?.proxyDispatchersMaxSize || 50)) {
+    cacheMap.delete(cacheMap.keys().next().value);
+  }
+}
+
 async function getOrCreateDirectAgent(cacheMap, key, keepAliveTimeout, keepAliveMaxTimeout, insecure) {
   if (!cacheMap.has(key)) {
     try {
       const { Agent } = await import("undici");
-      const connect = insecure ? { rejectUnauthorized: false } : undefined;
+      evictOldest(cacheMap);
       cacheMap.set(
         key,
         new Agent({
+          connect: buildConnectOptions(insecure),
           keepAliveTimeout,
           keepAliveMaxTimeout,
           pipelining: DIRECT_AGENT_PIPELINING,
-          ...(connect ? { connect } : {}),
         })
       );
     } catch (error) {
@@ -98,10 +118,9 @@ export async function getFreshRetryDispatcher(insecure = false) {
   );
 }
 
-// Always fetch through the package's own undici instance: undici 8 rejects
-// dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
-// bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
-// option once we build our own Agents.
+// Always fetch through the package's own undici instance so fetch and the
+// Agents below come from the same copy — dispatcher options are only guaranteed
+// to match within one undici version.
 let undiciFetch = null;
 let undiciFormData = null;
 async function rawFetch(url, options) {
@@ -411,7 +430,6 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 
   return normalizeProxyUrl(proxyUrlRaw);
 }
-
 /**
  * Create proxy or direct dispatcher lazily (undici-compatible)
  */
