@@ -1,5 +1,6 @@
 import { buildSearchRequest } from "open-sse/handlers/search/callers.js";
 import { NextResponse } from "next/server";
+import { ACCEPT_ENCODING } from "open-sse/utils/zstdCompat.js";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, isCustomVideoProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -592,7 +593,7 @@ export async function POST(request) {
             method: "POST",
             headers: {
               Accept: "*/*",
-              "Accept-Encoding": "gzip, deflate, br, zstd",
+              "Accept-Encoding": ACCEPT_ENCODING,
               "Accept-Language": "en-US,en;q=0.9",
               "Cache-Control": "no-cache",
               "Content-Type": "application/json",
