@@ -130,7 +130,7 @@ npx @rabbi696/ezrouter connect http://<server-host>:20126 --tools claude --sonne
 
 # Every Claude tier
 npx @rabbi696/ezrouter connect http://<server-host>:20126 --tools claude \
-  --fable cc/claude-fable-5-1 --opus cc/claude-opus-5-5 \
+  --fable cc/claude-fable-5-2 --opus cc/claude-opus-5-5 \
   --sonnet cc/claude-sonnet-5-5 --haiku cc/claude-haiku-4-5-20251001
 
 # All non-Claude tools at once
@@ -163,7 +163,7 @@ npx @rabbi696/ezrouter show claude --json   # machine-readable (key still masked
    Base URL: http://<server-host>:20126/v1
    API key:  sk-a1b…9f3c
    Models:
-     fable   cc/claude-fable-5-1
+     fable   cc/claude-fable-5-2
      opus    cc/claude-opus-5-5
      sonnet  cc/claude-sonnet-5-5
 ```
