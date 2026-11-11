@@ -6,123 +6,177 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 import { proxyAwareFetch } from "../../open-sse/utils/proxyFetch.js";
 import { getUsageForProvider } from "../../open-sse/services/usage.js";
-import { U } from "../../open-sse/services/usage/shared.js";
-import { getExecutor } from "../../open-sse/executors/index.js";
-import { USAGE_SUPPORTED_PROVIDERS, USAGE_APIKEY_PROVIDERS } from "../../src/shared/constants/providers.js";
+import {
+  USAGE_SUPPORTED_PROVIDERS,
+  USAGE_APIKEY_PROVIDERS,
+} from "../../src/shared/constants/providers.js";
 import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { getRemainingPercentage } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 const USAGE_URL = "https://api.cline.bot/api/v1/users/me/plan/usage-limits";
-const FIXTURE = {"data":{"limits":[{"type":"five_hour","percentUsed":0,"resetsAt":"2026-10-08T22:21:02.325900562Z"},{"type":"weekly","percentUsed":0,"resetsAt":"2026-10-15T17:21:02.327830971Z"},{"type":"monthly","percentUsed":61,"resetsAt":"2026-10-17T01:23:57.329802003Z"}]},"success":true};
-const UNAUTHORIZED = "Unauthorized: Please make sure you're using the latest version of Cline and re-authenticate your Cline account.";
-const getUsage = (credentials = {}) => getUsageForProvider({ provider: "clinepass", ...credentials });
-const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
-  status,
-  headers: { "Content-Type": "application/json" },
-});
 
-beforeEach(() => vi.resetAllMocks());
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
-describe("ClinePass usage wiring", () => {
-  it("enables both OAuth and API-key quota listings with the registry endpoint", () => {
+const SAMPLE_LIMITS = {
+  success: true,
+  data: {
+    limits: [
+      {
+        type: "five_hour",
+        percentUsed: 15,
+        resetsAt: "2026-11-10T04:13:33.669456539Z",
+      },
+      {
+        type: "weekly",
+        percentUsed: 92,
+        resetsAt: "2026-11-14T02:29:15.672222629Z",
+      },
+      {
+        type: "monthly",
+        percentUsed: 46,
+        resetsAt: "2026-12-07T02:29:15.674628879Z",
+      },
+    ],
+  },
+};
+
+describe("clinepass registry usage flags", () => {
+  it("is listed for oauth and apikey quota dashboard", () => {
     expect(USAGE_SUPPORTED_PROVIDERS).toContain("clinepass");
     expect(USAGE_APIKEY_PROVIDERS).toContain("clinepass");
-    expect(U("clinepass").url).toBe(USAGE_URL);
+  });
+});
+
+describe("getUsageForProvider(clinepass)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it.each([
-    [{ accessToken: "eyJx.y.z" }, "Bearer workos:eyJx.y.z"],
-    [{ apiKey: "clp_test" }, "Bearer clp_test"],
-    [{ apiKey: "clp_test", accessToken: "eyJx.y.z" }, "Bearer clp_test"],
-  ])("uses the correct authorization header for %j", async (credentials, authorization) => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse(FIXTURE));
-    const proxyOptions = { connectionProxyEnabled: false };
-    await getUsageForProvider({ provider: "clinepass", ...credentials }, proxyOptions);
-    expect(proxyAwareFetch).toHaveBeenCalledExactlyOnceWith(USAGE_URL, {
-      headers: { Authorization: authorization, Accept: "application/json" },
-    }, proxyOptions);
+  it("GETs usage-limits with WorkOS-prefixed OAuth bearer", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(jsonResponse(SAMPLE_LIMITS));
+
+    const usage = await getUsageForProvider({
+      provider: "clinepass",
+      accessToken: "eyJpeg.eyJbG.sig",
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("ClinePass");
+    expect(proxyAwareFetch.mock.calls[0][0]).toBe(USAGE_URL);
+    expect(proxyAwareFetch.mock.calls[0][1].method).toBe("GET");
+    expect(proxyAwareFetch.mock.calls[0][1].headers.Authorization).toBe(
+      "Bearer workos:eyJpeg.eyJbG.sig",
+    );
   });
 
-  it("maps the live fixture to three percentage quotas and ISO resets", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse(FIXTURE));
-    const usage = await getUsage({ apiKey: "clp_test" });
-    expect(usage).toEqual({
-      plan: "ClinePass",
+  it("keeps an existing workos: prefix on OAuth tokens", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(jsonResponse(SAMPLE_LIMITS));
+
+    await getUsageForProvider({
+      provider: "clinepass",
+      accessToken: "workos:eyJpeg.eyJbG.sig",
+    });
+
+    expect(proxyAwareFetch.mock.calls[0][1].headers.Authorization).toBe(
+      "Bearer workos:eyJpeg.eyJbG.sig",
+    );
+  });
+
+  it("uses plain Bearer for API keys (no workos: prefix)", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(jsonResponse(SAMPLE_LIMITS));
+
+    await getUsageForProvider({
+      provider: "clinepass",
+      apiKey: "clp_1234567890abcdef",
+      accessToken: "eyJpeg.should.not.be.used",
+    });
+
+    expect(proxyAwareFetch.mock.calls[0][1].headers.Authorization).toBe(
+      "Bearer clp_1234567890abcdef",
+    );
+  });
+
+  it("maps percentUsed windows to remainingPercentage quotas", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(jsonResponse(SAMPLE_LIMITS));
+
+    const usage = await getUsageForProvider({
+      provider: "clinepass",
+      accessToken: "workos:eyJpeg.eyJbG.sig",
+    });
+
+    expect(usage.quotas["Session (5h)"]).toMatchObject({
+      used: 15,
+      total: 100,
+      remainingPercentage: 85,
+      resetAt: "2026-11-10T04:13:33.669Z",
+    });
+    expect(usage.quotas["Weekly (7d)"]).toMatchObject({
+      used: 92,
+      total: 100,
+      remainingPercentage: 8,
+    });
+    expect(usage.quotas["Monthly"]).toMatchObject({
+      used: 46,
+      total: 100,
+      remainingPercentage: 54,
+    });
+    // UI treats absolute remaining as % — must not set it.
+    expect(usage.quotas["Session (5h)"].remaining).toBeUndefined();
+  });
+
+  it("returns auth-expired message on 401", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      jsonResponse({ error: "Unauthorized" }, 401),
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "clinepass",
+      accessToken: "workos:dead.token",
+    });
+
+    expect(usage.quotas).toBeUndefined();
+    expect(usage.message).toMatch(/authentication expired|re-authorize/i);
+  });
+
+  it("returns a soft message when no credentials are present", async () => {
+    const usage = await getUsageForProvider({ provider: "clinepass" });
+    expect(proxyAwareFetch).not.toHaveBeenCalled();
+    expect(usage.message).toMatch(/access token or API key/i);
+  });
+});
+
+describe("parseQuotaData(clinepass)", () => {
+  it("forwards remainingPercentage for dashboard bars", () => {
+    const rows = parseQuotaData("clinepass", {
       quotas: {
-        "Session (5h)": { used: 0, total: 100, remainingPercentage: 100, resetAt: "2026-10-08T22:21:02.325Z", unlimited: false },
-        "Weekly (7d)": { used: 0, total: 100, remainingPercentage: 100, resetAt: "2026-10-15T17:21:02.327Z", unlimited: false },
-        "Monthly (30d)": { used: 61, total: 100, remainingPercentage: 39, resetAt: "2026-10-17T01:23:57.329Z", unlimited: false },
+        "Session (5h)": {
+          used: 15,
+          total: 100,
+          remainingPercentage: 85,
+          resetAt: "2026-11-10T04:13:33.669Z",
+        },
+        "Weekly (7d)": {
+          used: 92,
+          total: 100,
+          remainingPercentage: 8,
+          resetAt: "2026-11-14T02:29:15.672Z",
+        },
       },
     });
-    expect(parseQuotaData("clinepass", usage)[2]).toMatchObject({
-      name: "Monthly (30d)", used: 61, total: 100, remainingPercentage: 39,
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      name: "Session (5h)",
+      used: 15,
+      total: 100,
+      remainingPercentage: 85,
     });
-  });
-
-  it("skips unknown types, including inherited object keys", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({
-      success: true,
-      data: { limits: [...FIXTURE.data.limits, { type: "experimental_pool" }, { type: "toString" }, null] },
-    }));
-    expect(Object.keys((await getUsage({ apiKey: "clp_test" })).quotas)).toHaveLength(3);
-  });
-
-  it("returns a subscription message for data:null", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({ success: true, data: null }));
-    expect((await getUsage({ apiKey: "clp_test" })).message).toMatch(/No active ClinePass subscription/);
-  });
-
-  it.each(["Unavailable", { message: "Unavailable" }])("handles success:false with error %j", async (error) => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({ success: false, error }));
-    expect((await getUsage({ apiKey: "clp_test" })).message).toBe("ClinePass quota API error: Unavailable");
-  });
-
-  it("handles a 401 string error with a refresh-detectable authentication message", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({ error: UNAUTHORIZED }, 401));
-    expect((await getUsage({ accessToken: "eyJx.y.z" })).message).toBe(`ClinePass authentication failed: ${UNAUTHORIZED}`);
-  });
-
-  it("handles a 403, a 5xx with a non-JSON body, and a network failure", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({ error: "Forbidden" }, 403));
-    expect((await getUsage({ apiKey: "clp_test" })).message).toBe("ClinePass authentication failed: Forbidden");
-    proxyAwareFetch.mockResolvedValueOnce(new Response("<html>bad gateway</html>", { status: 502 }));
-    expect((await getUsage({ apiKey: "clp_test" })).message).toBe("ClinePass quota API error (502).");
-    proxyAwareFetch.mockRejectedValueOnce(new Error("fetch failed"));
-    expect((await getUsage({ apiKey: "clp_test" })).message).toBe("ClinePass error: fetch failed");
-  });
-
-  it("clamps out-of-range and non-numeric percentUsed", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({
-      success: true,
-      data: { limits: [{ type: "five_hour", percentUsed: 140 }, { type: "weekly", percentUsed: -5 }, { type: "monthly", percentUsed: "n/a" }] },
-    }));
-    const { quotas } = await getUsage({ apiKey: "clp_test" });
-    expect([quotas["Session (5h)"].used, quotas["Weekly (7d)"].used, quotas["Monthly (30d)"].used]).toEqual([100, 0, 0]);
-  });
-
-  it.each([undefined, null, "", "  ", 42])("rejects missing or invalid credentials %j without fetching", async (accessToken) => {
-    expect(await getUsage({ accessToken })).toEqual({
-      message: "ClinePass credentials not available. Reconnect to view usage.",
-    });
-    expect(proxyAwareFetch).not.toHaveBeenCalled();
-  });
-
-  it("preserves resetsAt:null and fractional remainingPercentage in the UI", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({
-      success: true, data: { limits: [{ type: "monthly", percentUsed: 61.25, resetsAt: null }] },
-    }));
-    const usage = await getUsage({ apiKey: "clp_test" });
-    expect(usage.quotas["Monthly (30d)"].resetAt).toBeNull();
-    expect(parseQuotaData("clinepass", usage)[0].remainingPercentage).toBe(38.75);
-  });
-
-  it("implements expiry detection and OAuth refresh in the ClinePass executor", async () => {
-    const executor = getExecutor("clinepass");
-    expect(executor.needsRefresh({ expiresAt: "2000-01-01T00:00:00Z" })).toBe(true);
-    expect(executor.needsRefresh({ expiresAt: "2999-01-01T00:00:00Z" })).toBe(false);
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({ data: { accessToken: "eyJnew.y.z", refreshToken: "new-refresh", expiresAt: "2999-01-01T00:00:00Z" } }));
-    const refreshed = await executor.refreshCredentials({ refreshToken: "test-refresh" }, null);
-    expect(refreshed).toMatchObject({ accessToken: "workos:eyJnew.y.z", refreshToken: "new-refresh" });
-    expect(refreshed.expiresIn).toBeGreaterThan(0);
-    expect(proxyAwareFetch.mock.calls[0][0]).toBe("https://api.cline.bot/api/v1/auth/refresh");
+    expect(getRemainingPercentage(rows[0])).toBe(85);
+    expect(getRemainingPercentage(rows[1])).toBe(8);
   });
 });

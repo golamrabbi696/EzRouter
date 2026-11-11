@@ -23,6 +23,8 @@ import { getZedUsage } from "./usage/zed.js";
 import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
 import { getCloudflareUsage } from "./usage/cloudflare.js";
+import { getCursorUsage } from "./usage/cursor.js";
+import { getClinepassUsage } from "./usage/clinepass.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import { getClinepassUsage } from "./usage/clinepass.js";
@@ -72,7 +74,8 @@ const USAGE_HANDLERS = {
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   "opencode-go": (c) => getOpenCodeGoUsage(c.apiKey, c.proxyOptions),
   "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  clinepass: (c) => getClinepassUsage(c.apiKey || c.accessToken, c.proxyOptions),
+  // OAuth WorkOS JWT (workos: prefix) or plain ClinePass API key — same usage-limits URL.
+  clinepass: (c) => getClinepassUsage(c.accessToken, c.apiKey, c.proxyOptions),
   "cloudflare-ai": (c) => getCloudflareUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
 };
 
