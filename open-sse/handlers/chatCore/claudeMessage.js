@@ -18,8 +18,13 @@ export function openAICompletionToClaudeMessage(responseBody) {
   const message = choice.message || {};
   const content = [];
 
-  const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
-  if (reasoning) content.push({ type: "thinking", thinking: reasoning });
+  // `reasoning` (string) is the vendor alias some OpenAI-compatible upstreams use (SenseNova, OpenRouter).
+  const reasoning = message.reasoning_content
+    || message.provider_specific_fields?.reasoning_content
+    || (typeof message.reasoning === "string" ? message.reasoning : "");
+  if (reasoning) {
+    content.push({ type: "thinking", thinking: reasoning });
+  }
   if (typeof message.content === "string" && message.content.length > 0) {
     content.push({ type: "text", text: message.content });
   }

@@ -1263,5 +1263,13 @@
     "baseUrl": "https://freeai.jembatanai.com/v1/chat/completions",
     "validateUrl": "https://freeai.jembatanai.com/v1/models",
     "format": "openai"
+  },
+  "sensenova-intl": {
+    "baseUrl": "https://token.sensenova.ai/v1/chat/completions",
+    "validateUrl": "https://token.sensenova.ai/v1/models",
+    "quirks": {
+      "reasoningAliasFields": true
+    },
+    "format": "openai"
   }
 }

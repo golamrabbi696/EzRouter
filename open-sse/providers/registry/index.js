@@ -132,6 +132,7 @@ import providerSearxng from "./searxng.js";
 import providerSelfhostedEmbedding from "./selfhosted-embedding.js";
 import providerSelfhostedStt from "./selfhosted-stt.js";
 import providerSelfhostedTts from "./selfhosted-tts.js";
+import providerSensenovaIntl from "./sensenova-intl.js";
 import providerSensenova from "./sensenova.js";
 import providerSerper from "./serper.js";
 import providerSiliconflow from "./siliconflow.js";
@@ -286,6 +287,7 @@ export default [
   providerSelfhostedEmbedding,
   providerSelfhostedStt,
   providerSelfhostedTts,
+  providerSensenovaIntl,
   providerSensenova,
   providerSerper,
   providerSiliconflow,
