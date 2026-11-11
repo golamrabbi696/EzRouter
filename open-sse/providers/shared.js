@@ -1,3 +1,4 @@
+import { setClaudeCliFallback } from "../utils/claudeCliVersion.js";
 import { platform, arch } from "os";
 
 // === OS/Arch helpers (Stainless fingerprint) ===
@@ -22,10 +23,11 @@ export function mapStainlessArch(archName = arch()) {
 
 // Anthropic API version (single source — reused across claude-format providers/executors)
 export const ANTHROPIC_API_VERSION = "2023-06-01";
-// Anthropic gates some models on the client version carried by the Claude Code
-// fingerprint (`User-Agent: claude-cli/<ver>` and the billing header). Let operators
-// raise it without rebuilding the image; the default is the release we validate.
-export const CLAUDE_CLI_VERSION = process.env.CLAUDE_CLI_VERSION || "2.1.280";
+// Floor version only; the live value comes from npm (utils/claudeCliVersion.js)
+// and outbound claude-cli/x.y.z headers are rewritten in proxyAwareFetch.
+// Operators can still override via CLAUDE_CLI_VERSION env var.
+export const CLAUDE_CLI_VERSION = "2.1.322";
+setClaudeCliFallback(CLAUDE_CLI_VERSION);
 
 // Shared Claude-compatible API headers (reused across claude-format providers)
 export const CLAUDE_API_HEADERS = {
