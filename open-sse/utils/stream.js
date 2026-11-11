@@ -494,7 +494,7 @@ export function createSSEStream(options = {}) {
             }
           }
 
-          if (trimmed === "data: [DONE]" || trimmed === "data:[DONE]") {
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
             if (streamDoneSent) continue;
             streamDoneSent = true;
           }
@@ -744,13 +744,12 @@ export function createSSEStream(options = {}) {
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
-          // A framing field left without terminator (upstream closed right after
-          // `id: N`) would reach the client as a payload-less frame — the same
-          // OpenAI-SDK crash the transform guards against. Drop only framing
-          // fields; any residual data line (or NDJSON tail, e.g. Ollama) still
-          // has to go through like before.
+          // An unterminated trailing "data: [DONE]" is the upstream sentinel: don't
+          // forward it raw (it would glue onto the properly framed one appended
+          // below, #5592).
           const leftover = buffer.trim();
-          if (leftover && !/^(id|retry|event)\s*:/.test(leftover)) {
+          const tailIsDone = leftover.startsWith("data:") && leftover.slice(5).trim() === "[DONE]";
+          if (!tailIsDone && leftover && !/^(id|retry|event)\s*:/.test(leftover)) {
             let output = buffer;
             if (provider === "mistral" && buffer.startsWith("data:") && buffer.slice(5).trim() !== "[DONE]") {
               try {
