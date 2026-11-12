@@ -416,8 +416,21 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // Usage-only trailer chunks (e.g. SinarCloud-style suppliers that send
+              // finish_reason on one chunk and the real usage on a later chunk with
+              // an empty delta): accumulate for logging/billing and forward as-is
+              // (standard OpenAI include_usage trailer), instead of dropping them.
+              // NOTE: no `continue` on the forward path — flow must reach the
+              // enqueue below; only truly content-less chunks are skipped.
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
-                continue;
+                const trailerUsage = extractUsage(parsed);
+                if (trailerUsage) {
+                  usage = mergeUsage(usage, trailerUsage);
+                  output = `data: ${JSON.stringify(parsed)}\n`;
+                  injectedUsage = true;
+                } else {
+                  continue;
+                }
               }
 
               const delta = parsed.choices?.[0]?.delta;
@@ -471,6 +484,10 @@ export function createSSEStream(options = {}) {
                 // reports its usage in a trailing chunk (stream_options
                 // include_usage) sends it AFTER this chunk, and merging the
                 // two by max would let the guess outvote the real number (#5056).
+                // NOTE: intentionally NOT assigned to `usage` — an estimated
+                // placeholder must not overwrite/merge over a real usage trailer
+                // that arrives on a later chunk (finalizeStream falls back to an
+                // estimate when nothing real was ever collected).
                 estimatedUsage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
