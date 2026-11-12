@@ -33,7 +33,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { annotateDirectResponse } from "open-sse/services/routeAttribution.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
-import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
@@ -499,6 +499,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
   let lastHeaders = null;
+  // Accounts this API key is pinned to for the provider (null = any account).
+  const allowedConnectionIds = await getKeyAllowedConnections(request, provider);
+
   // Only used by the "cache-affinity" strategy; cheap enough to compute once here.
   const cacheKey = buildCacheAffinityKey(body);
 
@@ -508,6 +511,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cacheKey,
       requestedModel: requestedModel || model,
       excludeProxyPoolIds,
+      allowedConnectionIds,
     });
 
     // All accounts unavailable
@@ -531,10 +535,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       if (excludeConnectionIds.size === 0) {
         if (isRoutableProvider(provider)) {
-          log.warn("AUTH", `No active credentials for provider: ${provider}`);
+          log.warn("AUTH", `No active credentials for provider: ${provider}${allowedConnectionIds ? " (API key pinned to specific accounts)" : ""}`);
           return errorResponse(
             HTTP_STATUS.NOT_FOUND,
-            `No active credentials for provider: ${provider}. Connect an account for this provider in the dashboard.`,
+            allowedConnectionIds
+              ? `No active credentials for provider: ${provider} among the accounts this API key is pinned to`
+              : `No active credentials for provider: ${provider}. Connect an account for this provider in the dashboard.`,
             { code: "provider_not_configured" },
           );
         }

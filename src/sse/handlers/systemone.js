@@ -6,7 +6,7 @@ import {
 } from "../services/auth.js";
 import { getSettings, getComboByName } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccess, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { PROVIDER_MEDIA } from "open-sse/providers/index.js";
@@ -100,7 +100,7 @@ export async function handleSystemone(request) {
       // into the body so an all-members-cooling-down combo still reports the earliest
       // reset time instead of a bare error.
       handleSingleModel: (comboBody, member) =>
-        withBodyRetryAfter(handleSingleSystemone(comboBody, member, { apiKey, endpoint: url.pathname, log })),
+        withBodyRetryAfter(handleSingleSystemone(comboBody, member, { apiKey, endpoint: url.pathname, log, request })),
       log,
       comboName: combo.name,
       comboStrategy: comboStrategy === "round-robin" ? "round-robin" : "fallback",
@@ -111,7 +111,7 @@ export async function handleSystemone(request) {
     });
   }
 
-  return handleSingleSystemone(body, modelStr, { apiKey, endpoint: url.pathname, log });
+  return handleSingleSystemone(body, modelStr, { apiKey, endpoint: url.pathname, log, request });
 }
 
 /**
@@ -149,10 +149,10 @@ async function withBodyRetryAfter(attempt) {
  *
  * @param {object} body - Native System One payload (state + questions)
  * @param {string} modelStr - Combo member or requested model ("alias/model")
- * @param {{apiKey: string|null, endpoint: string, log: object}} context
+ * @param {{apiKey: string|null, endpoint: string, log: object, request: Request}} context
  * @returns {Promise<Response>}
  */
-async function handleSingleSystemone(body, modelStr, { apiKey, endpoint, log: logger }) {
+async function handleSingleSystemone(body, modelStr, { apiKey, endpoint, log: logger, request }) {
   if (typeof modelStr !== "string" || !modelStr) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
@@ -182,7 +182,7 @@ async function handleSingleSystemone(body, modelStr, { apiKey, endpoint, log: lo
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: await getKeyAllowedConnections(request, provider) });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

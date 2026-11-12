@@ -5,7 +5,7 @@ import {
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccess, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -115,7 +115,7 @@ async function handleSingleModelTts(body, modelStr, request, responseFormat, lan
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: await getKeyAllowedConnections(request, provider) });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

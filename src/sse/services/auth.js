@@ -96,7 +96,7 @@ async function clearProxyPoolRateLimit(proxyPoolId, provider) {
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
- * @param {object} options - Selection options, strictConnectionId, and no-auth proxy-pool exclusions
+ * @param {object} [options] - Selection options, preferredConnectionId, strictConnectionId, requestedModel, allowedConnectionIds, excludeProxyPoolIds
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
@@ -106,6 +106,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
   const excludeProxyPoolIds = normalizeProxyPoolExclusions(options?.excludeProxyPoolIds);
   const preferredConnectionId = options?.preferredConnectionId || null;
   const cacheKey = options?.cacheKey || null;
+  // Set<string>|null — connection ids the calling API key is pinned to (see keyAccess.getKeyAllowedConnections).
+  const allowedConnectionIds = options?.allowedConnectionIds instanceof Set ? options.allowedConnectionIds : null;
   const requestedModel = options?.requestedModel || model;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
@@ -179,7 +181,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const activeConnections = await getProviderConnections({ provider: providerId, isActive: true });
+    let activeConnections = await getProviderConnections({ provider: providerId, isActive: true });
+    // Per-API-key account pinning: a hard filter applied before any selection
+    // (preferred connection, strategy, fallback), so nothing can leave the set.
+    if (allowedConnectionIds) {
+      activeConnections = activeConnections.filter((c) => allowedConnectionIds.has(c.id));
+      log.debug("AUTH", `${provider} | key pinned to ${allowedConnectionIds.size} account(s), ${activeConnections.length} active`);
+    }
     // Account-bound resources must never fall back to a different owner, even
     // when the preferred account is disabled, missing, or cooling down.
     const connections = options?.strictConnectionId

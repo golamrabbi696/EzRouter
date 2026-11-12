@@ -7,7 +7,7 @@ import {
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccess, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 import { getImageAdapter } from "open-sse/handlers/imageProviders/index.js";
@@ -143,7 +143,7 @@ async function handleSingleModelImage(body, modelStr, request, { wantsStream, bi
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: await getKeyAllowedConnections(request, provider) });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

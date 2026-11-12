@@ -8,7 +8,7 @@ import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { isCustomVideoProvider } from "@/shared/constants/providers";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { findProviderByJobId } from "open-sse/handlers/videoProviders/index.js";
 import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
@@ -180,7 +180,7 @@ export async function handleVideoCreate(request, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: await getKeyAllowedConnections(request, provider) });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -255,6 +255,7 @@ export async function handleVideoGet(request, requestId) {
   const credentials = await getProviderCredentials(provider, null, VIDEO_POLL_SCOPE, {
     preferredConnectionId,
     strictConnectionId: preferredConnectionId,
+    allowedConnectionIds: await getKeyAllowedConnections(request, provider),
   });
   if (credentials?.allRateLimited) {
     return unavailableResponse(

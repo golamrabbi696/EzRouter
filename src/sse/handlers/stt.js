@@ -5,7 +5,7 @@ import {
 import { getSettings, getCustomModels } from "@/lib/localDb";
 import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -97,7 +97,7 @@ export async function handleStt(request) {
   let lastStatus = null;
 
   while (true) {
-    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: await getKeyAllowedConnections(request, provider) });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
