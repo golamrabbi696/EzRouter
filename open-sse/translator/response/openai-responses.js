@@ -450,6 +450,10 @@ function emitToolCall(state, emit, tc) {
 
   if (funcName) state.funcNames[tcIdx] = funcName;
   if (newCallId) state.funcCallIds[tcIdx] = newCallId;
+  // Upstreams (vLLM/compat gateways) may omit the id on every fragment. Mint a
+  // stable id for this index so the item is announced and closeToolCall() can
+  // emit it; otherwise the call vanished from response.completed entirely.
+  if (!state.funcCallIds[tcIdx]) state.funcCallIds[tcIdx] = fallbackToolCallId(tcIdx);
 
   state.funcItemAdded ??= {};
   const callId = state.funcCallIds[tcIdx];
