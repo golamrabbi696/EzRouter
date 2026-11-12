@@ -7,6 +7,11 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     vi.resetModules();
     process.env = { ...savedEnv };
     delete process.env.FETCH_KEEPALIVE_TIMEOUT_MS;
+    delete process.env.FETCH_FRESH_RETRY;
+    delete process.env.NINEROUTER_TLS_ECDH_CURVE;
+    delete process.env.STRICT_SSL;
+    delete process.env.NO_PROXY;
+    delete process.env.no_proxy;
     delete process.env.HTTPS_PROXY;
     delete process.env.https_proxy;
     delete process.env.HTTP_PROXY;
@@ -17,16 +22,15 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
 
   afterEach(() => {
     process.env = { ...savedEnv };
+    vi.doUnmock("undici");
   });
 
-  it("caps default keep-alive TTL to 30s and clamps keepAliveMaxTimeout when FETCH_KEEPALIVE_TIMEOUT_MS is set", async () => {
+  it("keeps the existing 4s default, clamps keepAliveMaxTimeout, and honors FETCH_KEEPALIVE_TIMEOUT_MS", async () => {
     const { resolveKeepAliveTimeouts } = await import("../../open-sse/config/runtimeConfig.js");
-    const { resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
-    resetDirectDispatchersForTests();
 
     expect(resolveKeepAliveTimeouts()).toEqual({
-      keepAliveTimeout: 30_000,
-      keepAliveMaxTimeout: 30_000,
+      keepAliveTimeout: 4_000,
+      keepAliveMaxTimeout: 4_000,
     });
 
     process.env.FETCH_KEEPALIVE_TIMEOUT_MS = "1";
@@ -34,6 +38,99 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       keepAliveTimeout: 1,
       keepAliveMaxTimeout: 1,
     });
+  });
+
+  function mockUndiciDispatchers(fetchMock = vi.fn()) {
+    const Agent = vi.fn(function (options) { this.options = options; });
+    const ProxyAgent = vi.fn(function (options) { this.options = options; });
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, Agent, ProxyAgent, fetch: fetchMock };
+    });
+    return { Agent, ProxyAgent, fetchMock };
+  }
+
+  it.each([undefined, "X25519"])("uses default auto or explicit %s curves for direct and fresh-retry agents without changing TLS verification", async (curveOverride) => {
+    if (curveOverride) process.env.NINEROUTER_TLS_ECDH_CURVE = curveOverride;
+    const { Agent } = mockUndiciDispatchers();
+    const { getDirectDispatcher, getFreshRetryDispatcher } = await import("../../open-sse/utils/proxyFetch.js");
+
+    const direct = await getDirectDispatcher();
+    const fresh = await getFreshRetryDispatcher();
+    const insecureDirect = await getDirectDispatcher(true);
+    const insecureFresh = await getFreshRetryDispatcher(true);
+    const secureConnect = {
+      autoSelectFamily: true,
+      autoSelectFamilyAttemptTimeout: 250,
+      ecdhCurve: curveOverride || "auto",
+    };
+
+    expect(Agent).toHaveBeenCalledTimes(4);
+    expect(direct.options.connect).toEqual(secureConnect);
+    expect(fresh.options.connect).toEqual(secureConnect);
+    expect(direct.options.connect).not.toHaveProperty("rejectUnauthorized");
+    expect(fresh.options.connect).not.toHaveProperty("rejectUnauthorized");
+    expect(insecureDirect.options.connect).toEqual({ ...secureConnect, rejectUnauthorized: false });
+    expect(insecureFresh.options.connect).toEqual({ ...secureConnect, rejectUnauthorized: false });
+    expect(direct.options.keepAliveTimeout).toBe(4_000);
+    expect(fresh.options.keepAliveTimeout).toBe(1);
+    expect(await getDirectDispatcher()).toBe(direct);
+    expect(await getFreshRetryDispatcher()).toBe(fresh);
+    expect(insecureDirect).not.toBe(direct);
+    expect(insecureFresh).not.toBe(fresh);
+  });
+
+  it.each([undefined, "X25519"])("uses default auto or explicit %s curves in proxy requestTls and preserves the existing certificate fallback", async (curveOverride) => {
+    if (curveOverride) process.env.NINEROUTER_TLS_ECDH_CURVE = curveOverride;
+    process.env.ALLOW_INSECURE_TLS_FALLBACK = "true";
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } }))
+      .mockResolvedValueOnce({ status: 200, ok: true });
+    const { ProxyAgent, Agent } = mockUndiciDispatchers(fetchMock);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+      const res = await proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/token", {}, {
+        enabled: true,
+        url: "http://127.0.0.1:7890",
+        strictProxy: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(ProxyAgent).toHaveBeenCalledTimes(2);
+      expect(Agent).not.toHaveBeenCalled();
+      const [secure, insecure] = fetchMock.mock.calls.map(([, options]) => options.dispatcher);
+      expect(secure.options).toEqual({
+        uri: "http://127.0.0.1:7890",
+        connect: { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 },
+        requestTls: { ecdhCurve: curveOverride || "auto" },
+      });
+      expect(secure.options.requestTls).not.toHaveProperty("rejectUnauthorized");
+      expect(insecure.options).toEqual({
+        ...secure.options,
+        requestTls: { ecdhCurve: curveOverride || "auto", rejectUnauthorized: false },
+      });
+      expect(insecure).not.toBe(secure);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it.each(["option", "true", "1"])("does not disable certificate verification when strict TLS is enabled via %s", async (strictMode) => {
+    if (strictMode !== "option") process.env.STRICT_SSL = strictMode;
+    const certError = Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } });
+    const fetchMock = vi.fn().mockRejectedValue(certError);
+    const { Agent } = mockUndiciDispatchers(fetchMock);
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/token", {
+      strictTls: strictMode === "option",
+    })).rejects.toBe(certError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(Agent).toHaveBeenCalledTimes(1);
+    expect(Agent.mock.calls[0][0].connect.ecdhCurve).toBe("auto");
+    expect(Agent.mock.calls[0][0].connect).not.toHaveProperty("rejectUnauthorized");
   });
 
   it("creates distinct shared direct and fresh-retry dispatchers", async () => {
@@ -56,7 +153,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(fresh1).not.toBe(direct1);
   });
 
-  it("classifies dead-socket errors (including bare fetch failed) and excludes aborts/DNS/TLS failures", async () => {
+  it("classifies only provable dead-socket errors and excludes aborts/DNS/TLS/bare fetch failed", async () => {
     const { isStaleSocketError } = await import("../../open-sse/utils/proxyFetch.js");
 
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }))).toBe(true);
@@ -64,86 +161,139 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "EPIPE" } }))).toBe(true);
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_HEADERS_TIMEOUT" } }))).toBe(true);
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: new Error("other side closed") }))).toBe(true);
-    expect(isStaleSocketError(new TypeError("fetch failed"))).toBe(true);
     expect(isStaleSocketError(new Error("socket hang up"))).toBe(true);
 
+    // A bare "fetch failed" with no code is ambiguous: the upstream may already have the
+    // request, so replaying it could double-charge. Never treat it as a stale socket.
+    expect(isStaleSocketError(new TypeError("fetch failed"))).toBe(false);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_INVALID_ARG" } }))).toBe(false);
     expect(isStaleSocketError(Object.assign(new Error("aborted"), { name: "AbortError", cause: { code: "UND_ERR_SOCKET" } }))).toBe(false);
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe(false);
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } }))).toBe(false);
     expect(isStaleSocketError(null)).toBe(false);
   });
 
-  it("retries once on the fresh-socket dispatcher when a pooled socket dies", async () => {
-    const mockFetch = vi.fn()
+  it("replays once on the fresh-socket dispatcher when a pooled socket dies", async () => {
+    const fetchMock = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }))
       .mockResolvedValueOnce({ status: 200, ok: true });
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
 
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = mockFetch;
+    const {
+      proxyAwareFetch,
+      getDirectDispatcher,
+      getFreshRetryDispatcher,
+      resetDirectDispatchersForTests,
+    } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
 
-    try {
-      const {
-        proxyAwareFetch,
-        getDirectDispatcher,
-        getFreshRetryDispatcher,
-        resetDirectDispatchersForTests,
-      } = await import("../../open-sse/utils/proxyFetch.js");
-      resetDirectDispatchersForTests();
+    const res = await proxyAwareFetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer nvapi-test" },
+      body: "{}",
+    });
 
-      const res = await proxyAwareFetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const directDispatcher = await getDirectDispatcher(false);
+    const freshDispatcher = await getFreshRetryDispatcher(false);
+
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBe(directDispatcher);
+    expect(fetchMock.mock.calls[1][1].dispatcher).toBe(freshDispatcher);
+    expect(fetchMock.mock.calls[1][1].headers).toEqual({ Authorization: "Bearer nvapi-test" });
+  });
+
+  it("does not replay on the fresh socket when the caller aborted or the body is a locked stream", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValue(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }));
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
+
+    const { proxyAwareFetch, resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      proxyAwareFetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
-        headers: { Authorization: "Bearer nvapi-test" },
         body: "{}",
-      });
+        signal: controller.signal,
+      })
+    ).rejects.toThrow(/fetch failed/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 
-      expect(res.status).toBe(200);
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+  it("does not replay on an ambiguous bare fetch failed (request may have been served)", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
 
-      const directDispatcher = await getDirectDispatcher(false);
-      const freshDispatcher = await getFreshRetryDispatcher(false);
+    const { proxyAwareFetch, resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
 
-      expect(mockFetch.mock.calls[0][1].dispatcher).toBe(directDispatcher);
-      expect(mockFetch.mock.calls[1][1].dispatcher).toBe(freshDispatcher);
-      expect(mockFetch.mock.calls[1][1].headers).toEqual({
-        Authorization: "Bearer nvapi-test",
-      });
-    } finally {
-      globalThis.fetch = origFetch;
-    }
+    await expect(
+      proxyAwareFetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        body: "{}",
+      })
+    ).rejects.toThrow(/fetch failed/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay when FETCH_FRESH_RETRY=off", async () => {
+    process.env.FETCH_FRESH_RETRY = "off";
+    const fetchMock = vi.fn()
+      .mockRejectedValue(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }));
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
+
+    const { proxyAwareFetch, resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
+
+    await expect(
+      proxyAwareFetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        body: "{}",
+      })
+    ).rejects.toThrow(/fetch failed/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses the fresh-socket dispatcher immediately when forceFreshSocket is requested", async () => {
-    const mockFetch = vi.fn().mockResolvedValueOnce({ status: 200, ok: true });
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = mockFetch;
+    const fetchMock = vi.fn().mockResolvedValueOnce({ status: 200, ok: true });
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
 
-    try {
-      const {
-        proxyAwareFetch,
-        getFreshRetryDispatcher,
-        resetDirectDispatchersForTests,
-      } = await import("../../open-sse/utils/proxyFetch.js");
-      resetDirectDispatchersForTests();
+    const { proxyAwareFetch, getFreshRetryDispatcher, resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
 
-      await proxyAwareFetch(
-        "https://integrate.api.nvidia.com/v1/chat/completions",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
-        { forceFreshSocket: true }
-      );
+    await proxyAwareFetch(
+      "https://integrate.api.nvidia.com/v1/chat/completions",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+      { forceFreshSocket: true }
+    );
 
-      const freshDispatcher = await getFreshRetryDispatcher(false);
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch.mock.calls[0][1].dispatcher).toBe(freshDispatcher);
-    } finally {
-      globalThis.fetch = origFetch;
-    }
+    const freshDispatcher = await getFreshRetryDispatcher(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBe(freshDispatcher);
   });
 
   it("BaseExecutor.execute sets forceFreshSocket=true when retrying after connect timeout or 502", async () => {
     const fetchMock = vi.fn();
-    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({
-      proxyAwareFetch: (...args) => fetchMock(...args),
-    }));
+    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: (...args) => fetchMock(...args) }));
 
     const { BaseExecutor } = await import("../../open-sse/executors/base.js");
     const ex = new BaseExecutor("nvidia", {

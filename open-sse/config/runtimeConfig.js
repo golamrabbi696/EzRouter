@@ -105,7 +105,7 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1
 // Pooled keep-alive socket TTLs and undici agent parameters: cap idle socket lifetime
 // below upstream/edge idle windows (Cloudflare, AWS Global Accelerator / NVIDIA NIM)
 // and clamp keepAliveMaxTimeout so an upstream `Keep-Alive` header cannot extend it.
-export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 30 * 1000;
+export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 4 * 1000;
 export const FRESH_RETRY_KEEPALIVE_TIMEOUT_MS = 1;
 export const DIRECT_AGENT_PIPELINING = 0;
 export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DEFAULT_KEEPALIVE_TIMEOUT_MS);
@@ -113,6 +113,13 @@ export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DE
 export function resolveKeepAliveTimeouts() {
   const timeout = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", FETCH_KEEPALIVE_TIMEOUT_MS);
   return { keepAliveTimeout: timeout, keepAliveMaxTimeout: timeout };
+}
+
+// Escape hatch: FETCH_FRESH_RETRY=off disables the transport-level replay, leaving only the
+// executor's own retry path (which still forces a fresh socket). Defaults to on.
+export function isFreshSocketReplayEnabled() {
+  const raw = String(process.env.FETCH_FRESH_RETRY ?? "").trim().toLowerCase();
+  return !(raw === "off" || raw === "0" || raw === "false" || raw === "no");
 }
 
 export const STALE_SOCKET_ERROR_CODES = new Set([
@@ -134,7 +141,6 @@ export const NON_STALE_SOCKET_ERROR_CODES = new Set([
 export const STALE_SOCKET_ERROR_SUBSTRINGS = [
   "other side closed",
   "socket hang up",
-  "fetch failed",
 ];
 
 // Non-streaming body read timeout. FETCH_CONNECT_TIMEOUT_MS only covers headers;

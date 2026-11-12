@@ -8,6 +8,7 @@ import {
   NON_STALE_SOCKET_ERROR_CODES,
   STALE_SOCKET_ERROR_SUBSTRINGS,
   resolveKeepAliveTimeouts,
+  isFreshSocketReplayEnabled,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 import { createProxyDispatcher } from "./proxyDispatcher.js";
@@ -52,7 +53,10 @@ export function isStaleSocketError(error) {
 // ISP DPI (VN → api.anthropic.com) RSTs Node's default TLS ClientHello curve
 // list; a single curve rewrites the fingerprint enough to pass. Empirically:
 // default agent = ECONNRESET 100%, X25519 = through 100%.
-const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
+// Use Node/OpenSSL's default curve negotiation for upstream compatibility.
+// Networks that require a specific curve can opt in via NINEROUTER_TLS_ECDH_CURVE
+// (for example, X25519); forcing it globally can cause AWS OIDC TLS resets.
+const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "auto";
 
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
@@ -445,15 +449,10 @@ async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = fals
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
-    const connectTimeout = readPositiveIntegerEnv("PROXY_CONNECT_TIMEOUT_MS", DEFAULT_PROXY_CONNECT_TIMEOUT_MS);
-    const headersTimeout = readPositiveIntegerEnv("PROXY_HEADERS_TIMEOUT_MS", DEFAULT_PROXY_HEADERS_TIMEOUT_MS);
-    const connect = insecure ? { rejectUnauthorized: false } : undefined;
     const dispatcher = await createProxyDispatcher({
       uri: normalized,
-      connectTimeout,
-      headersTimeout,
-      bodyTimeout: 0,
-      ...(insecure ? { requestTls: connect } : {}),
+      connect: EYEBALLS_CONNECT,
+      requestTls: { ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) },
     });
     proxyDispatchers.set(key, dispatcher);
   }
@@ -481,6 +480,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
       && !forceFreshSocket
       && !options.directFetch
       && !options.signal?.aborted
+      && isFreshSocketReplayEnabled()
       && isBodyReplaySafe(options.body)
       && isStaleSocketError(err)
     ) {

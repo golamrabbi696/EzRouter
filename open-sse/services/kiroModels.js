@@ -22,7 +22,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 import { refreshKiroToken } from "./tokenRefresh.js";
-import { buildKiroClientFingerprintHeaders } from "../utils/kiroFingerprint.js";
+import { buildKiroIdentityHeaders } from "../shared/kiroHeaders.js";
 
 const DEFAULT_REGION = "us-east-1";
 const FETCH_TIMEOUT_MS = 30_000;
@@ -60,25 +60,8 @@ function regionFromProfileArn(profileArn) {
  * same account always presents the same machineId.
  */
 function buildKiroFingerprintHeaders(credentials) {
-  const seed =
-    credentials?.providerSpecificData?.clientId
-    || credentials?.refreshToken
-    || credentials?.providerSpecificData?.profileArn
-    || credentials?.accessToken
-    || "kiro-anonymous";
-  const machineId = createHash("sha256").update(String(seed)).digest("hex");
-
-  const userAgent =
-    `aws-sdk-js/${KIRO_RUNTIME_SDK_VERSION} ua/2.1 ` +
-    `os/${KIRO_AGENT_OS}#${KIRO_AGENT_OS_VERSION} ` +
-    `lang/js md/nodejs#${KIRO_NODE_VERSION} ` +
-    `api/codewhispererruntime#${KIRO_RUNTIME_SDK_VERSION} m/N,E ` +
-    `KiroIDE-${KIRO_VERSION}-${machineId}`;
-  const amzUserAgent = `aws-sdk-js/${KIRO_RUNTIME_SDK_VERSION} KiroIDE-${KIRO_VERSION}-${machineId}`;
-
   return {
-    "User-Agent": userAgent,
-    "x-amz-user-agent": amzUserAgent,
+    ...buildKiroIdentityHeaders(credentials),
     "x-amzn-kiro-agent-mode": "vibe",
     "x-amzn-codewhisperer-optout": "true",
     "amz-sdk-request": "attempt=1; max=1",
@@ -118,10 +101,7 @@ async function fetchKiroCatalogRaw(credentials, signal) {
   const url = `https://q.${region}.amazonaws.com/ListAvailableModels?${params.toString()}`;
 
   const headers = {
-    ...buildKiroClientFingerprintHeaders(credentials),
-    "amz-sdk-request": "attempt=1; max=1",
-    "amz-sdk-invocation-id": uuidv4(),
-    "Accept": "application/json",
+    ...buildKiroFingerprintHeaders(credentials),
     "Authorization": `Bearer ${credentials?.accessToken || ""}`,
     ...(authMethod === "api_key" ? { "TokenType": "API_KEY" } : {}),
   };

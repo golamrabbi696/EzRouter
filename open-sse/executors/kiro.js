@@ -12,6 +12,7 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { buildKiroIdentityHeaders } from "../shared/kiroHeaders.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 // Regions per service host; a region outside the set is never spliced into the hostname.
@@ -262,7 +263,7 @@ export class KiroExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
-      ...buildKiroClientFingerprintHeaders(credentials),
+      ...buildKiroIdentityHeaders(credentials),
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4(),
       "x-amzn-bedrock-cache-control": "enable",
@@ -293,6 +294,13 @@ export class KiroExecutor extends BaseExecutor {
       if (isExternalIdp) {
         headers["TokenType"] = "EXTERNAL_IDP";
       }
+    }
+
+    headers["x-amzn-kiro-agent-mode"] = "spec";
+    headers["x-amzn-codewhisperer-machine-id"] = "kiro-desktop";
+    const profileArn = credentials?.providerSpecificData?.profileArn;
+    if (profileArn) {
+      headers["x-amzn-codewhisperer-profile-arn"] = profileArn;
     }
 
     return headers;

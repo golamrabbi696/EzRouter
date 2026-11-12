@@ -5,6 +5,7 @@ import {
   KIRO_AUTO_REGION,
   KIRO_RUNTIME_REGIONS,
 } from "open-sse/config/kiroRegions.js";
+import { buildKiroIdentityHeaders } from "../../../../open-sse/shared/kiroHeaders.js";
 
 /**
  * Kiro OAuth Service
@@ -341,8 +342,7 @@ export class KiroService {
         "Authorization": `Bearer ${apiKey}`,
         "TokenType": "API_KEY",
         "Accept": "application/json",
-        "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-        "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+        ...buildKiroIdentityHeaders({ apiKey }),
       },
     });
 
