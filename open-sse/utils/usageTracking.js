@@ -391,6 +391,7 @@ export function extractUsage(chunk) {
     const normalized = normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
+      total_tokens: usage.total_tokens ?? ((usage.input_tokens || usage.prompt_tokens || 0) + (usage.output_tokens || usage.completion_tokens || 0)),
       cached_tokens: cachedTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
       cost_usd: usage.cost_usd,
@@ -409,6 +410,7 @@ export function extractUsage(chunk) {
     const normalized = normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
+      total_tokens: chunk.usage.total_tokens ?? ((chunk.usage.prompt_tokens || 0) + (chunk.usage.completion_tokens || 0)),
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       cost_usd: chunk.usage.cost_usd,
@@ -458,27 +460,31 @@ export function extractUsage(chunk) {
 // the meaningful value from each without clobbering. Idempotent for other
 // providers that emit a single complete usage object.
 //
-// Estimates are placeholders, never data. OpenAI streams send finish_reason
-// one chunk before the usage trailer, so the stream layer may already hold an
-// estimate (JSON body length / 4 — base64 images count as text, so it can be
-// orders of magnitude too high) when the real usage arrives. Max-merging the
-// two would persist the inflated estimate. Real usage carrying an input count
-// replaces an estimate outright, and an estimate never overrides real usage.
+// An estimate (estimateUsage(), flagged `estimated:true`) is a placeholder,
+// never a floor: a real upstream report replaces it outright, and a late
+// estimate never overwrites real usage. Max-merge only applies between partial
+// REAL reports — otherwise the persisted prompt_tokens became
+// max(estimate, real), inflated whenever the estimate exceeded reality.
 export function mergeUsage(prev, next) {
   if (!prev) return next || null;
   if (!next) return prev;
-  // An estimate must never outrank a provider-reported value. The max-merge
-  // below exists for Anthropic's split usage events, where "larger" means
-  // "more complete". Between an estimate and a real value that reasoning does
-  // not hold — the request-body estimate is a chars/4 guess that can be orders
-  // of magnitude off — so the authoritative side wins outright.
-  if (Boolean(prev.estimated) !== Boolean(next.estimated)) {
-    const real = prev.estimated ? next : prev;
-    const est = prev.estimated ? prev : next;
+  if (!!prev.estimated !== !!next.estimated) {
+    if (next.estimated) return prev; // a late estimate never overwrites real usage
+    const real = next;
+    const est = prev;
     if ((typeof real.prompt_tokens !== "number" || real.prompt_tokens === 0) && typeof est.prompt_tokens === "number" && est.prompt_tokens > 0) {
       return { ...real, prompt_tokens: est.prompt_tokens, total_tokens: (real.completion_tokens || 0) + est.prompt_tokens };
     }
-    return real;
+    // prev was the estimate; the real report may omit total_tokens. Recompute
+    // from the real counts instead of keeping the estimate's inflated total.
+    if (prev.total_tokens !== undefined && next.total_tokens === undefined) {
+      const prompt = next.prompt_tokens ?? next.input_tokens;
+      const completion = next.completion_tokens ?? next.output_tokens;
+      if (Number.isFinite(prompt) && Number.isFinite(completion)) {
+        return { ...next, total_tokens: prompt + completion };
+      }
+    }
+    return next;
   }
   const merged = { ...prev };
   for (const [k, v] of Object.entries(next)) {
