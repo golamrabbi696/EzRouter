@@ -10,7 +10,12 @@ const ICON_ALIASES = {
   // MiniMax Code rides the existing MiniMax brand mark
   "minimax-code": "minimax",
   "minimax-code-global": "minimax",
+  // MiniMax Code rides the existing MiniMax brand mark
+  "minimax-code": "minimax",
+  "minimax-code-global": "minimax",
   "kiraai": "kira",
+  // OpenDesign Go is the subscription lane of the same OpenDesign brand mark
+  "opendesign-go": "opendesign",
 };
 
 // Runtime only — first 404 remembers id for the whole session
