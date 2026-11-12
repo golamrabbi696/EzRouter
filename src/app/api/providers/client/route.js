@@ -8,13 +8,8 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
+import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
-import { sanitizeProviderOrder, sortConnectionsByProviderOrder } from "@/shared/utils/providerOrder";
-
-async function requireAuth(request) {
-  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
-  return false;
-}
 
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
@@ -81,7 +76,7 @@ function isUsageEligible(connection, nodeById) {
   const auth = String(connection.authType || "").toLowerCase().replace(/[-_]/g, "");
   const isOAuthLike = auth === "oauth" || auth === "accesstoken";
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    isOAuthLike || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+    isOAuthLike || isLeaseConnection(connection) || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
   );
 }
 

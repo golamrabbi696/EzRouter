@@ -14,6 +14,7 @@ import {
 } from "open-sse/services/antigravityRuntime.js";
 import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 import { recordQuotaUsage } from "@/sse/services/quotaReserve.js";
+import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -178,8 +179,9 @@ export async function GET(request, { params }) {
     const isOAuth = normalizedAuth === "oauth" || normalizedAuth === "accesstoken";
     const isApikeyEligible = (normalizedAuth === "apikey") && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
     const isCustomQuota = customQuotaNode?.quotaEnabled === true;
+    const isLease = isLeaseConnection(connection);
 
-    if (!isOAuth && !isApikeyEligible && !isCustomQuota) {
+    if (!isOAuth && !isApikeyEligible && !isCustomQuota && !isLease) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 
@@ -215,7 +217,7 @@ export async function GET(request, { params }) {
     // usage.quotas, so derive it first. Fail-open — never block the response.
     const snapshot = deriveQuotaSnapshot(connection.provider, usage);
     if (snapshot) {
-      updateProviderConnection(connection.id, { lastQuotaSnapshot: snapshot }).catch(() => {});
+      Promise.resolve(updateProviderConnection(connection.id, { lastQuotaSnapshot: snapshot })).catch(() => {});
     }
 
     // If provider returned an auth-expired message instead of throwing,
