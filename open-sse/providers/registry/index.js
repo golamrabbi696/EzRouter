@@ -47,6 +47,7 @@ import providerCoqui from "./coqui.js";
 import providerCursor from "./cursor.js";
 import providerDahl from "./dahl.js";
 import providerDeepgram from "./deepgram.js";
+import providerDeeprelay from "./deeprelay.js";
 import providerDeepseek from "./deepseek.js";
 import providerEdgeTts from "./edge-tts.js";
 import providerElevenlabs from "./elevenlabs.js";
@@ -108,6 +109,7 @@ import providerOpenai from "./openai.js";
 import providerOpencodeGo from "./opencode-go.js";
 import providerOpencodeZen from "./opencode-zen.js";
 import providerOpencode from "./opencode.js";
+import providerOpendesignGo from "./opendesign-go.js";
 import providerOpenmodel from "./openmodel.js";
 import providerOpenrouter from "./openrouter.js";
 import providerOvh from "./ovh.js";
@@ -203,6 +205,7 @@ export default [
   providerCursor,
   providerDahl,
   providerDeepgram,
+  providerDeeprelay,
   providerDeepseek,
   providerEdgeTts,
   providerElevenlabs,
@@ -264,6 +267,7 @@ export default [
   providerOpencodeGo,
   providerOpencodeZen,
   providerOpencode,
+  providerOpendesignGo,
   providerOpenmodel,
   providerOpenrouter,
   providerOvh,

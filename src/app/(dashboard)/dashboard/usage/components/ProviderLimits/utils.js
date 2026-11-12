@@ -937,6 +937,7 @@ export function parseQuotaData(provider, data) {
               unlimited: quota.unlimited,
               isCreditBalance: quota.isCreditBalance,
               currency: quota.currency,
+              unit: quota.unit,
             });
           });
         }
