@@ -1,6 +1,6 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
-import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { canonicalizeUsage, reasoningIsSubsetOfOutput } from "../../utils/usageTracking.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -53,7 +53,9 @@ export function extractUsageFromResponse(responseBody) {
       reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
       cost_usd: responseBody.usage.cost_usd,
       cost_in_usd: responseBody.usage.cost_in_usd,
-      cost_in_usd_ticks: responseBody.usage.cost_in_usd_ticks
+      cost_in_usd_ticks: responseBody.usage.cost_in_usd_ticks,
+      // completion_tokens already contains the reasoning slice; price it once.
+      ...(reasoningIsSubsetOfOutput(responseBody.usage) ? { reasoning_included_in_output: 1 } : {})
     };
   }
 

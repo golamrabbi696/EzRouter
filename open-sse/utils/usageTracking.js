@@ -116,6 +116,22 @@ export function filterUsageForFormat(usage, targetFormat) {
 }
 
 /**
+ * OpenAI-shaped usage normally counts reasoning_tokens INSIDE completion_tokens.
+ * A few OpenAI-compatible upstreams (xAI) report it on top instead; they are
+ * recognisable because total_tokens equals prompt + completion + reasoning.
+ * @param {object} usage raw upstream usage object
+ * @returns {boolean} true when reasoning is a subset of the output count
+ */
+export function reasoningIsSubsetOfOutput(usage) {
+  const reasoning = Number(usage?.completion_tokens_details?.reasoning_tokens) || 0;
+  const total = Number(usage?.total_tokens);
+  if (reasoning <= 0 || !Number.isFinite(total)) return true;
+  const prompt = Number(usage.prompt_tokens) || 0;
+  const completion = Number(usage.completion_tokens) || 0;
+  return total !== prompt + completion + reasoning;
+}
+
+/**
  * Normalize usage object - ensure all values are valid numbers
  */
 export function normalizeUsage(usage) {
@@ -284,6 +300,12 @@ export function canonicalizeUsage(usage) {
   copyNonnegative("cost_in_usd");
   copyNonnegative("cost_in_usd_ticks");
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  // Carry the extractor's subset marker through canonicalization so cost
+  // pricing knows reasoning is already inside completion_tokens.
+  if (usage.reasoning_included_in_output || ((usage.completion_tokens_details?.reasoning_tokens || usage.output_tokens_details?.reasoning_tokens) && reasoningIsSubsetOfOutput(usage))) {
+    result.reasoning_included_in_output = 1;
+  }
+
   // Carry the marker through: an estimated count must not be stored as if it
   // had been measured by the provider.
   if (usage.estimated) result.estimated = true;
@@ -366,7 +388,7 @@ export function extractUsage(chunk) {
   if (responsesUsage && typeof responsesUsage === "object" && responsesUsage.input_tokens !== undefined) {
     const usage = responsesUsage;
     const cachedTokens = usage.input_tokens_details?.cached_tokens ?? usage.cached_tokens;
-    return normalizeUsage({
+    const normalized = normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: cachedTokens,
@@ -376,11 +398,15 @@ export function extractUsage(chunk) {
       cost_in_usd_ticks: usage.cost_in_usd_ticks,
       prompt_tokens_details: cachedTokens !== undefined ? { cached_tokens: cachedTokens } : undefined
     });
+    // Responses output_tokens INCLUDES reasoning_tokens (subset). Mark it so
+    // calculateCostFromTokens charges the reasoning slice once.
+    if (normalized) normalized.reasoning_included_in_output = 1;
+    return normalized;
   }
 
   // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens)
   if (chunk.usage && typeof chunk.usage === "object" && chunk.usage.prompt_tokens !== undefined) {
-    return normalizeUsage({
+    const normalized = normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
@@ -392,6 +418,10 @@ export function extractUsage(chunk) {
       completion_tokens_details: chunk.usage.completion_tokens_details,
       cost: chunk.usage.cost
     });
+    // OpenAI chat completion_tokens INCLUDES reasoning_tokens (subset). Mark
+    // it so calculateCostFromTokens charges the reasoning slice once.
+    if (normalized && reasoningIsSubsetOfOutput(chunk.usage)) normalized.reasoning_included_in_output = 1;
+    return normalized;
   }
 
   // Gemini format (Antigravity)
