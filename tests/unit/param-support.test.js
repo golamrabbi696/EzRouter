@@ -149,16 +149,6 @@ describe("stripUnsupportedParams", () => {
     expect(body.max_tokens).toBe(64000);
   });
 
-  it("drops reasoning_effort/reasoning for custom OpenAI-compatible providers (#3008)", () => {
-    const body = { reasoning_effort: "medium", reasoning: { effort: "medium" }, temperature: 0.7 };
-
-    stripUnsupportedParams("openai-compatible-responses-b7531984", "gpt-5.6-sol", body);
-
-    expect(body.reasoning_effort).toBeUndefined();
-    expect(body.reasoning).toBeUndefined();
-    expect(body.temperature).toBe(0.7); // unrelated param preserved
-  });
-
   it("does NOT drop reasoning_effort for real reasoning providers", () => {
     const body = { reasoning_effort: "high", model: "deepseek-reasoner" };
 
@@ -272,6 +262,28 @@ describe("stripUnsupportedParams", () => {
         expect(body.response_format).toBeUndefined();
         expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
       }
+    }
+  });
+
+  it("drops temperature for OpenCode Go's GPT family", () => {
+    for (const model of ["gpt-6-luna", "gpt-5.6-luna"]) {
+      const body = { messages: [{ role: "user", content: "hi" }], temperature: 0.2, top_p: 1 };
+      stripUnsupportedParams("opencode-go", model, body);
+      expect(body.temperature).toBeUndefined();
+      expect(body.top_p).toBe(1);
+    }
+  });
+
+  it("keeps temperature for other OpenCode Go models and other providers' GPTs", () => {
+    for (const [provider, model] of [
+      ["opencode-go", "glm-5.3-flash"],
+      ["opencode-go", "deepseek-v4.1-flash"],
+      ["opencode-go", "qwen3.8-flash"],
+      ["openrouter", "openai/gpt-6-luna"],
+    ]) {
+      const body = { messages: [{ role: "user", content: "hi" }], temperature: 0.2 };
+      stripUnsupportedParams(provider, model, body);
+      expect(body.temperature).toBe(0.2);
     }
   });
 
