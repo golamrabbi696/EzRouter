@@ -138,6 +138,7 @@ import providerSerper from "./serper.js";
 import providerSiliconflow from "./siliconflow.js";
 import providerStabilityAi from "./stability-ai.js";
 import providerSubq from "./subq.js";
+import providerSynthetic from "./synthetic.js";
 import providerTavily from "./tavily.js";
 import providerTencent from "./tencent.js";
 import providerTinyfish from "./tinyfish.js";
@@ -293,6 +294,7 @@ export default [
   providerSiliconflow,
   providerStabilityAi,
   providerSubq,
+  providerSynthetic,
   providerTavily,
   providerTencent,
   providerTinyfish,

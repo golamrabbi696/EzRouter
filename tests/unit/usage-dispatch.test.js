@@ -20,7 +20,7 @@ const SUPPORTED = [
   "github", "gemini-cli", "antigravity", "claude", "codex", "kiro",
   "qoder", "qoder-cn", "iflow", "ollama", "glm", "glm-cn",
   "minimax", "minimax-cn", "minimax-code", "minimax-code-global", "vercel-ai-gateway", "grok-cli", "kimi",
-  "deepseek", "opencode-go", "zed", "commandcode", "clinepass",
+  "deepseek", "opencode-go", "zed", "commandcode", "clinepass", "synthetic",
 ];
 
 describe("usage dispatch", () => {
