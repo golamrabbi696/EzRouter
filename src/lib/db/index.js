@@ -87,7 +87,7 @@ export {
 
 // Request details
 export {
-  saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders, getDistinctModels,
+  saveRequestDetail, getRequestDetails, getRequestDetailsTotals, getRequestDetailById, getDistinctProviders, getDistinctModels,
 } from "./repos/requestDetailsRepo.js";
 
 // Token Saver telemetry
