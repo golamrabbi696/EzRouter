@@ -1271,5 +1271,9 @@
       "reasoningAliasFields": true
     },
     "format": "openai"
+  },
+  "synthetic": {
+    "baseUrl": "https://api.synthetic.new/openai/v1/chat/completions",
+    "format": "openai"
   }
 }
