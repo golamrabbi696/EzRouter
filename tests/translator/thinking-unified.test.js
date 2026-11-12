@@ -391,3 +391,23 @@ describe("OpenCode Free ids with no capabilities entry (#2690)", () => {
     expect(apply("openai", "oc/no-such-model-xyz", bunny("high"), "oc").reasoning_effort).toBeUndefined();
   });
 });
+describe("openai-responses target without a provider thinkingFormat", () => {
+  // A custom OpenAI-compatible Responses node (e.g. api.openai.com/v1/responses) has no
+  // thinkingFormat of its own; effort must be nested, never a top-level reasoning_effort.
+  const provider = "openai-compatible-responses-test";
+  it("model suffix becomes reasoning.effort", () => {
+    const out = apply("openai-responses", "gpt-5(high)", {}, provider);
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+  it("chat-wire compatible node keeps top-level reasoning_effort", () => {
+    const out = apply("openai", "gpt-5(high)", {}, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning).toBeUndefined();
+  });
+  it("client reasoning.effort stays nested", () => {
+    const out = apply("openai-responses", "gpt-5", { reasoning: { effort: "low" } }, provider);
+    expect(out.reasoning.effort).toBe("low");
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+});
