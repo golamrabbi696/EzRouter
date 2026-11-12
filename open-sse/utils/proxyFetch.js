@@ -59,10 +59,17 @@ export function isStaleSocketError(error) {
 const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "auto";
 
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
-// families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
+// families, fall over in 2000ms — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
 // requestTls must stay TLS-options-only (connect-level options belong in `connect`).
-const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
+// 250ms per address was too tight for Cloudflare edges seen from VN: a TLS connect to
+// amr-link.open-design.ai measured p50 ~440ms, so 10/40 attempts died with ETIMEDOUT after
+// ~0.5s (UND_ERR_CONNECT_TIMEOUT long before the 10s connect budget). 2000ms → 40/40.
+// Env NINEROUTER_CONNECT_ATTEMPT_TIMEOUT_MS overrides.
+const CONNECT_ATTEMPT_TIMEOUT_MS = Number(process.env.NINEROUTER_CONNECT_ATTEMPT_TIMEOUT_MS) > 0
+  ? Number(process.env.NINEROUTER_CONNECT_ATTEMPT_TIMEOUT_MS)
+  : 2000;
+const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: CONNECT_ATTEMPT_TIMEOUT_MS };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
 }
@@ -73,7 +80,7 @@ function evictOldest(cacheMap) {
   }
 }
 
-async function getOrCreateDirectAgent(cacheMap, key, keepAliveTimeout, keepAliveMaxTimeout, insecure) {
+async function getOrCreateDirectAgent(cacheMap, key, keepAliveTimeout, keepAliveMaxTimeout, insecure, allowH2 = undefined) {
   if (!cacheMap.has(key)) {
     try {
       const { Agent } = await import("undici");
@@ -85,6 +92,7 @@ async function getOrCreateDirectAgent(cacheMap, key, keepAliveTimeout, keepAlive
           keepAliveTimeout,
           keepAliveMaxTimeout,
           pipelining: DIRECT_AGENT_PIPELINING,
+          ...(allowH2 === undefined ? {} : { allowH2 }),
         })
       );
     } catch (error) {
@@ -100,10 +108,10 @@ async function getOrCreateDirectAgent(cacheMap, key, keepAliveTimeout, keepAlive
  * Prevents undici from reusing idle sockets that upstream edges (NVIDIA NIM,
  * Cloudflare) silently dropped without sending a TCP RST.
  */
-export async function getDirectDispatcher(insecure = false) {
+export async function getDirectDispatcher(insecure = false, http1Only = false) {
   const { keepAliveTimeout, keepAliveMaxTimeout } = resolveKeepAliveTimeouts();
-  const key = `${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}`;
-  return getOrCreateDirectAgent(directDispatchers, key, keepAliveTimeout, keepAliveMaxTimeout, insecure);
+  const key = `${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}::${http1Only ? "h1" : "h2"}`;
+  return getOrCreateDirectAgent(directDispatchers, key, keepAliveTimeout, keepAliveMaxTimeout, insecure, http1Only ? false : undefined);
 }
 
 /**
@@ -112,13 +120,14 @@ export async function getDirectDispatcher(insecure = false) {
  * connect timeout so retries never draw another dead socket from the pool.
  */
 export async function getFreshRetryDispatcher(insecure = false) {
-  const key = insecure ? "insecure" : "secure";
+  const key = `${insecure ? "insecure" : "secure"}::h1`;
   return getOrCreateDirectAgent(
     freshRetryDispatchers,
     key,
     FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
     FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
-    insecure
+    insecure,
+    false
   );
 }
 
@@ -434,13 +443,34 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 
   return normalizeProxyUrl(proxyUrlRaw);
 }
-/**
- * Create proxy or direct dispatcher lazily (undici-compatible)
- */
-async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false) {
+// Hosts whose edge chokes on multiplexed HTTP/2 (see allowH2 above). Env
+// NINEROUTER_HTTP2_DISABLED_HOSTS is a comma list; `*` disables h2 everywhere,
+// `none` opts out entirely.
+const DEFAULT_HTTP2_DISABLED_HOSTS = "amr-link.open-design.ai";
+function parseHostList(value) {
+  return String(value || "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+/** True when this URL's host must be pinned to HTTP/1.1. */
+export function isHttp2DisabledForUrl(url) {
+  const hosts = parseHostList(process.env.NINEROUTER_HTTP2_DISABLED_HOSTS ?? DEFAULT_HTTP2_DISABLED_HOSTS);
+  if (hosts.includes("none")) return false;
+  if (hosts.includes("*")) return true;
+  let host;
+  try {
+    host = new URL(typeof url === "string" ? url : url.toString()).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return hosts.some((entry) => host === entry || host.endsWith(`.${entry}`));
+}
+
+async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false, http1Only = false) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) {
-    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure);
+    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure, http1Only);
   }
 
   const key = `${normalized}::${insecure ? "insecure" : "secure"}`;
@@ -470,7 +500,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
+    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket, isHttp2DisabledForUrl(url));
     return await rawFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
     // Stale keep-alive socket recovery: if a pooled socket died before returning headers,
@@ -501,7 +531,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     }
     // Opt-in: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
     console.warn(`[ProxyFetch] TLS cert verification failed (${code}), retrying with insecure TLS (ALLOW_INSECURE_TLS_FALLBACK=true): ${logSafeOrigin(url)}`);
-    const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket);
+    const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket, isHttp2DisabledForUrl(url));
     return await rawFetch(url, { ...options, dispatcher: insecureDispatcher });
   }
 }

@@ -61,7 +61,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     const insecureFresh = await getFreshRetryDispatcher(true);
     const secureConnect = {
       autoSelectFamily: true,
-      autoSelectFamilyAttemptTimeout: 250,
+      autoSelectFamilyAttemptTimeout: 2000,
       ecdhCurve: curveOverride || "auto",
     };
 
@@ -103,7 +103,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       const [secure, insecure] = fetchMock.mock.calls.map(([, options]) => options.dispatcher);
       expect(secure.options).toEqual({
         uri: "http://127.0.0.1:7890",
-        connect: { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 },
+        connect: { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 2000 },
         requestTls: { ecdhCurve: curveOverride || "auto" },
       });
       expect(secure.options.requestTls).not.toHaveProperty("rejectUnauthorized");

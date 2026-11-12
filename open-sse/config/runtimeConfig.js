@@ -124,6 +124,13 @@ export function isFreshSocketReplayEnabled() {
 
 export const STALE_SOCKET_ERROR_CODES = new Set([
   "UND_ERR_SOCKET",
+  // HTTP/2 session failures are replayable exactly like a dead socket: the
+  // request never reached the origin as a completed transaction, so retrying
+  // over a fresh HTTP/1.1 connection is safe.
+  "ERR_HTTP2_STREAM_ERROR",
+  "ERR_HTTP2_SESSION_ERROR",
+  "ERR_HTTP2_GOAWAY_SESSION",
+  "UND_ERR_CLOSED",
   "ECONNRESET",
   "EPIPE",
   "UND_ERR_HEADERS_TIMEOUT",
@@ -141,6 +148,10 @@ export const NON_STALE_SOCKET_ERROR_CODES = new Set([
 export const STALE_SOCKET_ERROR_SUBSTRINGS = [
   "other side closed",
   "socket hang up",
+  // nghttp2 reason phrases for a session/stream killed by the edge (see codes above).
+  "nghttp2_enhance_your_calm",
+  "nghttp2_protocol_error",
+  "nghttp2_refused_stream",
 ];
 
 // Non-streaming body read timeout. FETCH_CONNECT_TIMEOUT_MS only covers headers;
