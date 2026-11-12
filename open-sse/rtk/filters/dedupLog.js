@@ -26,7 +26,12 @@ export function dedupLog(input) {
     i += run;
 
     if (out.length >= DEDUP_LINE_MAX) {
-      out.push(`... (truncated at ${DEDUP_LINE_MAX} lines)`);
+      // The cap is deliberate (token saving), but the marker must say how much
+      // was dropped — the old "truncated at 2000 lines" hid the omitted tail.
+      // A trailing newline yields one empty split element; it is not a line.
+      const tailBlank = lines[lines.length - 1] === "" ? 1 : 0;
+      const omitted = Math.max(0, lines.length - i - tailBlank);
+      out.push(`... (truncated at ${DEDUP_LINE_MAX} lines: ${omitted} more lines omitted)`);
       return out.join("\n");
     }
   }
