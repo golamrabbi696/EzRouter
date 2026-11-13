@@ -77,7 +77,7 @@ function readAssistantExtraContentSignature(msg) {
 // requests carrying another client's branding.
 function sanitizeSystemPrompt(text) {
   if (typeof text !== "string") return text;
-  return text.replace(/opencode/gi, (match) => {
+  return text.replace(/(?<![\/\\\w.~@:-])opencode(?![\/\\:\-@\w]|(?:\.[a-zA-Z0-9_\-]))/gi, (match) => {
     if (match === "OpenCode") return "Antigravity";
     if (match === "OPENCODE") return "ANTIGRAVITY";
     return "antigravity";
