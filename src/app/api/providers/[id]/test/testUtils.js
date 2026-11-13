@@ -569,7 +569,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
       if (modelsBase.endsWith("/v1")) modelsBase = modelsBase.slice(0, -3);
       const messagesUrl = `${modelsBase}/v1/messages`;
-      const model = connection.defaultModel || ANTHROPIC_VALIDATION_MODEL;
+      const model = options.model || connection.defaultModel || ANTHROPIC_VALIDATION_MODEL;
       const res = await fetchWithConnectionProxy(messagesUrl, {
         method: "POST",
         headers: mergeClientIdentityHeaders(
@@ -650,7 +650,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(url, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
+          body: JSON.stringify({ model: options.model || getDefaultModel("cloudflare-ai"), messages: [{ role: "user", content: "test" }], max_tokens: 1 }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403 && res.status !== 404;
         return { valid, error: valid ? null : "Invalid API token or Account ID" };
@@ -658,7 +658,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "azure": {
         const psd = connection.providerSpecificData || {};
         const endpoint = (psd.azureEndpoint || "").replace(/\/$/, "");
-        const deployment = psd.deployment || "gpt-4";
+        const deployment = options.model || psd.deployment || "gpt-4";
         const apiVersion = psd.apiVersion || "2024-10-01-preview";
         const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
         const headers = { "api-key": connection.apiKey, "Content-Type": "application/json" };
@@ -682,7 +682,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: ANTHROPIC_VALIDATION_MODEL, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: options.model || connection.defaultModel || ANTHROPIC_VALIDATION_MODEL, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -713,7 +713,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: options.model || "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -722,7 +722,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: options.model || "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -733,7 +733,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(endpoints[connection.provider], {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({ model: "minimax-m2", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: options.model || "minimax-m2", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -748,7 +748,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            model: "kimi-k2.6",
+            model: options.model || "kimi-k2.6",
             max_tokens: 1,
             messages: [{ role: "user", content: "test" }],
           }),
@@ -771,7 +771,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(aliBaseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: options.model || getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -781,7 +781,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: options.model || getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
@@ -937,7 +937,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://opencode.ai/inference/go/openai/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
-          body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
+          body: JSON.stringify({ model: options.model || getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
