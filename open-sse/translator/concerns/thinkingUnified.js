@@ -172,6 +172,8 @@ function openAIThinkingDisplay(body) {
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
+const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("openai-compatible-");
+
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
   // Command Code's provider surface (the registry default) takes

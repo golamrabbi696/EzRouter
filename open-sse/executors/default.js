@@ -131,14 +131,19 @@ function isResponsesWire(provider, config, credentials) {
 }
 
 function normalizeResponsesReasoning(body) {
-  if (!body || typeof body !== "object" || body.reasoning_effort === undefined) return body;
+  if (!body || typeof body !== "object") return body;
 
-  const reasoning = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
-    ? { ...body.reasoning }
-    : {};
-  reasoning.effort = body.reasoning_effort;
-  body.reasoning = reasoning;
-  delete body.reasoning_effort;
+  if (body.reasoning_effort !== undefined) {
+    const reasoning = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+      ? { ...body.reasoning }
+      : {};
+    reasoning.effort = body.reasoning_effort;
+    body.reasoning = reasoning;
+    delete body.reasoning_effort;
+  }
+  if (body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning) && !body.reasoning.summary) {
+    body.reasoning = { ...body.reasoning, summary: "auto" };
+  }
   return body;
 }
 
