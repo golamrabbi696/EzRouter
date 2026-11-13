@@ -1,4 +1,5 @@
 import { FORMATS } from "../../translator/formats.js";
+import { suppressGeminiThoughtText } from "../../translator/concerns/thinkingUnified.js";
 import { needsTranslation } from "../../translator/index.js";
 import { toOpenAIFinish, fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { openAICompletionToClaudeMessage } from "./claudeMessage.js";
@@ -322,6 +323,7 @@ export async function handleNonStreamingResponse({
   stream = false,
   finalBody = null,
   translatedBody = null,
+  suppressThoughtSummaries = false,
   pxpipe = null,
   onRequestSuccess = null,
   pricingMultiplier = 1,
@@ -423,6 +425,14 @@ export async function handleNonStreamingResponse({
     // bare OpenAI body and usage tracking sees data.usage. No-op unless the
     // provider opts in via transport.quirks.clineEnvelope.
     responseBody = unwrapClineEnvelope(responseBody, provider);
+
+    // Scrub before request logging and all client-format translations.
+    if (suppressThoughtSummaries) {
+      suppressGeminiThoughtText(responseBody);
+      for (const choice of responseBody?.choices || []) {
+        if (choice?.message) delete choice.message.reasoning_content;
+      }
+    }
     if (provider === "mistral") for (const choice of responseBody?.choices || []) {
       if (choice.message) choice.message = normalizeMistralContent(choice.message);
     }

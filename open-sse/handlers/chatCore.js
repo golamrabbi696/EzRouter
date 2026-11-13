@@ -1,6 +1,6 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix, clampNativeThinking, parseModelModifiers } from "../translator/concerns/thinkingUnified.js";
+import { applyThinking, extractThinking, parseSuffix, stripThinkingSuffix, clampNativeThinking, parseModelModifiers, withProviderThinking, shouldSuppressHydrogenThoughts } from "../translator/concerns/thinkingUnified.js";
 import { MODEL_SERVICE_TIER_PROVIDERS } from "../config/modelModifiers.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
@@ -107,32 +107,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
-  // Inject provider-level thinking config override (only if client hasn't set)
-  // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
-  if (providerThinking?.mode && providerThinking.mode !== "auto") {
-    const mode = providerThinking.mode;
-    if (mode === "on" && !body.thinking) {
-      body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
-    } else if (mode === "off" && !body.thinking) {
-      body = { ...body, thinking: { type: "disabled" } };
-    } else if (targetFormat === FORMATS.CLAUDE || provider === "claude") {
-      // Claude Messages API rejects OpenAI reasoning_effort with HTTP 400
-      if (mode === "none") {
-        body = { ...body, thinking: { type: "disabled" } };
-      } else if (!body.thinking) {
-        const budgetMap = { low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 64000 };
-        body = { ...body, thinking: { type: "enabled", budget_tokens: budgetMap[mode] || 8192 } };
-      }
-    } else if (mode !== "on" && mode !== "off") {
-      const intent = extractThinking(body);
-      const clientNamedLevel = intent != null && intent.mode !== "auto";
-      if (!clientNamedLevel) {
-        body = { ...body, reasoning_effort: mode };
-        if (!passthrough) delete body.thinking;
-      }
-    }
-  }
-
+  // Apply the same provider default used during account quota selection.
+  body = withProviderThinking(body, providerThinking);
   const upstreamModel = getModelUpstreamId(alias, model, body);
 
   // Per-request opt-out: client can bypass all token savers via header
@@ -707,7 +683,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const pricingMultiplier = credentials?.providerSpecificData?.fastMode === true
     ? executor.config.fastMode?.pricingMultiplier || 1
     : 1;
-  const sharedCtx = { provider, model, statisticsModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onEmptyStream, pxpipe: pxpipeSummary, reqTag, log, targetFormat: providerResponseFormat || targetFormat, pricingMultiplier, namespaceToolMap };
+  const suppressThoughtSummaries = shouldSuppressHydrogenThoughts(provider, model, finalBody || translatedBody);
+  const sharedCtx = { provider, model, statisticsModel, body, stream, translatedBody, finalBody, suppressThoughtSummaries, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onEmptyStream, pxpipe: pxpipeSummary, reqTag, log, targetFormat: providerResponseFormat || targetFormat, pricingMultiplier, namespaceToolMap };
   const appendLog = (extra) => appendRequestLog({ model: statisticsModel, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

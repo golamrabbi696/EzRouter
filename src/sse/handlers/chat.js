@@ -9,7 +9,7 @@ import {
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { buildCacheAffinityKey } from "../services/cacheAffinity.js";
 import { getDisabledByProvider } from "@/lib/db";
-import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
+import { handleAntigravityQuotaError, clearAntigravityStrikes, getAntigravityQuotaModel } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
 import { isRoutableProvider } from "@/shared/constants/providers.js";
 import { getModelInfo, getComboModels, getComboConfig } from "../services/model.js";
@@ -28,6 +28,7 @@ import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { withProviderThinking } from "open-sse/translator/concerns/thinkingUnified.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -493,6 +494,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const userAgent = request?.headers?.get("user-agent") || "";
   const preferredConnectionId = request?.headers?.get("x-connection-id") || request?.headers?.get("x-ez-connection-id") || request?.headers?.get("x-9r-connection-id") || null;
 
+  // Resolve the upstream tier before choosing an account: quota is tracked per
+  // Antigravity wire model, not per public alias.
+  const chatSettings = await getSettings();
+  const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+  const quotaModel = provider === "antigravity"
+    ? getAntigravityQuotaModel(model, withProviderThinking(body, providerThinking))
+    : model;
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   const excludeProxyPoolIds = new Set();
@@ -510,6 +519,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       preferredConnectionId,
       cacheKey,
       requestedModel: requestedModel || model,
+      quotaModel,
       excludeProxyPoolIds,
       allowedConnectionIds,
     });
@@ -568,8 +578,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     let result;
     try {
       result = await handleChatCore({
@@ -620,9 +628,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           });
         },
         onRequestSuccess: async () => {
-          await clearAccountError(credentials.connectionId, credentials, model, provider);
+          await clearAccountError(credentials.connectionId, credentials, quotaModel, provider);
           // "Consecutive" strikes: a success clears the breaker for this pair.
-          clearAntigravityStrikes(credentials.connectionId, model);
+          clearAntigravityStrikes(credentials.connectionId, quotaModel);
         },
         onEmptyStream: async () => {
           await markAccountUnavailable(
@@ -630,7 +638,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
             HTTP_STATUS.BAD_GATEWAY,
             `Empty streaming response from ${provider}/${model}`,
             provider,
-            model,
+            quotaModel,
             Date.now() + EMPTY_CONTENT_COOLDOWN_MS
           );
         }
@@ -660,7 +668,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     let resetsAtMs = result?.resetsAtMs;
     if (provider === "antigravity" && (errorStatus === 409 || errorStatus === 429)) {
       quotaResetMs = await handleAntigravityQuotaError(
-        credentials.connectionId, errorStatus, model,
+        credentials.connectionId, errorStatus, quotaModel,
         refreshedCredentials.accessToken, credentials.providerSpecificData,
         errorMessage
       );
@@ -671,7 +679,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Do not persist a modelLock_* for this path.
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
-      : (await markAccountUnavailable(credentials.connectionId, errorStatus, errorMessage, provider, model, resetsAtMs, proxyPoolId)).shouldFallback;
+      : (await markAccountUnavailable(credentials.connectionId, errorStatus, errorMessage, provider, quotaModel, resetsAtMs, proxyPoolId)).shouldFallback;
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${errorStatus}) → NEXT ACCOUNT`);

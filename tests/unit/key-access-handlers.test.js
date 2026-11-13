@@ -10,14 +10,17 @@ const fx = vi.hoisted(() => ({
   keys: {},
   settings: { requireApiKey: false, comboStrategy: "fallback" },
   comboLookupError: null,
+  providerThinking: {},
 }));
 const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
   handleChatCore: vi.fn(),
+  handleAntigravityQuotaError: vi.fn(),
+  markAccountUnavailable: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getSettings: async () => fx.settings,
+  getSettings: async () => ({ ...fx.settings, providerThinking: fx.providerThinking }),
   getModelAliases: async () => ({}),
   getComboByName: async (name) => {
     if (fx.comboLookupError) throw fx.comboLookupError;
@@ -44,7 +47,7 @@ saveRequestUsage: vi.fn(),
 }));
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
-  markAccountUnavailable: vi.fn(async () => ({ shouldFallback: false })),
+  markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: vi.fn(),
   extractApiKey: (request) => {
     const a = request.headers.get("Authorization");
@@ -65,6 +68,10 @@ vi.mock("@/sse/services/auth.js", () => ({
 vi.mock("@/sse/services/tokenRefresh.js", () => ({
   checkAndRefreshToken: async (_p, c) => c,
   updateProviderCredentials: vi.fn(),
+}));
+vi.mock("@/sse/services/antigravityQuota.js", async (importOriginal) => ({
+  ...await importOriginal(),
+  handleAntigravityQuotaError: mocks.handleAntigravityQuotaError,
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
 
@@ -103,6 +110,9 @@ beforeEach(() => {
   fx.combos = [
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
   ];
+  fx.providerThinking = {};
+  mocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: false });
+  mocks.handleAntigravityQuotaError.mockResolvedValue(null);
   fx.keys = {
     "sk-open": { id: "o", name: "open", isActive: true, access: { restricted: false, allow: [] } },
     "sk-combo": { id: "c", name: "combo", isActive: true, access: { restricted: true, allow: ["Main"] } },
@@ -171,6 +181,45 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     const tried = mocks.handleChatCore.mock.calls.map(([a]) => a.modelInfo.model);
     expect(tried).toEqual(["model-a", "model-b"]);
   });
+  it.each([
+    ["client effort", { reasoning_effort: "xhigh" }, {}, "gemini-4-hydrogen-xhigh"],
+    ["native Gemini config", { generationConfig: { thinkingConfig: { thinkingLevel: "xhigh" } } }, { mode: "medium" }, "gemini-4-hydrogen-xhigh"],
+    ["provider default", {}, { mode: "medium" }, "gemini-4-hydrogen-medium"],
+    ["thinking off", {}, { mode: "off" }, "gemini-4-hydrogen-low"],
+  ])("selects Hydrogen quota from %s before dispatch", async (_case, extra, providerDefault, expectedModel) => {
+    fx.providerThinking = { antigravity: providerDefault };
+    const response = await handleChat(post("/v1/chat/completions", {
+      model: "ag/gemini-4-hydrogen", stream: true,
+      messages: [{ role: "user", content: "hi" }], ...extra,
+    }, "sk-open"));
+    expect(response.status).toBe(200);
+    expect(mocks.getProviderCredentials).toHaveBeenCalledWith(
+      "antigravity", expect.any(Set), "gemini-4-hydrogen",
+      expect.objectContaining({ quotaModel: expectedModel }),
+    );
+    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({
+      providerThinking: providerDefault,
+    }));
+  });
+
+  it("persists an optimistic 429 lock for the failed Hydrogen tier, not the public alias", async () => {
+    mocks.handleChatCore.mockResolvedValueOnce({
+      success: false, status: 429, error: "capacity exhausted",
+      response: new Response("busy", { status: 429 }),
+    });
+    const response = await handleChat(post("/v1/chat/completions", {
+      model: "ag/gemini-4-hydrogen", reasoning_effort: "xhigh", stream: true,
+      messages: [{ role: "user", content: "hi" }],
+    }, "sk-open"));
+    expect(response.status).toBe(429);
+    expect(mocks.handleAntigravityQuotaError).toHaveBeenCalledWith(
+      "conn", 429, "gemini-4-hydrogen-xhigh", undefined, undefined, "capacity exhausted",
+    );
+    expect(mocks.markAccountUnavailable).toHaveBeenCalledWith(
+      "conn", 429, "capacity exhausted", "antigravity", "gemini-4-hydrogen-xhigh", undefined, null,
+    );
+  });
+
   it("bypass check: a restricted key sent as x-goog-api-key on the Gemini-compatible route is still restricted", async () => {
     const res = await geminiRoute.POST(
       new Request("http://localhost/v1beta/models/openai/model-a:generateContent", {

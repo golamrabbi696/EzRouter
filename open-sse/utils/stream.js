@@ -1,4 +1,5 @@
 import { translateResponse, initState } from "../translator/index.js";
+import { suppressGeminiThoughtText } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
 import { extractReasoningText, liftReasoningAliases, normalizeMistralContent } from "../translator/concerns/reasoning.js";
@@ -74,7 +75,8 @@ export function createSSEStream(options = {}) {
     onStreamComplete = null,
     apiKey = null,
     credentials = null,
-    responseModel = null
+    responseModel = null,
+    suppressThoughtSummaries = false
   } = options;
 
   const keepAliveMs = resolveKeepAliveMs(options.keepAliveMs);
@@ -120,7 +122,7 @@ export function createSSEStream(options = {}) {
   };
 
   const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, namespaceToolMap, customToolNames: new Set(customToolNames || []), model, responseModel, body, sessionId: credentials?._clientSessionId || null,
+    ? { ...initState(sourceFormat), provider, toolNameMap, namespaceToolMap, customToolNames: new Set(customToolNames || []), model, responseModel, suppressThoughtSummaries, body, sessionId: credentials?._clientSessionId || null,
         // Which upstream format this stream came from. A response translator can be
         // reached either directly (target === its registered source) or as the second
         // hop of a pivot, and on the terminal null chunk the pivot drops it — so a
@@ -258,7 +260,7 @@ export function createSSEStream(options = {}) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
-      reqLogger?.appendProviderChunk?.(text);
+      if (!suppressThoughtSummaries) reqLogger?.appendProviderChunk?.(text);
 
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
@@ -563,6 +565,8 @@ export function createSSEStream(options = {}) {
         if (provider === "mistral") for (const choice of parsed.choices || []) {
           if (choice.delta) choice.delta = normalizeMistralContent(choice.delta);
         }
+        // Scrub before token accounting and stream-complete request details.
+        if (suppressThoughtSummaries && targetFormat === FORMATS.ANTIGRAVITY) suppressGeminiThoughtText(parsed);
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -897,7 +901,11 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, responseModel = null, namespaceToolMap = null, keepAliveMs = undefined) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, responseModel = null, namespaceToolMap = null, keepAliveMs = undefined, suppressThoughtSummaries = false) {
+  if (typeof responseModel === "boolean") {
+    suppressThoughtSummaries = responseModel;
+    responseModel = null;
+  }
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -914,7 +922,8 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     apiKey,
     credentials,
     responseModel,
-    keepAliveMs
+    keepAliveMs,
+    suppressThoughtSummaries
   });
 }
 
