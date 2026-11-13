@@ -10,6 +10,7 @@ import { evaluateQuota } from "./quotaGuard.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota, getAntigravityModelFamily, isAntigravityAccountEligibleForModel } from "./antigravityQuota.js";
 import { pickByCacheAffinity } from "./cacheAffinity.js";
 import { getQuotaReserveHold } from "./quotaReserve.js";
+import { extractClientApiKey } from "./keyAccess.js";
 import * as log from "../utils/logger.js";
 import { extractApiKeyCandidates } from "@/shared/utils/apiKeyCandidates.js";
 
@@ -730,7 +731,6 @@ export async function clearAccountError(connectionId, currentConnection, model =
 }
 
 /**
-/**
  * Clear project-resolution error state on connection when a valid project ID is set
  */
 export async function clearProjectResolutionError(connectionId) {
@@ -746,9 +746,10 @@ export async function clearProjectResolutionError(connectionId) {
 
 /**
  * Extract API key from request headers (first presented credential).
+ * Uses the same sources, in the same order, as the middleware gate.
  */
 export function extractApiKey(request) {
-  return extractApiKeyCandidates(request)[0] || null;
+  return extractClientApiKey(request);
 }
 
 // Every presented credential, read by the shared helper that the middleware

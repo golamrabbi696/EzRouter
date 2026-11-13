@@ -154,6 +154,7 @@ EditApiKeyModal.propTypes = { apiKey: PropTypes.object.isRequired, activeProvide
 
 import KeyAccessControls from "./components/KeyAccessControls";
 import KeyAccountPins from "./components/KeyAccountPins";
+import KeyUsageLimitControls from "./components/KeyUsageLimitControls";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -895,6 +896,26 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  // Save a key's usage limits (null = remove all). Returns an error string or null.
+  const handleUpdateKeyUsageLimits = async (id, usageLimits) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usageLimits }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, usageLimits: data.key.usageLimits, usage: data.key.usage } : k));
+        return null;
+      }
+      return data.error || `Failed to save limits (${res.status})`;
+    } catch (error) {
+      console.log("Error updating key usage limits:", error);
+      return "Failed to save limits";
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1303,6 +1324,11 @@ export default function APIPageClient({ machineId }) {
                   <KeyAccountPins
                     apiKey={key}
                     onChange={(access) => handleUpdateKeyAccess(key.id, access)}
+                  />
+                  <KeyUsageLimitControls
+                    apiKey={key}
+                    onSave={(usageLimits) => handleUpdateKeyUsageLimits(key.id, usageLimits)}
+                  />
                   />
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">

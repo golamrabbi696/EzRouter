@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { validateUsageLimitsInput } from "@/shared/utils/keyUsageLimit.js";
+import { getKeyUsageSnapshot } from "@/lib/keyUsageLimit.js";
 
 function parsePolicy(body) {
   const data = {};
@@ -29,6 +31,11 @@ function parsePolicy(body) {
     if (!checked.ok) throw new Error(checked.error);
     data.access = checked.value;
   }
+  if (body.usageLimits !== undefined) {
+    const checked = validateUsageLimitsInput(body.usageLimits);
+    if (!checked.ok) throw new Error(checked.error);
+    data.usageLimits = checked.value;
+  }
   return data;
 }
 
@@ -36,7 +43,7 @@ export async function GET(request, { params }) {
   try {
     const key = await getApiKeyById((await params).id);
     if (!key) return NextResponse.json({ error: "Key not found" }, { status: 404 });
-    return NextResponse.json({ key });
+    return NextResponse.json({ key: { ...key, usage: await getKeyUsageSnapshot(key) } });
   } catch (error) {
     console.log("Error fetching key:", error);
     return NextResponse.json({ error: "Failed to fetch key" }, { status: 500 });
@@ -48,9 +55,9 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     if (!await getApiKeyById(id)) return NextResponse.json({ error: "Key not found" }, { status: 404 });
     const updated = await updateApiKey(id, parsePolicy(await request.json()));
-    return NextResponse.json({ key: updated });
+    return NextResponse.json({ key: { ...updated, usage: await getKeyUsageSnapshot(updated) } });
   } catch (error) {
-    const status = /Token limit|Token addition|Cannot add tokens|Expiration|Allowed models|access/i.test(error.message) ? 400 : 500;
+    const status = /Token limit|Token addition|Cannot add tokens|Expiration|Allowed models|access|limit/i.test(error.message) ? 400 : 500;
     console.log("Error updating key:", error);
     return NextResponse.json({ error: status === 400 ? error.message : "Failed to update key" }, { status });
   }

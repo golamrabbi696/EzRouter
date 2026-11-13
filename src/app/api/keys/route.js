@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { getKeyUsageSnapshot } from "@/lib/keyUsageLimit.js";
 
 export const dynamic = "force-dynamic";
 
@@ -15,13 +16,21 @@ function parsePolicy(body) {
   return { expiresAt, tokenLimit, allowedModels: body.allowedModels, scope, access };
 }
 
+// GET /api/keys - List API keys (with current-period usage for keys that have limits)
 export async function GET() {
   try {
     const keys = await getApiKeys();
-    const { keyUsageSnapshot } = await import("@/sse/services/keyPolicy.js");
-    return NextResponse.json({
-      keys: keys.map((k) => ({ ...k, usage: keyUsageSnapshot(k) })),
-    });
+    let keyUsageSnapshot = null;
+    try {
+      const mod = await import("@/sse/services/keyPolicy.js");
+      keyUsageSnapshot = mod.keyUsageSnapshot;
+    } catch {}
+    const withUsage = await Promise.all(keys.map(async (k) => {
+      const periodUsage = await getKeyUsageSnapshot(k);
+      const liveUsage = keyUsageSnapshot ? keyUsageSnapshot(k) : {};
+      return { ...k, usage: { ...liveUsage, ...periodUsage } };
+    }));
+    return NextResponse.json({ keys: withUsage });
   } catch (error) {
     console.log("Error fetching keys:", error);
     return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });

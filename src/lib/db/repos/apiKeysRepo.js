@@ -3,6 +3,7 @@ import { getAdapter } from "../driver.js";
 import { normalizeScopeInput } from "../../apiKeyScope.js";
 import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
+import { usageLimitsFromColumn, usageLimitsToColumn } from "@/shared/utils/keyUsageLimit.js";
 
 function parseScope(raw) {
   if (!raw) return null;
@@ -53,6 +54,7 @@ function rowToKey(row) {
     createdAt: row.createdAt,
     scope: parseScope(row.scope),
     access: keyAccessFromColumns(row.accessRestricted, row.accessAllow, row.accessConnections),
+    usageLimits: usageLimitsFromColumn(row.usageLimits),
   };
 }
 
@@ -116,13 +118,14 @@ export async function createApiKey(name, machineId, policy = {}) {
     allowedModels: normalizeAllowedModels(policy?.allowedModels),
     createdAt: new Date().toISOString(),
     scope: normalizedScope,
+    usageLimits: policy?.usageLimits || {},
   };
   const rawAccess = (policy && "restricted" in policy) ? policy : (policy?.access || KEY_ACCESS_UNRESTRICTED);
   const cols = keyAccessToColumns(rawAccess);
-  apiKey.access = keyAccessFromColumns(cols.accessRestricted, cols.accessAllow);
+  apiKey.access = keyAccessFromColumns(cols.accessRestricted, cols.accessAllow, cols.accessConnections);
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt, scope, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt, normalizedScope ? JSON.stringify(normalizedScope) : null, cols.accessRestricted, cols.accessAllow]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, expiresAt, tokenLimit, tokensUsed, tokensReserved, allowedModels, createdAt, scope, accessRestricted, accessAllow, accessConnections, usageLimits) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.expiresAt, apiKey.tokenLimit, 0, 0, apiKey.allowedModels ? JSON.stringify(apiKey.allowedModels) : null, apiKey.createdAt, normalizedScope ? JSON.stringify(normalizedScope) : null, cols.accessRestricted, cols.accessAllow, cols.accessConnections, usageLimitsToColumn(apiKey.usageLimits)]
   );
   return apiKey;
 }
@@ -144,13 +147,14 @@ export async function updateApiKey(id, data) {
       merged.tokenLimit += increment;
     }
     if ("scope" in data) merged.scope = normalizeScopeInput(data.scope);
+    if (data.usageLimits !== undefined) merged.usageLimits = data.usageLimits;
     // Shallow-merge access so a caller that does not mention `connections`
     // (e.g. the restrict toggle) never wipes the key's account pins.
     if (data.access) merged.access = { ...current.access, ...data.access };
     const cols = keyAccessToColumns(merged.access);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, tokenLimit = ?, tokensUsed = ?, tokensReserved = ?, allowedModels = ?, scope = ?, accessRestricted = ?, accessAllow = ?, accessConnections = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, merged.tokenLimit == null ? null : Number(merged.tokenLimit), Number(merged.tokensUsed || 0), Number(merged.tokensReserved || 0), merged.allowedModels ? JSON.stringify(merged.allowedModels) : null, merged.scope ? JSON.stringify(merged.scope) : null, cols.accessRestricted, cols.accessAllow, cols.accessConnections, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, tokenLimit = ?, tokensUsed = ?, tokensReserved = ?, allowedModels = ?, scope = ?, accessRestricted = ?, accessAllow = ?, accessConnections = ?, usageLimits = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, merged.tokenLimit == null ? null : Number(merged.tokenLimit), Number(merged.tokensUsed || 0), Number(merged.tokensReserved || 0), merged.allowedModels ? JSON.stringify(merged.allowedModels) : null, merged.scope ? JSON.stringify(merged.scope) : null, cols.accessRestricted, cols.accessAllow, cols.accessConnections, usageLimitsToColumn(merged.usageLimits), id]
     );
     result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });
