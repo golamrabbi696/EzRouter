@@ -112,8 +112,12 @@ function comboSeatCapabilities(seat, seatProviderIds = null) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
+  // "model(level)" is an EzRouter thinking override, not part of the model id.
+  // Strip it before the capability lookup or an effort seat misses the
+  // provider-scoped catalog and inherits the 1M pattern default.
+  const model = seat.slice(slash + 1).replace(/\([^()]+\)\s*$/, "").trim();
   const provider = seatProviderIds?.get(alias) || ALIAS_TO_PROVIDER_ID[alias] || alias;
-  return getCapabilitiesForModel(provider, seat.slice(slash + 1));
+  return getCapabilitiesForModel(provider, model);
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
