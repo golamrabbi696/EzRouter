@@ -53,6 +53,7 @@ const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "commandcode", "c
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
   codex: "codexAutoPing",
+  antigravity: "antigravityAutoPing",
 };
 
 // Per-provider retry-delay options. "auto" = honor the provider's reported reset
