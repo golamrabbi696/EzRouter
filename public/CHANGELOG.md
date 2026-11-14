@@ -29,6 +29,7 @@
   - Treated HTTP 200 responses with empty content as failures to trigger combo fallback (`#5645`).
   - Nested reasoning effort properly for OpenAI-compatible `/responses` targets (`#5616`).
 - **Transport, Engine & Database Stability**:
+  - Fixed OAuth token refresh failure caused by `rawFetch` misidentifying `URLSearchParams` as `FormData`, which corrupted form urlencoded POST bodies to `oauth2.googleapis.com`.
   - Enforced HTTP/1.1 for edge hosts that prematurely reset multiplexed HTTP/2 streams (`#5625`).
   - Immediately abort upstream executor requests when client connection terminates (`#5640`).
   - Replaced estimated stream usage with upstream reported usage values (`#5642`).
