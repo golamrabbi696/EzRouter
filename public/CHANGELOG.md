@@ -1,6 +1,12 @@
 # v0.6.35 (2026-11-14)
 
 ## Core Hardening & OAuth Refresh Fix
+- **Antigravity MITM Models Expansion (Gemini 4 Hydrogen & Carbon)**:
+  - Added Gemini 4 Hydrogen tiered models (`gemini-4-hydrogen-xhigh`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-low`, `gemini-4-hydrogen`) to the Antigravity MITM proxy model mapping list in `/dashboard/mitm` (`src/shared/constants/cliTools.js`).
+  - Added Gemini 4 Carbon tiered models (`gemini-4-carbon-high`, `gemini-4-carbon-medium`, `gemini-4-carbon-low`, `gemini-4-carbon`) to `/dashboard/mitm`.
+  - Updated MITM proxy synonym maps (`MODEL_SYNONYMS`) and pattern matcher (`MODEL_PATTERNS`) in `src/mitm/config.js` to accurately intercept, normalize, and reroute Hydrogen and Carbon IDE requests.
+  - Enhanced MITM `extractModel` to parse `thinkingLevel` (`xhigh`, `high`, `medium`, `low`) directly from `generationConfig.thinkingConfig` for Hydrogen, Carbon, and Argon requests.
+  - Added full test coverage in `tests/unit/antigravity-mitm.test.js` validating alias presence, pattern matchers, and `extractModel` level parsing.
 - **OAuth Token Refresh & URLSearchParams Body Preservation**:
   - Fixed a critical regression in `open-sse/utils/proxyFetch.js` where `rawFetch` duck-typed checks (`.append` and `.entries`) misidentified `URLSearchParams` instances as `FormData`, causing them to be reconstructed as `undici.FormData` multipart payloads while retaining the `application/x-www-form-urlencoded` header.
   - Resolved Google OAuth token refresh failures (`unsupported_grant_type: Invalid grant_type`) across Antigravity and Gemini CLI connections during connection testing and background token renewals.

@@ -51,6 +51,18 @@ function isChatRequest(tool, req) {
 // Synonym map: rawModel from request → canonical alias key in mitmAlias DB
 const MODEL_SYNONYMS = {
   antigravity: {
+    // Gemini 4 Hydrogen Family
+    "gemini-4-hydrogen": "gemini-4-hydrogen",
+    "gemini-4-hydrogen-xhigh": "gemini-4-hydrogen-xhigh",
+    "gemini-4-hydrogen-high": "gemini-4-hydrogen-high",
+    "gemini-4-hydrogen-medium": "gemini-4-hydrogen-medium",
+    "gemini-4-hydrogen-low": "gemini-4-hydrogen-low",
+    // Gemini 4 Carbon Family
+    "gemini-4-carbon": "gemini-4-carbon",
+    "gemini-4-carbon-high": "gemini-4-carbon-high",
+    "gemini-4-carbon-medium": "gemini-4-carbon-medium",
+    "gemini-4-carbon-low": "gemini-4-carbon-low",
+    // Gemini 4 Argon Family
     "gemini-4-argon": "gemini-4-argon-medium",
     "gemini-4-argon-high": "gemini-4-argon-high",
     "gemini-4-argon-medium": "gemini-4-argon-medium",
@@ -104,6 +116,15 @@ const MODEL_SYNONYMS = {
 // Order matters: more specific patterns first. Catches AG renamed variants (e.g. gemini-pro-agent)
 const MODEL_PATTERNS = {
   antigravity: [
+    { match: /hydrogen.*xhigh|xhigh.*hydrogen|hydrogen.*extra.*high/i, alias: "gemini-4-hydrogen-xhigh" },
+    { match: /hydrogen.*high|high.*hydrogen/i,                     alias: "gemini-4-hydrogen-high" },
+    { match: /hydrogen.*low|low.*hydrogen/i,                       alias: "gemini-4-hydrogen-low" },
+    { match: /hydrogen.*medium|medium.*hydrogen/i,                  alias: "gemini-4-hydrogen-medium" },
+    { match: /hydrogen/i,                                          alias: "gemini-4-hydrogen" },
+    { match: /carbon.*high|high.*carbon/i,                         alias: "gemini-4-carbon-high" },
+    { match: /carbon.*low|low.*carbon/i,                           alias: "gemini-4-carbon-low" },
+    { match: /carbon.*medium|medium.*carbon/i,                      alias: "gemini-4-carbon-medium" },
+    { match: /carbon/i,                                            alias: "gemini-4-carbon" },
     { match: /argon.*high|high.*argon/i,                           alias: "gemini-4-argon-high" },
     { match: /argon.*low|low.*argon/i,                             alias: "gemini-4-argon-low" },
     { match: /argon.*medium|medium.*argon|argon/i,                 alias: "gemini-4-argon-medium" },
@@ -190,6 +211,36 @@ function extractModel(url, body) {
         ? String(rawLevel).toLowerCase()
         : "medium";
       return `gemini-${ver}-flash-${level}`;
+    }
+    if (cleanModelName === "gemini-4-hydrogen" || cleanModelName === "gemini-4-hydrogen-tiered") {
+      const rawLevel = parsed.request?.generationConfig?.thinkingConfig?.thinkingLevel
+        || parsed.generationConfig?.thinkingConfig?.thinkingLevel;
+      if (rawLevel) {
+        const level = ["xhigh", "high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+          ? String(rawLevel).toLowerCase()
+          : null;
+        if (level) return `gemini-4-hydrogen-${level}`;
+      }
+    }
+    if (cleanModelName === "gemini-4-carbon" || cleanModelName === "gemini-4-carbon-tiered") {
+      const rawLevel = parsed.request?.generationConfig?.thinkingConfig?.thinkingLevel
+        || parsed.generationConfig?.thinkingConfig?.thinkingLevel;
+      if (rawLevel) {
+        const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+          ? String(rawLevel).toLowerCase()
+          : null;
+        if (level) return `gemini-4-carbon-${level}`;
+      }
+    }
+    if (cleanModelName === "gemini-4-argon" || cleanModelName === "gemini-4-argon-tiered") {
+      const rawLevel = parsed.request?.generationConfig?.thinkingConfig?.thinkingLevel
+        || parsed.generationConfig?.thinkingConfig?.thinkingLevel;
+      if (rawLevel) {
+        const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+          ? String(rawLevel).toLowerCase()
+          : null;
+        if (level) return `gemini-4-argon-${level}`;
+      }
     }
     return model;
   } catch {

@@ -4,7 +4,7 @@ import { MITM_TOOLS } from "../../src/shared/constants/cliTools.js";
 
 // config.js is the CJS MITM bundle module (dependency-isolated for the runtime copy).
 const require = createRequire(import.meta.url);
-const { MODEL_NO_MAP, MODEL_PATTERNS, MODEL_SYNONYMS } = require("../../src/mitm/config.js");
+const { MODEL_NO_MAP, MODEL_PATTERNS, MODEL_SYNONYMS, extractModel } = require("../../src/mitm/config.js");
 
 // All assertions below are grounded in a live MITM dump capture of Antigravity's
 // streamGenerateContent requests (see AI_JOURNAL): the agent loop sends
@@ -76,5 +76,77 @@ describe("Antigravity MITM model handling", () => {
     expect(matchModel("argon-low")).toBe("gemini-4-argon-low");
     expect(matchModel("gemini-4-argon-medium")).toBe("gemini-4-argon-medium");
     expect(matchModel("argon")).toBe("gemini-4-argon-medium");
+  });
+
+  it("includes Gemini 4 Hydrogen and Carbon models in Antigravity MITM configuration", () => {
+    // Hydrogen aliases
+    expect(ag.modelAliases).toContain("gemini-4-hydrogen-xhigh");
+    expect(ag.modelAliases).toContain("gemini-4-hydrogen-high");
+    expect(ag.modelAliases).toContain("gemini-4-hydrogen-medium");
+    expect(ag.modelAliases).toContain("gemini-4-hydrogen-low");
+    expect(ag.modelAliases).toContain("gemini-4-hydrogen");
+
+    // Carbon aliases
+    expect(ag.modelAliases).toContain("gemini-4-carbon-high");
+    expect(ag.modelAliases).toContain("gemini-4-carbon-medium");
+    expect(ag.modelAliases).toContain("gemini-4-carbon-low");
+    expect(ag.modelAliases).toContain("gemini-4-carbon");
+
+    // Default models presence
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-hydrogen-xhigh")?.alias).toBe("gemini-4-hydrogen-xhigh");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-hydrogen-high")?.alias).toBe("gemini-4-hydrogen-high");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-hydrogen-medium")?.alias).toBe("gemini-4-hydrogen-medium");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-hydrogen-low")?.alias).toBe("gemini-4-hydrogen-low");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-hydrogen")?.alias).toBe("gemini-4-hydrogen");
+
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-carbon-high")?.alias).toBe("gemini-4-carbon-high");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-carbon-medium")?.alias).toBe("gemini-4-carbon-medium");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-carbon-low")?.alias).toBe("gemini-4-carbon-low");
+    expect(ag.defaultModels.find((m) => m.id === "gemini-4-carbon")?.alias).toBe("gemini-4-carbon");
+  });
+
+  it("matches Gemini 4 Hydrogen and Carbon variants via MITM patterns and synonyms", () => {
+    const patterns = MODEL_PATTERNS.antigravity;
+    const matchModel = (raw) => {
+      for (const { match, alias } of patterns) {
+        if (match.test(raw)) return alias;
+      }
+      return null;
+    };
+
+    expect(matchModel("gemini-4-hydrogen-xhigh")).toBe("gemini-4-hydrogen-xhigh");
+    expect(matchModel("hydrogen-extra-high")).toBe("gemini-4-hydrogen-xhigh");
+    expect(matchModel("gemini-4-hydrogen-high")).toBe("gemini-4-hydrogen-high");
+    expect(matchModel("hydrogen-high")).toBe("gemini-4-hydrogen-high");
+    expect(matchModel("gemini-4-hydrogen-low")).toBe("gemini-4-hydrogen-low");
+    expect(matchModel("hydrogen-low")).toBe("gemini-4-hydrogen-low");
+    expect(matchModel("gemini-4-hydrogen-medium")).toBe("gemini-4-hydrogen-medium");
+    expect(matchModel("gemini-4-hydrogen")).toBe("gemini-4-hydrogen");
+
+    expect(matchModel("gemini-4-carbon-high")).toBe("gemini-4-carbon-high");
+    expect(matchModel("carbon-high")).toBe("gemini-4-carbon-high");
+    expect(matchModel("gemini-4-carbon-low")).toBe("gemini-4-carbon-low");
+    expect(matchModel("carbon-low")).toBe("gemini-4-carbon-low");
+    expect(matchModel("gemini-4-carbon-medium")).toBe("gemini-4-carbon-medium");
+    expect(matchModel("gemini-4-carbon")).toBe("gemini-4-carbon");
+  });
+
+  it("extracts Gemini 4 Hydrogen and Carbon with thinkingLevel in extractModel", () => {
+    const url = "/v1internal/models/gemini-4-hydrogen:streamGenerateContent";
+    const bodyXhigh = Buffer.from(JSON.stringify({
+      request: { generationConfig: { thinkingConfig: { thinkingLevel: "xhigh" } } }
+    }));
+    expect(extractModel(url, bodyXhigh)).toBe("gemini-4-hydrogen-xhigh");
+
+    const bodyLow = Buffer.from(JSON.stringify({
+      request: { generationConfig: { thinkingConfig: { thinkingLevel: "low" } } }
+    }));
+    expect(extractModel(url, bodyLow)).toBe("gemini-4-hydrogen-low");
+
+    const carbonUrl = "/v1internal/models/gemini-4-carbon:streamGenerateContent";
+    const bodyHigh = Buffer.from(JSON.stringify({
+      request: { generationConfig: { thinkingConfig: { thinkingLevel: "high" } } }
+    }));
+    expect(extractModel(carbonUrl, bodyHigh)).toBe("gemini-4-carbon-high");
   });
 });
