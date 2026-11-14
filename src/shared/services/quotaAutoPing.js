@@ -4,6 +4,7 @@ import "open-sse/index.js";
 import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage, getCodexModels } from "open-sse/services/usage/codex.js";
+import { getAntigravityUsage } from "open-sse/services/usage/google.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
@@ -24,6 +25,10 @@ const providerHandlers = {
     getUsage: getCodexUsage,
     getModels: getCodexModels,
     sendPing: sendCodexPing,
+  },
+  antigravity: {
+    getUsage: getAntigravityUsageForAutoPing,
+    sendPing: sendAntigravityPing,
   },
 };
 
@@ -86,7 +91,11 @@ function wasPingedRecently(connection, intervalMs, nowMs = Date.now(), inMemoryP
 
 function isBlockingQuotaName(name, sessionKey) {
   if (name === sessionKey) return false;
-  return !String(name).toLowerCase().includes("session");
+  const lower = String(name).toLowerCase();
+  if (lower.includes("session")) return false;
+  if (sessionKey === "gemini_session" && (lower.includes("claude") || lower.includes("argon"))) return false;
+  if (lower.includes("weekly") || lower.includes("monthly")) return true;
+  return !lower.includes("gemini-") && !lower.includes("claude-") && !lower.includes("gpt-");
 }
 
 function hasExhaustedBlockingQuota(quotas, sessionKey) {
@@ -250,6 +259,69 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
     return !events.some((event) => ["error", "response.failed", "response.incomplete"].includes(event.type)) &&
       events.some((event) => event.type === "response.completed" && event.response?.status === "completed");
   }
+  return true;
+}
+
+async function getAntigravityUsageForAutoPing(accessToken, proxyOptions) {
+  const usage = await getAntigravityUsage(accessToken, null, proxyOptions);
+  if (usage?.quotas && !usage.quotas.gemini_session) {
+    const geminiModels = Object.entries(usage.quotas).filter(
+      ([k]) => k.startsWith("gemini-") && !k.includes("image") && !k.includes("argon")
+    );
+    if (geminiModels.length > 0) {
+      const rep = geminiModels.find(([k]) => k === "gemini-3.8-flash-low")?.[1]
+        || geminiModels.find(([k]) => k === "gemini-3.8-flash-medium")?.[1]
+        || geminiModels.find(([k]) => k === "gemini-3.8-flash-high")?.[1]
+        || geminiModels.find(([, q]) => (q.remainingPercentage ?? 0) > 0)?.[1]
+        || geminiModels[0][1];
+      const resetAt = rep?.resetAt || geminiModels.find(([, q]) => q.resetAt)?.[1]?.resetAt;
+      if (resetAt) {
+        usage.quotas.gemini_session = {
+          ...rep,
+          resetAt,
+        };
+      }
+    }
+  }
+  return usage;
+}
+
+async function sendAntigravityPing(connection, providerConfig, proxyOptions, deps) {
+  const executor = deps.getExecutor("antigravity");
+  const { response } = await executor.execute({
+    model: providerConfig.pingModel,
+    stream: true,
+    credentials: {
+      accessToken: connection.accessToken,
+      refreshToken: connection.refreshToken,
+      connectionId: connection.id,
+      email: connection.email,
+      projectId: connection.projectId || connection.providerSpecificData?.projectId,
+      providerSpecificData: connection.providerSpecificData,
+    },
+    proxyOptions,
+    log: console,
+    body: {
+      model: providerConfig.pingModel,
+      request: {
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: providerConfig.pingText }],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: providerConfig.pingMaxTokens || 1,
+        },
+      },
+    },
+  });
+  if (!response.ok) {
+    try { await response.body?.cancel?.(); } catch { /* noop */ }
+    return false;
+  }
+
+  await drainResponseBody(response);
   return true;
 }
 
