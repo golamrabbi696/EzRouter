@@ -53,4 +53,32 @@ describe("proxyAwareFetch multipart FormData (issue #5525)", () => {
     expect(seen.body).toContain("fake wav bytes");
     expect(seen.body).toContain('name="model"');
   });
+
+  it("preserves URLSearchParams as application/x-www-form-urlencoded and does not convert to FormData", async () => {
+    const seen = {};
+    await withServer((req, res) => {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        seen.contentType = req.headers["content-type"] || "";
+        seen.body = Buffer.concat(chunks).toString("utf8");
+        res.end(JSON.stringify({ ok: true }));
+      });
+    }, async (port) => {
+      const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+      const params = new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: "test_token_123",
+      });
+      const res = await proxyAwareFetch(`http://127.0.0.1:${port}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params,
+      });
+      expect(res.ok).toBe(true);
+    });
+
+    expect(seen.contentType).toContain("application/x-www-form-urlencoded");
+    expect(seen.body).toBe("grant_type=refresh_token&refresh_token=test_token_123");
+  });
 });
