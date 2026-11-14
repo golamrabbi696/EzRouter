@@ -1,3 +1,15 @@
+# v0.6.35 (2026-11-14)
+
+## Core Hardening & OAuth Refresh Fix
+- **OAuth Token Refresh & URLSearchParams Body Preservation**:
+  - Fixed a critical regression in `open-sse/utils/proxyFetch.js` where `rawFetch` duck-typed checks (`.append` and `.entries`) misidentified `URLSearchParams` instances as `FormData`, causing them to be reconstructed as `undici.FormData` multipart payloads while retaining the `application/x-www-form-urlencoded` header.
+  - Resolved Google OAuth token refresh failures (`unsupported_grant_type: Invalid grant_type`) across Antigravity and Gemini CLI connections during connection testing and background token renewals.
+  - Hardened `src/app/api/providers/[id]/test/testUtils.js` by explicitly serializing URL-encoded parameters via `params.toString()`.
+  - Added automated unit tests in `tests/unit/proxy-multipart-formdata.test.js` validating that `URLSearchParams` bodies remain urlencoded and are never converted to multipart `FormData`.
+- **Strict Invariants**:
+  - Default port remains strictly **20126**.
+  - All EzRouter branding preserved (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`).
+
 # v0.6.34 (2026-11-14)
 
 ## Upstream PR Synchronization (#5537 - #5684) & Core Hardening
@@ -29,7 +41,6 @@
   - Treated HTTP 200 responses with empty content as failures to trigger combo fallback (`#5645`).
   - Nested reasoning effort properly for OpenAI-compatible `/responses` targets (`#5616`).
 - **Transport, Engine & Database Stability**:
-  - Fixed OAuth token refresh failure caused by `rawFetch` misidentifying `URLSearchParams` as `FormData`, which corrupted form urlencoded POST bodies to `oauth2.googleapis.com`.
   - Enforced HTTP/1.1 for edge hosts that prematurely reset multiplexed HTTP/2 streams (`#5625`).
   - Immediately abort upstream executor requests when client connection terminates (`#5640`).
   - Replaced estimated stream usage with upstream reported usage values (`#5642`).
