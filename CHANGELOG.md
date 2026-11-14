@@ -1,3 +1,44 @@
+# v0.6.34 (2026-11-14)
+
+## Upstream PR Synchronization (#5537 - #5684) & Core Hardening
+- **Antigravity Auto-Ping & Quota Management**:
+  - Implemented Antigravity quota auto-ping service (`src/shared/services/quotaAutoPing.js`) to automatically warm 5-hour rolling windows by dispatching minimal `gemini-3.8-flash-low` requests upon quota reset or anchored schedules (`#5684`).
+  - Integrated auto-ping toggles and anchored schedule configuration in Provider Details and Usage Limits dashboard pages (`#5684`).
+  - Added full test coverage for reactive reset drift detection, session-level fallback, and blocking quota guards (`#5684`).
+  - Preserved filesystem paths and identifiers in Antigravity OpenCode prompt sanitization (`#5660`).
+- **Gemini 4 Hydrogen Support**:
+  - Added support for Gemini 4 Hydrogen (`gemini-4-hydrogen`) with 4-tier reasoning levels (`low`, `medium`, `high`, `xhigh`) defaulting to `high` (`#5657`).
+  - Handled thought summaries suppression and multi-tier streaming transform updates in `stream.js` (`#5657`).
+  - Integrated quota tracking and transparent routing for Hydrogen preview twins (`#5657`).
+- **Granular API Key Controls (Per-Key Limits & Account Pinning)**:
+  - Added per-API-key usage limits supporting daily, weekly, and monthly cost and token budget caps with automatic real-time rate limiting (`#5647`).
+  - Added account pinning to restrict API keys to specific provider connections (`#5634`).
+  - Added dashboard UI controls in Endpoint management for configuring key limits and account pins (`#5634`, `#5647`).
+- **RTK Token Saver & Gemini Payload Compression**:
+  - Bounded JSON guard parsing and enforced `RAW_CAP` before payload trimming (`#5675`).
+  - Integrated `compressGeminiFormat` into `compressMessages` for complete Gemini format token saving (`#5675`).
+  - Prevented timestamped application logs from being misidentified as grep outputs (`#5637`).
+- **Live Provider Catalogs & Dynamic Models**:
+  - Integrated `commandcodeModels.js` live catalog resolver and capability fields publication (`#5667`, `#5671`).
+  - Generalized dynamic test model support across multi-model providers (`#5649`).
+  - Added providers and model updates: Claude Fable 5.2, Haiku 5.5, Gemini 4 Carbon, Synthetic.new, OpenDesign Go, DeepRelay, and SenseNova International (`#5604`, `#5610`, `#5622`, `#5624`, `#5678`).
+- **Translator & Format Resilience**:
+  - Maintained tool calls and developer turns intact across formats; repaired partial tool responses for OpenAI targets (`#5636`).
+  - Exported `SYNTHETIC_TOOL_RESULT_TEXT` for consistent synthesized tool results across Claude and OpenAI legs (`#5636`).
+  - Stripped thinking suffixes from combo seat limits (`#5662`).
+  - Treated HTTP 200 responses with empty content as failures to trigger combo fallback (`#5645`).
+  - Nested reasoning effort properly for OpenAI-compatible `/responses` targets (`#5616`).
+- **Transport, Engine & Database Stability**:
+  - Enforced HTTP/1.1 for edge hosts that prematurely reset multiplexed HTTP/2 streams (`#5625`).
+  - Immediately abort upstream executor requests when client connection terminates (`#5640`).
+  - Replaced estimated stream usage with upstream reported usage values (`#5642`).
+  - Bounded SQLite maximum unwritten persistence wait for sql.js in-memory transactions (`#5639`).
+  - Cleaned duplicate imports in `usage.js` and removed redundant JSX tag closures.
+- **Strict Invariants**:
+  - Default port remains **20126** everywhere (0 occurrences of 20127/20128).
+  - All EzRouter branding preserved (`@rabbi696/ezrouter`, `ezrouter-app`, `sk_ezrouter`, `~/.ezrouter`, `https://ezrouter.local`).
+  - Antigravity isolated preview models intact.
+
 # v0.6.33 (2026-11-09)
 
 ## Upstream PR Synchronization (#5518 - #5537) & Protocol Hardening
