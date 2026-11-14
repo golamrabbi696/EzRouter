@@ -1329,7 +1329,6 @@ export default function APIPageClient({ machineId }) {
                     apiKey={key}
                     onSave={(usageLimits) => handleUpdateKeyUsageLimits(key.id, usageLimits)}
                   />
-                  />
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">
                   <button

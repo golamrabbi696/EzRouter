@@ -24,15 +24,11 @@ import { getOpenDesignUsage } from "./usage/opendesign.js";
 import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getGroqUsage } from "./usage/groq.js";
 import { getZedUsage } from "./usage/zed.js";
-import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
 import { getCloudflareUsage } from "./usage/cloudflare.js";
-import { getCursorUsage } from "./usage/cursor.js";
 import { getClinepassUsage } from "./usage/clinepass.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
-import { getGlmUsage } from "./usage/glm.js";
-import { getSyntheticUsage } from "./usage/synthetic.js";
 import { getCustomCreditsUsage, isCustomQuotaProvider } from "./usage/customCredits.js";
 import {
   getIflowUsage,

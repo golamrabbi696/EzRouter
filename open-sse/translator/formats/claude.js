@@ -11,6 +11,12 @@ import { isClaudeModel, isDeepSeekModel } from "../../providers/models/helpers.j
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 import { applyAssistantPrefillPolicy } from "../concerns/assistantPrefillPolicy.js";
 
+// Text of a synthesized answer for a tool_use nobody replied to. Kept identical
+// to the OpenAI-leg analogue in request/claude-to-openai.js
+// (fixMissingToolResponsesOpenAI) so the same dropped call reads the same way on
+// either leg.
+export const SYNTHETIC_TOOL_RESULT_TEXT = "[No response received]";
+
 // Claude Code sends deferred MCP definitions as mid-session content blocks.
 // Kimi's Claude-compatible endpoint accepts those definitions in tools[], but
 // rejects the beta-only blocks themselves. Keep the original body untouched so
